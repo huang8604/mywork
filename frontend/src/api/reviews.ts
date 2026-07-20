@@ -11,3 +11,14 @@ export async function correctReview(review: ReviewLog, status: ReviewStatus) {
     reviewed_at: review.reviewed_at, duration_ms: review.duration_ms,
   })).data)
 }
+export async function listAllRoundReviews(roundId: number, signal?: AbortSignal) {
+  const reviews: ReviewLog[] = []; let page = 1
+  do {
+    const response = await listReviews({ round_id: roundId, page, size: 100, sort: 'reviewed_at_asc' }, signal)
+    reviews.push(...response.data)
+    const total = Number(response.meta.total)
+    if (response.data.length < 100 || (Number.isFinite(total) && reviews.length >= total)) break
+    page += 1
+  } while (true)
+  return reviews
+}

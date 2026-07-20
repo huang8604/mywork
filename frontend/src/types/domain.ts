@@ -71,3 +71,15 @@ export interface PracticeSession {
   web_url?: string; print_url?: string
 }
 export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; total: number; dry_run: boolean }
+export interface BatchRoundResult {
+  item_id: number; status: ReviewStatus; client_event_id: string
+  expected_version?: number; duration_ms?: number; reviewed_at?: string
+}
+export interface BatchRoundResponse { round: PracticeRound; items: ReviewLog[] }
+export interface Capabilities {
+  api_version: string; server_time: string; server_timezone: string
+  review_statuses: ReviewStatus[]; review_modes: Array<'offline' | 'online'>
+  max_import_bytes: number; max_import_rows: number; max_practice_words: number
+  max_batch_results: number; idempotency_retention_days: number
+  features: Record<string, boolean>
+}

@@ -1,4 +1,28 @@
 @media print {
-  .sidebar,.topbar,.bottom-nav,.no-print { display:none !important; }
-  .app-shell { display:block; }.content-shell,#main-content { padding:0; }.panel { box-shadow:none; border:0; }
+  @page { size: A4 portrait; margin: 12mm 10mm; }
+
+  html, body, #app { width: 100%; min-width: 0; margin: 0; padding: 0; background: #fff !important; }
+  body { overflow: visible !important; print-color-adjust: exact; -webkit-print-color-adjust: exact; }
+  .sidebar, .topbar, .bottom-nav, .no-print, .el-overlay, .el-message, .el-notification { display: none !important; }
+  .app-shell, .content-shell { display: block !important; min-height: 0 !important; }
+  #main-content, .page, .session-page { width: 100% !important; max-width: none !important; margin: 0 !important; padding: 0 !important; display: block !important; }
+  .print-container { display: block !important; width: 100% !important; margin: 0 !important; padding: 0 !important; color: #000 !important; background: #fff !important; overflow: visible !important; }
+  .print-section { display: block !important; border: 0 !important; box-shadow: none !important; }
+  .print-answer { break-before: page; page-break-before: always; }
+  .print-answer:not(.include-answer) { display: none !important; }
+  .worksheet { width: 100% !important; color: #000 !important; background: #fff !important; }
+  .worksheet-header { padding: 0 0 5mm !important; border-bottom: 1.5pt solid #222 !important; }
+  .worksheet-mobile { display: none !important; }
+  .worksheet-table { display: table !important; width: 100% !important; table-layout: fixed; border-collapse: collapse; }
+  .worksheet-table thead { display: table-header-group; }
+  .worksheet-table tbody { display: table-row-group; }
+  .worksheet-table tr { break-inside: avoid; page-break-inside: avoid; }
+  .worksheet-table th, .worksheet-table td { border: 1px solid #333 !important; padding: 6pt 5pt !important; font-size: 9.5pt !important; line-height: 1.35; overflow-wrap: anywhere; word-break: break-word; background: #fff !important; }
+  .worksheet-table .repeat-print-header { display: table-row !important; }
+  .worksheet-table .repeat-print-header th { padding: 4pt 5pt !important; font-size: 8pt !important; text-align: right !important; }
+  .worksheet-table .number-cell { width: 7% !important; }
+  .worksheet-table .english-cell { width: 17% !important; }
+  .worksheet-table .example-cell { width: 28% !important; min-width: 0 !important; }
+  .worksheet-table .mark-cell { width: 18% !important; min-width: 0 !important; font-size: 8pt !important; }
+  .blank-warning { color: #333 !important; font-size: 7.5pt !important; }
 }

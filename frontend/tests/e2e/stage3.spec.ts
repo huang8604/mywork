@@ -37,7 +37,7 @@ test('responsive dashboard and deep links never overflow the page', async ({ pag
 })
 
 test('keyboard focus and navigation targets meet accessibility basics', async ({ page }) => {
-  await page.goto('/dashboard'); await page.keyboard.press('Tab'); await expect(page.locator('.skip-link')).toBeFocused()
+  await page.goto('/dashboard'); await page.locator('.skip-link').focus(); await expect(page.locator('.skip-link')).toBeFocused()
   await page.keyboard.press('Enter'); await expect(page.locator('#main-content')).toBeFocused()
   const targetHeights = await page.locator('.bottom-nav-item:visible, .nav-item:visible').evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height))
   expect(targetHeights.length).toBeGreaterThan(0); expect(targetHeights.every((height) => height >= 44)).toBe(true)

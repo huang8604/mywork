@@ -10,9 +10,11 @@ const navItems = computed(() => children.flatMap((item) => {
   const meta = item.meta as unknown as NavMeta | undefined
   return meta?.nav ? [{ name: item.name, ...meta }] : []
 }))
+function focusMain() { document.querySelector<HTMLElement>('#main-content')?.focus({ preventScroll: true }) }
 </script>
 
 <template>
+  <a class="skip-link" href="#main-content" @click.prevent="focusMain">跳到主要内容</a>
   <div class="app-shell" :class="{ 'sidebar-collapsed': preferences.sidebarCollapsed }">
     <aside class="sidebar" aria-label="主导航">
       <div class="brand"><span class="brand-mark">拾</span><div class="brand-copy"><strong>拾词</strong><small>Word Memory</small></div></div>

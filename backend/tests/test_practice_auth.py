@@ -11,6 +11,66 @@ from app.services.domain import utc_text
 from conftest import create_word
 
 
+def test_strategy_boundaries_empty_candidates_limit_and_seed_reproducibility(client):
+    empty = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "generate-empty"},
+        json={
+            "new_words_limit": 10,
+            "error_words_limit": 0,
+            "due_words_limit": 0,
+            "custom_words_limit": 0,
+            "fallback_unreviewed_days": 3,
+            "seed": 7,
+        },
+    )
+    assert empty.status_code == 201
+    assert empty.json()["data"]["items"] == []
+    assert empty.json()["data"]["actual_counts"]["unique_total"] == 0
+
+    over_limit = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "generate-over-limit"},
+        json={
+            "new_words_limit": 100,
+            "error_words_limit": 100,
+            "due_words_limit": 1,
+            "custom_words_limit": 0,
+            "fallback_unreviewed_days": 3,
+        },
+    )
+    assert over_limit.status_code == 422
+    assert over_limit.json()["code"] == "VALIDATION_ERROR"
+
+    for index in range(6):
+        create_word(
+            client,
+            {"en_word": f"seed-word-{index}", "cn_meaning": f"释义 {index}", "tags": []},
+        )
+    payload = {
+        "new_words_limit": 4,
+        "error_words_limit": 0,
+        "due_words_limit": 0,
+        "custom_words_limit": 0,
+        "fallback_unreviewed_days": 3,
+        "seed": 20260720,
+    }
+    first = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "generate-seed-first"},
+        json=payload,
+    )
+    second = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "generate-seed-second"},
+        json=payload,
+    )
+    assert first.status_code == second.status_code == 201
+    assert [item["word_id"] for item in first.json()["data"]["items"]] == [
+        item["word_id"] for item in second.json()["data"]["items"]
+    ]
+
+
 def test_generate_round_batch_correction_and_replay(client, db_session):
     first = create_word(client, {"en_word": "warm", "cn_meaning": "温暖", "tags": []})
     second = create_word(client, {"en_word": "horse", "cn_meaning": "马", "tags": []})
@@ -44,6 +104,25 @@ def test_generate_round_batch_correction_and_replay(client, db_session):
     assert replay.status_code == 201
     assert replay.headers["Idempotency-Replayed"] == "true"
     assert replay.json()["data"]["session_id"] == session["session_id"]
+
+    printed = client.post(
+        f"/api/v1/practice-sessions/{session['session_id']}/printed",
+        headers={"Idempotency-Key": "printed-1"},
+    )
+    assert printed.status_code == 200
+    printed_data = printed.json()["data"]
+    assert printed_data["printed_at"] is not None
+    printed_replay = client.post(
+        f"/api/v1/practice-sessions/{session['session_id']}/printed",
+        headers={"Idempotency-Key": "printed-1"},
+    )
+    assert printed_replay.headers["Idempotency-Replayed"] == "true"
+    printed_again = client.post(
+        f"/api/v1/practice-sessions/{session['session_id']}/printed",
+        headers={"Idempotency-Key": "printed-2"},
+    )
+    assert printed_again.json()["data"]["printed_at"] == printed_data["printed_at"]
+    assert printed_again.json()["data"]["version"] == printed_data["version"]
 
     round_response = client.post(
         f"/api/v1/practice-sessions/{session['session_id']}/review-rounds",
@@ -97,6 +176,21 @@ def test_generate_round_batch_correction_and_replay(client, db_session):
     )
     assert replay_batch.headers["Idempotency-Replayed"] == "true"
     assert db_session.scalar(select(func.count()).select_from(ReviewLog)) == 2
+
+    round_replay = client.post(
+        f"/api/v1/practice-sessions/{session['session_id']}/review-rounds",
+        headers={"Idempotency-Key": "round-1"},
+        json={"mode": "offline", "started_at": "2026-07-20T09:00:00Z"},
+    )
+    assert round_replay.headers["Idempotency-Replayed"] == "true"
+    assert round_replay.json()["data"]["round_id"] == round_id
+    next_round = client.post(
+        f"/api/v1/practice-sessions/{session['session_id']}/review-rounds",
+        headers={"Idempotency-Key": "round-2"},
+        json={"mode": "offline", "started_at": "2026-07-21T09:00:00Z"},
+    )
+    assert next_round.status_code == 201
+    assert next_round.json()["data"]["round_id"] != round_id
 
 
 def test_batch_validation_is_atomic(client, db_session):

@@ -1,6 +1,8 @@
-# 阶段三前端
+# 阶段三、四前端
 
 Vue 3、TypeScript、Vite、Vue Router、Pinia、Axios 与 Element Plus 实现的响应式 SPA。
+
+阶段四已提供策略配置、三种复习表题型、A4 打印与可选答案页，以及支持刷新恢复、原子批量保存和 409 冲突处理的线下回录流程。
 
 ## 本地开发
 
