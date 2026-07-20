@@ -1,0 +1,2 @@
+<template><section class="panel not-found"><span>404</span><h2>这一页没有收录</h2><p>地址可能已经变化，也可能只是多敲了一个字符。</p><el-button type="primary" @click="$router.push('/dashboard')">返回概览</el-button></section></template>
+<style scoped>.not-found{max-width:560px;margin:10vh auto;text-align:center}.not-found>span{font:700 5rem Georgia,serif;color:var(--green-100);text-shadow:1px 1px var(--green-800)}.not-found p{color:var(--muted)}</style>

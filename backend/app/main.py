@@ -4,13 +4,14 @@ import logging
 import sqlite3
 import time
 import uuid
+from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.openapi.utils import get_openapi
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy import select
 
@@ -319,3 +320,30 @@ def custom_openapi() -> dict:
 
 
 app.openapi = custom_openapi
+
+FRONTEND_DIST = Path(settings.frontend_dist)
+
+
+def _frontend_file(full_path: str) -> Path | None:
+    dist = FRONTEND_DIST.resolve()
+    candidate = (dist / full_path).resolve()
+    if not candidate.is_relative_to(dist) or not candidate.is_file():
+        return None
+    return candidate
+
+
+@app.get("/", include_in_schema=False)
+@app.get("/{full_path:path}", include_in_schema=False)
+def spa_fallback(full_path: str = ""):
+    """Serve built SPA files and fall back to index for browser deep links."""
+    if full_path.startswith(("api/", "healthz/", ".well-known/")):
+        raise HTTPException(status_code=404)
+    asset = _frontend_file(full_path) if full_path else None
+    if asset is not None:
+        return FileResponse(asset)
+    if full_path.startswith("assets/"):
+        raise HTTPException(status_code=404)
+    index = _frontend_file("index.html")
+    if index is None:
+        raise HTTPException(status_code=404)
+    return FileResponse(index, media_type="text/html")

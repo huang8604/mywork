@@ -60,3 +60,23 @@ def test_wrong_origin_is_rejected_before_write(client):
     assert response.status_code == 403
     assert response.json()["code"] == "FORBIDDEN_ORIGIN"
 
+
+def test_spa_deep_link_fallback_excludes_api_and_health(client, tmp_path, monkeypatch):
+    import app.main as main_module
+
+    dist = tmp_path / "dist"
+    assets = dist / "assets"
+    assets.mkdir(parents=True)
+    (dist / "index.html").write_text("<main>spa shell</main>", encoding="utf-8")
+    (assets / "app.js").write_text("console.log('ok')", encoding="utf-8")
+    monkeypatch.setattr(main_module, "FRONTEND_DIST", dist)
+
+    deep_link = client.get("/daily/sessions/42")
+    assert deep_link.status_code == 200
+    assert "spa shell" in deep_link.text
+    asset = client.get("/assets/app.js")
+    assert asset.status_code == 200
+    assert asset.text == "console.log('ok')"
+    assert client.get("/assets/missing.js").status_code == 404
+    assert client.get("/api/not-a-route").status_code == 404
+    assert client.get("/healthz/not-a-route").status_code == 404

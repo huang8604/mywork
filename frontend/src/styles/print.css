@@ -1,0 +1,4 @@
+@media print {
+  .sidebar,.topbar,.bottom-nav,.no-print { display:none !important; }
+  .app-shell { display:block; }.content-shell,#main-content { padding:0; }.panel { box-shadow:none; border:0; }
+}
