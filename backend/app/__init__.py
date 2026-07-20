@@ -1,0 +1,2 @@
+"""Word memory assistant backend."""
+

@@ -1,0 +1,32 @@
+from app.models.entities import (
+    ApiClient,
+    ApiClientScope,
+    ApiClientToken,
+    AuditLog,
+    IdempotencyRecord,
+    PracticeReviewRound,
+    PracticeSession,
+    PracticeSessionItem,
+    ReviewLog,
+    Tag,
+    Word,
+    WordStats,
+    WordTag,
+)
+
+__all__ = [
+    "ApiClient",
+    "ApiClientScope",
+    "ApiClientToken",
+    "AuditLog",
+    "IdempotencyRecord",
+    "PracticeReviewRound",
+    "PracticeSession",
+    "PracticeSessionItem",
+    "ReviewLog",
+    "Tag",
+    "Word",
+    "WordStats",
+    "WordTag",
+]
+

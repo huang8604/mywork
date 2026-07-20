@@ -1,0 +1,376 @@
+from __future__ import annotations
+
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, Header, Query, Request
+from sqlalchemy import and_, desc, func, select
+from sqlalchemy.orm import Session
+
+from app.core.audit import add_audit
+from app.core.auth import Actor, require_scopes
+from app.core.config import get_settings
+from app.core.database import get_db
+from app.core.errors import AppError, not_found
+from app.core.responses import envelope
+from app.models import PracticeReviewRound, PracticeSession, PracticeSessionItem
+from app.schemas import BatchResults, RoundCreate, RoundResult, StrategyRequest, VersionRequest
+from app.services.domain import utc_text
+from app.services.idempotency import claim, complete
+from app.services.reviews import batch_round_results, put_round_result
+from app.services.serializers import review_data, round_data, session_data
+from app.services.strategy import generate_session
+
+router = APIRouter(prefix="/api/v1", tags=["practice"])
+
+
+def _commit(db: Session) -> None:
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
+
+
+def _idem_response(request: Request, idem):
+    return envelope(
+        request,
+        idem.replay_data,
+        status_code=idem.replay_status,
+        headers={"Idempotency-Replayed": "true"},
+    )
+
+
+@router.post("/daily-table/generate")
+def generate(
+    request: Request,
+    payload: StrategyRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("practice:generate"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/daily-table/generate",
+        key=idempotency_key,
+        payload=payload.model_dump(mode="json"),
+        required=True,
+    )
+    if idem and idem.replayed:
+        return _idem_response(request, idem)
+    skill = (
+        (actor.skill_name or "unknown", actor.skill_version or "unknown")
+        if actor.actor_type == "api_client"
+        else None
+    )
+    session = generate_session(db, payload, actor, skill)
+    data = session_data(db, session, include_items=True)
+    base = get_settings().public_base_url
+    data["web_url"] = f"{base}/daily/sessions/{session.id}"
+    data["print_url"] = f"{base}/daily/sessions/{session.id}?view=print"
+    complete(idem, data=data, status_code=201, resource_type="practice_session", resource_id=session.id)
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="practice.generate",
+        outcome="success",
+        http_status=201,
+        target_type="practice_session",
+        target_id=session.id,
+    )
+    _commit(db)
+    return envelope(request, data, status_code=201)
+
+
+@router.get("/practice-sessions")
+def list_sessions(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+    page: Annotated[int, Query(ge=1)] = 1,
+    size: Annotated[int, Query(ge=1, le=100)] = 20,
+    status: str | None = None,
+    created_by_actor_type: str | None = None,
+    generated_from: str | None = None,
+    generated_to: str | None = None,
+):
+    if status and status not in {"active", "archived"}:
+        raise AppError(422, "VALIDATION_ERROR", "invalid session status")
+    if created_by_actor_type and created_by_actor_type not in {"web_user", "api_client"}:
+        raise AppError(422, "VALIDATION_ERROR", "invalid actor type")
+    filters = []
+    for column, value in (
+        (PracticeSession.status, status),
+        (PracticeSession.created_by_actor_type, created_by_actor_type),
+    ):
+        if value is not None:
+            filters.append(column == value)
+    if generated_from:
+        filters.append(PracticeSession.generated_at >= generated_from)
+    if generated_to:
+        filters.append(PracticeSession.generated_at <= generated_to)
+    total = db.scalar(
+        select(func.count()).select_from(PracticeSession).where(and_(*filters))
+    ) or 0
+    sessions = db.scalars(
+        select(PracticeSession)
+        .where(and_(*filters))
+        .order_by(desc(PracticeSession.generated_at), desc(PracticeSession.id))
+        .offset((page - 1) * size)
+        .limit(size)
+    ).all()
+    return envelope(
+        request,
+        [session_data(db, item, include_items=False) for item in sessions],
+        meta={"page": page, "size": size, "total": total},
+    )
+
+
+def _session(db: Session, session_id: int) -> PracticeSession:
+    session = db.get(PracticeSession, session_id)
+    if session is None:
+        raise not_found("practice session")
+    return session
+
+
+@router.get("/practice-sessions/{session_id}")
+def get_session(
+    request: Request,
+    session_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+):
+    return envelope(request, session_data(db, _session(db, session_id), include_items=True))
+
+
+@router.post("/practice-sessions/{session_id}/printed")
+def printed(
+    request: Request,
+    session_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("practice:write"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/practice-sessions/{session_id}/printed",
+        key=idempotency_key,
+        payload={"session_id": session_id},
+        required=actor.actor_type == "api_client",
+    )
+    if idem and idem.replayed:
+        return _idem_response(request, idem)
+    session = _session(db, session_id)
+    if session.printed_at is None:
+        session.printed_at = utc_text()
+        session.version += 1
+    data = session_data(db, session, include_items=False)
+    complete(idem, data=data, status_code=200, resource_type="practice_session", resource_id=session.id)
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="practice.printed",
+        outcome="success",
+        http_status=200,
+        target_type="practice_session",
+        target_id=session.id,
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
+@router.post("/practice-sessions/{session_id}/archive")
+def archive(
+    request: Request,
+    session_id: int,
+    payload: VersionRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("practice:write"))],
+):
+    session = _session(db, session_id)
+    if session.version != payload.expected_version:
+        raise AppError(
+            409,
+            "VERSION_CONFLICT",
+            "session was modified",
+            [{"current_version": session.version}],
+        )
+    if session.status != "archived":
+        session.status = "archived"
+        session.archived_at = utc_text()
+        session.version += 1
+    data = session_data(db, session, include_items=False)
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="practice.archive",
+        outcome="success",
+        http_status=200,
+        target_type="practice_session",
+        target_id=session.id,
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
+@router.post("/practice-sessions/{session_id}/review-rounds")
+def create_round(
+    request: Request,
+    session_id: int,
+    payload: RoundCreate,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("reviews:write", "practice:read"))],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+):
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/practice-sessions/{session_id}/review-rounds",
+        key=idempotency_key,
+        payload={"session_id": session_id, **payload.model_dump(mode="json")},
+        required=True,
+    )
+    if idem and idem.replayed:
+        return _idem_response(request, idem)
+    session = _session(db, session_id)
+    if session.status != "active":
+        raise AppError(409, "INVALID_STATE", "session is archived")
+    item_count = db.scalar(
+        select(func.count())
+        .select_from(PracticeSessionItem)
+        .where(PracticeSessionItem.session_id == session.id)
+    ) or 0
+    if item_count == 0:
+        raise AppError(409, "INVALID_STATE", "empty session cannot create a round")
+    now = utc_text()
+    round_ = PracticeReviewRound(
+        session_id=session.id,
+        mode=payload.mode,
+        created_by_actor_type=actor.actor_type,
+        created_by_actor_id=actor.actor_id,
+        started_at=utc_text(payload.started_at) if payload.started_at else now,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(round_)
+    db.flush()
+    data = round_data(db, round_)
+    complete(idem, data=data, status_code=201, resource_type="practice_review_round", resource_id=round_.id)
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="review_round.create",
+        outcome="success",
+        http_status=201,
+        target_type="practice_review_round",
+        target_id=round_.id,
+    )
+    _commit(db)
+    return envelope(request, data, status_code=201)
+
+
+@router.get("/practice-review-rounds/{round_id}")
+def get_round(
+    request: Request,
+    round_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+):
+    round_ = db.get(PracticeReviewRound, round_id)
+    if round_ is None:
+        raise not_found("practice review round")
+    return envelope(request, round_data(db, round_))
+
+
+@router.put("/practice-review-rounds/{round_id}/items/{item_id}/result")
+def put_result(
+    request: Request,
+    round_id: int,
+    item_id: int,
+    payload: RoundResult,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("reviews:write"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    idem = claim(
+        db,
+        actor=actor,
+        method="PUT",
+        route_template="/api/v1/practice-review-rounds/{round_id}/items/{item_id}/result",
+        key=idempotency_key,
+        payload={"round_id": round_id, "item_id": item_id, **payload.model_dump(mode="json")},
+        required=actor.actor_type == "api_client",
+    )
+    if idem and idem.replayed:
+        return _idem_response(request, idem)
+    log, stats, created = put_round_result(db, round_id, item_id, payload, actor)
+    data = review_data(log, stats)
+    status_code = 201 if created else 200
+    complete(idem, data=data, status_code=status_code, resource_type="review_log", resource_id=log.id)
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="review.create" if created else "review.correct",
+        outcome="success",
+        http_status=status_code,
+        target_type="review_log",
+        target_id=log.id,
+    )
+    _commit(db)
+    return envelope(request, data, status_code=status_code)
+
+
+@router.put("/practice-review-rounds/{round_id}/results")
+def put_results(
+    request: Request,
+    round_id: int,
+    payload: BatchResults,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("reviews:write"))],
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
+):
+    if len(payload.items) > get_settings().max_batch_results:
+        raise AppError(422, "VALIDATION_ERROR", "batch result limit exceeded")
+    idem = claim(
+        db,
+        actor=actor,
+        method="PUT",
+        route_template="/api/v1/practice-review-rounds/{round_id}/results",
+        key=idempotency_key,
+        payload={"round_id": round_id, **payload.model_dump(mode="json")},
+        required=True,
+    )
+    if idem and idem.replayed:
+        return _idem_response(request, idem)
+    results = batch_round_results(db, round_id, payload.items, actor)
+    round_ = db.get(PracticeReviewRound, round_id)
+    data = {
+        "round": round_data(db, round_),
+        "items": [
+            review_data(log, stats)
+            for log, stats, _created in results
+        ],
+    }
+    complete(idem, data=data, status_code=200, resource_type="practice_review_round", resource_id=round_id)
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="review.batch_write",
+        outcome="success",
+        http_status=200,
+        target_type="practice_review_round",
+        target_id=round_id,
+        metadata={"item_count": len(payload.items)},
+    )
+    _commit(db)
+    return envelope(request, data)
