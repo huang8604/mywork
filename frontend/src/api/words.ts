@@ -1,12 +1,13 @@
 import type { AxiosRequestConfig } from 'axios'
 import { apiClient, newEventId, unwrap } from './client'
-import type { ApiEnvelope, ImportSummary, Word, WordFilters, WordPayload, WordUpdatePayload } from '@/types/domain'
+import type { ApiEnvelope, EnrichedWord, ImportSummary, Word, WordFilters, WordPayload, WordUpdatePayload } from '@/types/domain'
 
 export async function listWords(filters: WordFilters = {}, signal?: AbortSignal) {
   const response = await apiClient.get<ApiEnvelope<Word[]>>('/words', { params: filters, signal, paramsSerializer: { indexes: null } })
   return { data: response.data.data, meta: response.data.meta, requestId: response.data.request_id }
 }
 export async function getWord(id: number, signal?: AbortSignal) { return unwrap((await apiClient.get<ApiEnvelope<Word>>(`/words/${id}`, { signal })).data) }
+export async function enrichWords(words: string[]) { return unwrap((await apiClient.post<ApiEnvelope<EnrichedWord[]>>('/words/enrich', { words })).data) }
 export async function createWord(payload: WordPayload) { return unwrap((await apiClient.post<ApiEnvelope<Word>>('/words', payload, { headers: { 'Idempotency-Key': newEventId() } })).data) }
 export async function updateWord(id: number, payload: WordUpdatePayload) { return unwrap((await apiClient.put<ApiEnvelope<Word>>(`/words/${id}`, payload)).data) }
 export async function deleteWord(word: Word) { await apiClient.delete(`/words/${word.id}`, { headers: { 'If-Match': String(word.version) } }) }

@@ -51,7 +51,7 @@ export interface StatsSummary {
 
 export interface StrategyRequest {
   new_words_limit: number; error_words_limit: number; due_words_limit: number
-  custom_words_limit: number; fallback_unreviewed_days: number; seed?: number
+  custom_words_limit: number; fallback_unreviewed_days: number; seed?: number; word_ids: number[]
 }
 export interface SessionWord { en_word: string; phonetic: string | null; cn_meaning: string; example_sentence: string | null }
 export interface PracticeItem {
@@ -70,7 +70,10 @@ export interface PracticeSession {
   completed_at: string | null; archived_at: string | null; items?: PracticeItem[]; rounds?: PracticeRound[]
   web_url?: string; print_url?: string
 }
-export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; total: number; dry_run: boolean }
+export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; total: number; dry_run: boolean; dictionary_matches?: number }
+export interface EnrichedWord extends WordPayload {
+  dictionary_found: boolean; source: 'dictionary-index' | null; missing_fields: string[]
+}
 export interface BatchRoundResult {
   item_id: number; status: ReviewStatus; client_event_id: string
   expected_version?: number; duration_ms?: number; reviewed_at?: string

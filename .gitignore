@@ -12,3 +12,5 @@ frontend/playwright-report/
 *.db
 *.db-shm
 *.db-wal
+# Local dictionary data is ignored until its source and redistribution license are recorded.
+dictionary-index.json

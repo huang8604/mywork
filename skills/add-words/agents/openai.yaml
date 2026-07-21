@@ -1,0 +1,4 @@
+interface:
+  display_name: "添加单词"
+  short_description: "安全添加英文单词并自动补齐音标、中文释义和例句"
+  default_prompt: "Use $add-words to add these English words to my word memory system."

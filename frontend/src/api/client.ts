@@ -1,5 +1,6 @@
 import axios, { AxiosError } from 'axios'
 import type { ApiEnvelope, ApiErrorBody } from '@/types/domain'
+import { debugLog } from '@/utils/debugLog'
 
 const errorMessages: Record<number, string> = {
   400: '请求内容不正确', 401: '登录状态已失效，请重新登录', 403: '当前账号没有操作权限',
@@ -22,9 +23,32 @@ export class ApiError extends Error {
 
 export const apiClient = axios.create({ baseURL: '/api/v1', timeout: 15_000 })
 
+apiClient.interceptors.request.use((config) => {
+  debugLog('api.request', { method: config.method?.toUpperCase(), url: config.url })
+  return config
+})
+
 apiClient.interceptors.response.use(
-  (response) => response,
-  (error: AxiosError<ApiErrorBody>) => Promise.reject(normalizeApiError(error)),
+  (response) => {
+    debugLog('api.response', {
+      method: response.config.method?.toUpperCase(),
+      url: response.config.url,
+      status: response.status,
+      requestId: response.headers['x-request-id'] || response.data?.request_id,
+    })
+    return response
+  },
+  (error: AxiosError<ApiErrorBody>) => {
+    const normalized = normalizeApiError(error)
+    debugLog('api.error', {
+      method: error.config?.method?.toUpperCase(),
+      url: error.config?.url,
+      status: normalized.status,
+      code: normalized.code,
+      requestId: normalized.requestId,
+    })
+    return Promise.reject(normalized)
+  },
 )
 
 export function normalizeApiError(error: unknown): ApiError {
@@ -43,4 +67,18 @@ export function normalizeApiError(error: unknown): ApiError {
 
 export function unwrap<T>(value: ApiEnvelope<T>): T { return value.data }
 export function requestId(value: ApiEnvelope<unknown>): string { return value.request_id }
-export function newEventId(): string { return crypto.randomUUID() }
+export function newEventId(): string {
+  const webCrypto = globalThis.crypto
+  if (typeof webCrypto?.randomUUID === 'function') return webCrypto.randomUUID()
+
+  const bytes = new Uint8Array(16)
+  if (typeof webCrypto?.getRandomValues === 'function') {
+    webCrypto.getRandomValues(bytes)
+  } else {
+    for (let index = 0; index < bytes.length; index += 1) bytes[index] = Math.floor(Math.random() * 256)
+  }
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = Array.from(bytes, byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}

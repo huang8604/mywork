@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import io
 import json
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
@@ -18,7 +19,8 @@ from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.responses import envelope
 from app.models import Word
-from app.schemas import VersionRequest, WordCreate, WordUpdate
+from app.schemas import VersionRequest, WordCreate, WordEnrichRequest, WordUpdate
+from app.services.dictionary import enrich_preview, enrich_word
 from app.services.idempotency import claim, complete
 from app.services.serializers import word_data
 from app.services.words import (
@@ -33,6 +35,7 @@ from app.services.words import (
 )
 
 router = APIRouter(prefix="/api/v1/words", tags=["words"])
+logger = logging.getLogger("word_memory.words")
 
 
 def _request_id(request: Request) -> str:
@@ -79,6 +82,7 @@ def create(
             status_code=idem.replay_status or 201,
             headers={"Idempotency-Replayed": "true"},
         )
+    payload, dictionary_found = enrich_word(payload)
     word = create_word(db, payload)
     data = word_data(db, word)
     complete(idem, data=data, status_code=201, resource_type="word", resource_id=word.id)
@@ -91,9 +95,19 @@ def create(
         http_status=201,
         target_type="word",
         target_id=word.id,
+        metadata={"dictionary_found": dictionary_found},
     )
     _commit(db)
     return envelope(request, data, status_code=201)
+
+
+@router.post("/enrich")
+def enrich(
+    request: Request,
+    payload: WordEnrichRequest,
+    _actor: Annotated[Actor, Depends(require_scopes("words:write"))],
+):
+    return envelope(request, [enrich_preview(word) for word in payload.words])
 
 
 @router.get("")
@@ -253,11 +267,38 @@ async def import_words(
     payloads = _parse_import(file.filename or "", file.content_type or "", raw)
     if len(payloads) > get_settings().max_import_rows:
         raise AppError(413, "PAYLOAD_TOO_LARGE", "import has too many rows")
+    enriched_payloads: list[WordCreate] = []
+    dictionary_matches = 0
+    unresolved_details: list[dict[str, object]] = []
+    for row_number, payload in enumerate(payloads, 1):
+        try:
+            enriched, found = enrich_word(payload)
+            enriched_payloads.append(enriched)
+            dictionary_matches += int(found)
+        except AppError as exc:
+            if exc.code != "DICTIONARY_ENTRY_NOT_FOUND":
+                raise
+            unresolved_details.append(
+                {
+                    "path": ["file", row_number, "en_word"],
+                    "reason": "dictionary entry not found; provide cn_meaning manually",
+                    "value": payload.en_word,
+                }
+            )
+    if unresolved_details:
+        raise AppError(
+            422,
+            "DICTIONARY_ENTRY_NOT_FOUND",
+            "some words could not be enriched",
+            unresolved_details,
+        )
+    payloads = enriched_payloads
     _begin_import_transaction(db)
     idem_payload = {
         "sha256": __import__("hashlib").sha256(raw).hexdigest(),
         "conflict_policy": conflict_policy,
         "dry_run": dry_run,
+        "dictionary_matches": dictionary_matches,
     }
     idem = claim(
         db,
@@ -282,6 +323,12 @@ async def import_words(
     for row_number, payload in enumerate(payloads, 1):
         _, normalized = normalize_word(payload.en_word)
         if normalized in seen:
+            # "skip" honors its name: dedupe within the file (first occurrence wins,
+            # repeats counted as skipped). reject/update still treat an in-file
+            # duplicate as a conflict and abort the whole batch atomically.
+            if conflict_policy == "skip":
+                skipped += 1
+                continue
             raise AppError(
                 422,
                 "VALIDATION_ERROR",
@@ -316,6 +363,7 @@ async def import_words(
         "rejected": 0,
         "total": len(payloads),
         "dry_run": dry_run,
+        "dictionary_matches": dictionary_matches,
     }
     complete(idem, data=data, status_code=200, resource_type="word_import")
     add_audit(
@@ -325,7 +373,27 @@ async def import_words(
         action="word.import",
         outcome="success",
         http_status=200,
-        metadata={key: data[key] for key in ("created", "updated", "skipped", "total", "dry_run")},
+        metadata={
+            key: data[key]
+            for key in (
+                "created",
+                "updated",
+                "skipped",
+                "total",
+                "dry_run",
+                "dictionary_matches",
+            )
+        },
+    )
+    logger.info(
+        "word_import request_id=%s total=%s created=%s updated=%s skipped=%s dictionary_matches=%s dry_run=%s",
+        _request_id(request),
+        data["total"],
+        data["created"],
+        data["updated"],
+        data["skipped"],
+        data["dictionary_matches"],
+        data["dry_run"],
     )
     _commit(db)
     return envelope(request, data)
@@ -340,8 +408,15 @@ def _parse_import(filename: str, content_type: str, raw: bytes) -> list[WordCrea
     try:
         if filename.lower().endswith(".json") or content_type == "application/json":
             return adapter.validate_python(json.loads(text))
+        if filename.lower().endswith(".txt") or content_type.startswith("text/plain"):
+            rows = [
+                {"en_word": value.strip()}
+                for value in text.splitlines()
+                if value.strip() and not value.lstrip().startswith("#")
+            ]
+            return adapter.validate_python(rows)
         if not filename.lower().endswith(".csv") and "csv" not in content_type:
-            raise AppError(415, "UNSUPPORTED_MEDIA_TYPE", "only CSV and JSON are supported")
+            raise AppError(415, "UNSUPPORTED_MEDIA_TYPE", "only TXT, CSV and JSON are supported")
         reader = csv.DictReader(io.StringIO(text))
         required = {
             "en_word",

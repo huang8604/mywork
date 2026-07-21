@@ -45,7 +45,7 @@ def test_strategy_boundaries_empty_candidates_limit_and_seed_reproducibility(cli
     for index in range(6):
         create_word(
             client,
-            {"en_word": f"seed-word-{index}", "cn_meaning": f"释义 {index}", "tags": []},
+            {"en_word": f"seed-word-{chr(97 + index)}", "cn_meaning": f"释义 {index}", "tags": []},
         )
     payload = {
         "new_words_limit": 4,
@@ -69,6 +69,48 @@ def test_strategy_boundaries_empty_candidates_limit_and_seed_reproducibility(cli
     assert [item["word_id"] for item in first.json()["data"]["items"]] == [
         item["word_id"] for item in second.json()["data"]["items"]
     ]
+
+
+def test_custom_selection_generates_exact_words_in_requested_order(client):
+    first = create_word(client, {"en_word": "first", "cn_meaning": "第一", "tags": []})
+    second = create_word(client, {"en_word": "second", "cn_meaning": "第二", "tags": []})
+    third = create_word(client, {"en_word": "third", "cn_meaning": "第三", "tags": []})
+    response = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "generate-custom-selection"},
+        json={
+            "new_words_limit": 0,
+            "error_words_limit": 0,
+            "due_words_limit": 0,
+            "custom_words_limit": 0,
+            "fallback_unreviewed_days": 3,
+            "word_ids": [third["id"], first["id"]],
+        },
+    )
+    assert response.status_code == 201, response.text
+    data = response.json()["data"]
+    assert [item["word_id"] for item in data["items"]] == [third["id"], first["id"]]
+    assert [item["source_categories"] for item in data["items"]] == [
+        ["selected"],
+        ["selected"],
+    ]
+    assert data["requested_counts"] == {"selected": 2}
+    assert data["actual_counts"] == {"unique_total": 2, "selected": 2}
+    assert second["id"] not in [item["word_id"] for item in data["items"]]
+
+    missing = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "generate-custom-missing"},
+        json={
+            "new_words_limit": 0,
+            "error_words_limit": 0,
+            "due_words_limit": 0,
+            "custom_words_limit": 0,
+            "fallback_unreviewed_days": 3,
+            "word_ids": [999999],
+        },
+    )
+    assert missing.status_code == 422
 
 
 def test_generate_round_batch_correction_and_replay(client, db_session):

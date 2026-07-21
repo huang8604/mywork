@@ -37,6 +37,8 @@ def create_word(db: Session, payload: WordCreate) -> Word:
     duplicate = db.scalar(select(Word).where(Word.normalized_en_word == normalized))
     if duplicate is not None:
         raise _duplicate_error(duplicate)
+    if not payload.cn_meaning:
+        raise AppError(422, "VALIDATION_ERROR", "cn_meaning is required after enrichment")
     now = utc_text()
     word = Word(
         en_word=display,

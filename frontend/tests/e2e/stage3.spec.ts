@@ -18,6 +18,7 @@ async function installApi(page: Page) {
     if (path === '/api/v1/reviews' && method === 'GET') return route.fulfill({ json: envelope([{ id: 9, word_id: 1, session_item_id: 11, review_round_id: 3, status: 'known', source: 'online_practice', actor_type: 'web_user', actor_id: 'local', client_event_id: 'event-9', duration_ms: null, reviewed_at: '2026-07-20T02:00:00Z', version: 1, created_at: '2026-07-20T02:00:00Z', updated_at: '2026-07-20T02:00:00Z' }], { page: 1, size: 20, total: 1 }) })
     if (path === '/api/v1/reviews/9' && method === 'PATCH') return route.fulfill({ json: envelope({ id: 9, word_id: 1, status: JSON.parse(request.postData() || '{}').status, source: 'online_practice', actor_type: 'web_user', client_event_id: 'event-9', reviewed_at: '2026-07-20T02:00:00Z', duration_ms: null, version: 2, created_at: '2026-07-20T02:00:00Z', updated_at: '2026-07-20T02:10:00Z', session_item_id: 11, review_round_id: 3, actor_id: 'local' }) })
     if (path === '/api/v1/words/import') return route.fulfill({ json: envelope({ created: 1, updated: 0, skipped: 0, rejected: 0, total: 1, dry_run: false }) })
+    if (path === '/api/v1/words/enrich' && method === 'POST') { const enWord = JSON.parse(request.postData() || '{}').words[0]; return route.fulfill({ json: envelope([{ en_word: enWord, phonetic: '/rɪˈzɪliənt/', cn_meaning: '有韧性的', example_sentence: 'She remained resilient.', is_custom: false, tags: [], dictionary_found: true, source: 'dictionary-index', missing_fields: [] }]) }) }
     if (path === '/api/v1/words/export') return route.fulfill({ body: 'en_word,cn_meaning\nserendipity,意外发现', headers: { 'content-type': 'text/csv', 'content-disposition': 'attachment; filename="words.csv"' } })
     if (path === '/api/v1/words' && method === 'GET') return route.fulfill({ json: envelope(words, { page: 1, size: Number(url.searchParams.get('size') || 20), total: words.length }) })
     if (path === '/api/v1/words' && method === 'POST') { const body = JSON.parse(request.postData() || '{}'); const created = { ...word, ...body, id: 2 }; words.push(created); return route.fulfill({ status: 201, json: envelope(created) }) }
@@ -44,11 +45,11 @@ test('keyboard focus and navigation targets meet accessibility basics', async ({
   await page.goto('/review'); await page.getByRole('button', { name: '开始在线复习' }).click(); await page.keyboard.press('Space'); await expect(page.locator('.answer')).toBeFocused(); await page.keyboard.press('1'); await expect(page.locator('.status-live')).toBeFocused(); await expect(page.locator('.status-live')).toContainText('已保存：认识')
 })
 
-test('word CRUD form and atomic import summary remain usable', async ({ page }) => {
+test('word CRUD autofill and English-only import remain usable', async ({ page }) => {
   const visibleWord = (text: string) => page.locator('.mobile-word-cards:visible h3, .desktop-word-table:visible .table-word').filter({ hasText: text })
   await page.goto('/words'); await expect(visibleWord('serendipity')).toBeVisible()
-  await page.getByRole('button', { name: '新增单词' }).first().click(); await page.getByLabel('英文', { exact: true }).fill('resilient'); await page.getByLabel('中文释义', { exact: true }).fill('有韧性的'); await page.getByRole('button', { name: '保存' }).click(); await expect(visibleWord('resilient')).toBeVisible()
-  await page.getByRole('button', { name: '导入 / 导出' }).click(); await page.locator('input[type=file]').setInputFiles({ name: 'words.csv', mimeType: 'text/csv', buffer: Buffer.from('en_word,cn_meaning\nfocus,专注') }); await page.getByRole('button', { name: '开始导入' }).click(); await expect(page.getByText('总计')).toBeVisible()
+  await page.getByRole('button', { name: '新增单词' }).first().click(); await page.getByLabel('英文', { exact: true }).fill('resilient'); await page.getByRole('button', { name: '自动补全' }).click(); await expect(page.getByLabel('中文释义', { exact: true })).toHaveValue('有韧性的'); await page.getByRole('button', { name: '保存' }).click(); await expect(visibleWord('resilient')).toBeVisible()
+  await page.getByRole('button', { name: '导入 / 导出' }).click(); await page.getByLabel('英文单词列表').fill('focus\ncamera'); await page.getByRole('button', { name: '开始导入' }).click(); await expect(page.getByText('词典命中')).toBeVisible()
 })
 
 test('online review records three-state result and history permits correction', async ({ page }) => {

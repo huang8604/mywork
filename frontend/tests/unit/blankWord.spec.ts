@@ -24,7 +24,7 @@ describe('blankWord', () => {
 
   it('renders malicious-looking snapshots as text and keeps answer numbering aligned', () => {
     const session = {
-      session_id: 7, status: 'active', strategy_version: 'v1', seed: 1, strategy_params: { new_words_limit: 1, error_words_limit: 0, due_words_limit: 0, custom_words_limit: 0, fallback_unreviewed_days: 3 }, requested_counts: {}, actual_counts: {},
+      session_id: 7, status: 'active', strategy_version: 'v1', seed: 1, strategy_params: { new_words_limit: 1, error_words_limit: 0, due_words_limit: 0, custom_words_limit: 0, fallback_unreviewed_days: 3, word_ids: [] }, requested_counts: {}, actual_counts: {},
       created_by_actor_type: 'web_user', created_by_actor_id: null, skill_name: null, skill_version: null, version: 1,
       generated_at: '2026-07-20T00:00:00Z', printed_at: null, completed_at: null, archived_at: null,
       items: [{ item_id: 1, position: 1, word_id: 1, word: { en_word: '<img src=x onerror=alert(1)>', phonetic: null, cn_meaning: '<script>bad()</script>', example_sentence: 'safe text' }, source_categories: ['new'], reason: 'new', latest_review_log_id: null }], rounds: [],

@@ -76,10 +76,10 @@ async def request_context(request: Request, call_next):
     response = await call_next(request)
     latency_ms = max(0, int((time.perf_counter() - started) * 1000))
     logging.getLogger("word_memory.request").info(
-        "request_id=%s method=%s path=%s status=%s latency_ms=%s actor_type=%s",
+        "request_id=%s method=%s route=%s status=%s latency_ms=%s actor_type=%s",
         request_id,
         request.method,
-        request.url.path,
+        getattr(request.scope.get("route"), "path", request.url.path),
         response.status_code,
         latency_ms,
         getattr(getattr(request.state, "actor", None), "actor_type", "anonymous"),
@@ -232,6 +232,7 @@ app.include_router(practice_router)
 
 REQUIRED_SCOPES: dict[tuple[str, str], list[str]] = {
     ("POST", "/api/v1/words"): ["words:write"],
+    ("POST", "/api/v1/words/enrich"): ["words:write"],
     ("GET", "/api/v1/words"): ["words:read"],
     ("GET", "/api/v1/words/export"): ["words:export"],
     ("POST", "/api/v1/words/import"): ["words:write"],

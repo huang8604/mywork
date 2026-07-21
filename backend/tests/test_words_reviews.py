@@ -6,6 +6,8 @@ import json
 from sqlalchemy import text
 
 from app.api.words import _decode_safe_csv, _safe_csv
+from app.core.config import get_settings
+from app.services.dictionary import clear_dictionary_cache
 from conftest import create_word
 
 
@@ -47,6 +49,18 @@ def test_word_crud_soft_delete_restore_and_global_uniqueness(client, word_payloa
     )
     assert restored.status_code == 200
     assert restored.json()["data"]["deleted_at"] is None
+
+
+def test_word_create_and_txt_import_reject_non_english_values(client):
+    direct = client.post("/api/v1/words", json={"en_word": "中文", "cn_meaning": "错误"})
+    assert direct.status_code == 422
+    imported = client.post(
+        "/api/v1/words/import",
+        files={"file": ("words.txt", "valid\n中文\n".encode(), "text/plain")},
+        data={"conflict_policy": "reject"},
+    )
+    assert imported.status_code == 422
+    assert client.get("/api/v1/words?keyword=valid").json()["data"] == []
 
 
 def test_quick_reviews_are_idempotent_and_correction_rebuilds_stats(client):
@@ -96,7 +110,7 @@ def test_quick_reviews_are_idempotent_and_correction_rebuilds_stats(client):
 def test_atomic_import_and_safe_csv_export(client):
     raw = (
         "en_word,phonetic,cn_meaning,example_sentence,is_custom,tags\n"
-        "=formula,,公式词,,false,basic\n"
+        "formula,,公式词,,false,basic\n"
         "horse,,马,,true,animal\n"
     ).encode()
     response = client.post(
@@ -109,7 +123,7 @@ def test_atomic_import_and_safe_csv_export(client):
     exported = client.get("/api/v1/words/export?format=csv")
     assert exported.status_code == 200
     assert exported.content.startswith(b"\xef\xbb\xbf")
-    assert "'=formula" in exported.text
+    assert "formula" in exported.text
     json_export = client.get("/api/v1/words/export?format=json&tag=animal")
     assert json_export.status_code == 200
     json_words = json.loads(json_export.content)
@@ -129,6 +143,106 @@ def test_atomic_import_and_safe_csv_export(client):
     assert invalid.status_code == 422
     words = client.get("/api/v1/words?keyword=valid").json()["data"]
     assert words == []
+
+
+def test_import_skip_policy_dedupes_in_file_duplicates(client):
+    rows = [
+        {"en_word": "warm", "cn_meaning": "暖", "is_custom": False, "tags": []},
+        {"en_word": "warm", "cn_meaning": "暖", "is_custom": False, "tags": []},
+    ]
+    skipped_resp = client.post(
+        "/api/v1/words/import",
+        files={"file": ("words.json", json.dumps(rows).encode(), "application/json")},
+        data={"conflict_policy": "skip"},
+    )
+    assert skipped_resp.status_code == 200, skipped_resp.text
+    summary = skipped_resp.json()["data"]
+    assert (summary["created"], summary["skipped"], summary["total"]) == (1, 1, 2)
+
+    rejected = client.post(
+        "/api/v1/words/import",
+        files={
+            "file": (
+                "words.json",
+                json.dumps(
+                    [
+                        {"en_word": "hot", "cn_meaning": "热", "is_custom": False, "tags": []},
+                        {"en_word": "hot", "cn_meaning": "热", "is_custom": False, "tags": []},
+                    ]
+                ).encode(),
+                "application/json",
+            )
+        },
+        data={"conflict_policy": "reject"},
+    )
+    assert rejected.status_code == 422
+    assert rejected.json()["message"] == "duplicate word inside import file"
+
+
+def test_english_only_create_preview_and_txt_import_use_local_dictionary(
+    client, tmp_path, monkeypatch
+):
+    dictionary = tmp_path / "dictionary-index.json"
+    dictionary.write_text(
+        json.dumps(
+            {
+                "abandon": {
+                    "w": "abandon",
+                    "p0": "əˈbændən",
+                    "p1": "",
+                    "t": [{"pos": "v.", "cn": "放弃；抛弃"}],
+                    "s": [{"c": "Never abandon hope.", "cn": "永远不要放弃希望。"}],
+                },
+                "camera": {
+                    "w": "camera",
+                    "p0": "ˈkæmərə",
+                    "p1": "",
+                    "t": [{"pos": "n.", "cn": "照相机"}],
+                    "s": [{"c": "She bought a camera.", "cn": "她买了一台相机。"}],
+                },
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("DICTIONARY_INDEX_PATH", str(dictionary))
+    get_settings.cache_clear()
+    clear_dictionary_cache()
+    try:
+        preview = client.post("/api/v1/words/enrich", json={"words": ["Abandon"]})
+        assert preview.status_code == 200, preview.text
+        assert preview.json()["data"][0] == {
+            "en_word": "Abandon",
+            "phonetic": "əˈbændən",
+            "cn_meaning": "v. 放弃；抛弃",
+            "example_sentence": "Never abandon hope.",
+            "is_custom": False,
+            "tags": [],
+            "dictionary_found": True,
+            "source": "dictionary-index",
+            "missing_fields": [],
+        }
+
+        created = client.post("/api/v1/words", json={"en_word": "abandon"})
+        assert created.status_code == 201, created.text
+        assert created.json()["data"]["cn_meaning"] == "v. 放弃；抛弃"
+
+        imported = client.post(
+            "/api/v1/words/import",
+            files={"file": ("words.txt", b"camera\n", "text/plain")},
+            data={"conflict_policy": "reject", "dry_run": "false"},
+        )
+        assert imported.status_code == 200, imported.text
+        assert imported.json()["data"]["dictionary_matches"] == 1
+        camera = client.get("/api/v1/words?keyword=camera").json()["data"][0]
+        assert camera["example_sentence"] == "She bought a camera."
+
+        unresolved = client.post("/api/v1/words", json={"en_word": "not-in-dictionary"})
+        assert unresolved.status_code == 422
+        assert unresolved.json()["code"] == "DICTIONARY_ENTRY_NOT_FOUND"
+    finally:
+        get_settings.cache_clear()
+        clear_dictionary_cache()
 
 
 def test_csv_formula_protection_is_reversible():

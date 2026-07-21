@@ -37,6 +37,7 @@ class Settings:
     max_practice_words: int
     max_batch_results: int
     log_level: str
+    dictionary_index_path: str
     frontend_dist: str
 
     @classmethod
@@ -58,6 +59,10 @@ class Settings:
             max_practice_words=int(os.getenv("MAX_PRACTICE_WORDS", "200")),
             max_batch_results=int(os.getenv("MAX_BATCH_RESULTS", "200")),
             log_level=os.getenv("LOG_LEVEL", "INFO").upper(),
+            dictionary_index_path=os.getenv(
+                "DICTIONARY_INDEX_PATH",
+                str(Path(__file__).resolve().parents[3] / "dictionary-index.json"),
+            ),
             frontend_dist=os.getenv(
                 "FRONTEND_DIST",
                 str(Path(__file__).resolve().parents[3] / "frontend" / "dist"),

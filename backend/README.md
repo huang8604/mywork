@@ -17,3 +17,10 @@ false; enable it only for loopback-only local development. `FRONTEND_DIST` may
 override the Vue production build directory; it defaults to `frontend/dist` at
 the repository root. Existing API and health routes are never handled by the
 SPA deep-link fallback.
+
+English-only create/import uses `DICTIONARY_INDEX_PATH`, which defaults to
+`dictionary-index.json` at the repository root. The file is intentionally not
+tracked until its source and redistribution license are documented. Set
+`LOG_LEVEL=DEBUG` during diagnosis to include dictionary misses, import counts,
+route templates, latency, actor type and request IDs; tokens and request bodies
+are never logged.

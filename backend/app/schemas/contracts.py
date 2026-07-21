@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from typing import Annotated, Literal
 
@@ -15,16 +16,61 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-NonEmpty200 = Annotated[str, Field(min_length=1, max_length=200)]
+_ENGLISH_WORD = re.compile(r"^[A-Za-z][A-Za-z '\-]*$")
+NonEmpty200 = Annotated[
+    str,
+    Field(min_length=1, max_length=200, pattern=r"^\s*[A-Za-z][A-Za-z '\-]*\s*$"),
+]
+
+
+def _validate_english_word(value: str) -> str:
+    if not _ENGLISH_WORD.fullmatch(value.strip()):
+        raise ValueError("must use English letters, spaces, apostrophes or hyphens")
+    return value
 
 
 class WordCreate(StrictModel):
     en_word: NonEmpty200
     phonetic: str | None = Field(default=None, max_length=200)
-    cn_meaning: str = Field(min_length=1, max_length=2000)
+    cn_meaning: str | None = Field(default=None, max_length=2000)
     example_sentence: str | None = Field(default=None, max_length=5000)
     is_custom: bool = False
     tags: list[str] = Field(default_factory=list, max_length=20)
+
+    @field_validator("en_word")
+    @classmethod
+    def english_word_only(cls, value: str) -> str:
+        return _validate_english_word(value)
+
+    @field_validator("phonetic", "cn_meaning", "example_sentence")
+    @classmethod
+    def empty_to_none(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        stripped = value.strip()
+        return stripped or None
+
+    @field_validator("tags")
+    @classmethod
+    def unique_tags(cls, values: list[str]) -> list[str]:
+        if len({value.casefold().strip() for value in values}) != len(values):
+            raise ValueError("tags must be unique after normalization")
+        return values
+
+
+class WordUpdate(StrictModel):
+    en_word: NonEmpty200
+    phonetic: str | None = Field(default=None, max_length=200)
+    cn_meaning: str = Field(min_length=1, max_length=2000)
+    example_sentence: str | None = Field(default=None, max_length=5000)
+    is_custom: bool
+    tags: list[str] = Field(max_length=20)
+    expected_version: int = Field(gt=0)
+
+    @field_validator("en_word")
+    @classmethod
+    def english_word_only(cls, value: str) -> str:
+        return _validate_english_word(value)
 
     @field_validator("phonetic", "example_sentence")
     @classmethod
@@ -42,10 +88,18 @@ class WordCreate(StrictModel):
         return values
 
 
-class WordUpdate(WordCreate):
-    is_custom: bool
-    tags: list[str] = Field(max_length=20)
-    expected_version: int = Field(gt=0)
+class WordEnrichRequest(StrictModel):
+    words: list[NonEmpty200] = Field(min_length=1, max_length=200)
+
+    @field_validator("words")
+    @classmethod
+    def unique_words(cls, values: list[str]) -> list[str]:
+        for value in values:
+            _validate_english_word(value)
+        normalized = [value.casefold().strip() for value in values]
+        if len(normalized) != len(set(normalized)):
+            raise ValueError("words must be unique after normalization")
+        return values
 
 
 class ReviewCreate(StrictModel):
@@ -72,6 +126,16 @@ class StrategyRequest(StrictModel):
     custom_words_limit: int = Field(default=5, ge=0, le=100)
     fallback_unreviewed_days: int = Field(default=3, ge=1, le=365)
     seed: int | None = Field(default=None, ge=0, le=2_147_483_647)
+    word_ids: list[int] = Field(default_factory=list, max_length=200)
+
+    @field_validator("word_ids")
+    @classmethod
+    def unique_word_ids(cls, values: list[int]) -> list[int]:
+        if any(value <= 0 for value in values):
+            raise ValueError("word_ids must contain positive integers")
+        if len(values) != len(set(values)):
+            raise ValueError("word_ids must be unique")
+        return values
 
 
 class RoundCreate(StrictModel):

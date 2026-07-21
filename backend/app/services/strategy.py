@@ -36,7 +36,7 @@ def generate_session(
     db: Session, payload: StrategyRequest, actor: ActorLike, skill: tuple[str, str] | None
 ) -> PracticeSession:
     settings = get_settings()
-    requested_total = (
+    requested_total = len(payload.word_ids) if payload.word_ids else (
         payload.new_words_limit
         + payload.error_words_limit
         + payload.due_words_limit
@@ -100,36 +100,50 @@ def generate_session(
         pools[category].sort(key=lambda word: word.id)
         rng.shuffle(pools[category])
 
-    limits = {
-        "new": payload.new_words_limit,
-        "error": payload.error_words_limit,
-        "due": payload.due_words_limit,
-        "custom": payload.custom_words_limit,
-    }
-    selected: list[Word] = []
-    selected_ids: set[int] = set()
-    contribution_counts = {key: 0 for key in PRIORITY}
-    for category in PRIORITY:
-        for word in pools[category]:
-            if contribution_counts[category] >= limits[category]:
-                break
-            if word.id in selected_ids:
-                continue
-            selected.append(word)
-            selected_ids.add(word.id)
-            contribution_counts[category] += 1
-            if len(selected) >= settings.max_practice_words:
-                break
+    if payload.word_ids:
+        words_by_id = {word.id: word for word in words}
+        missing_ids = [word_id for word_id in payload.word_ids if word_id not in words_by_id]
+        if missing_ids:
+            raise AppError(
+                422,
+                "VALIDATION_ERROR",
+                "custom selection contains missing or deleted words",
+                [{"path": ["body", "word_ids"], "reason": "unavailable word ids", "value": missing_ids}],
+            )
+        selected = [words_by_id[word_id] for word_id in payload.word_ids]
+        requested = {"selected": len(selected)}
+        actual = {"unique_total": len(selected), "selected": len(selected)}
+    else:
+        limits = {
+            "new": payload.new_words_limit,
+            "error": payload.error_words_limit,
+            "due": payload.due_words_limit,
+            "custom": payload.custom_words_limit,
+        }
+        selected = []
+        selected_ids: set[int] = set()
+        contribution_counts = {key: 0 for key in PRIORITY}
+        for category in PRIORITY:
+            for word in pools[category]:
+                if contribution_counts[category] >= limits[category]:
+                    break
+                if word.id in selected_ids:
+                    continue
+                selected.append(word)
+                selected_ids.add(word.id)
+                contribution_counts[category] += 1
+                if len(selected) >= settings.max_practice_words:
+                    break
+        requested = {key: limits[key] for key in ("new", "error", "due", "custom")}
+        actual = {"unique_total": len(selected)}
+        for category in ("new", "error", "due", "custom"):
+            actual[category] = sum(1 for word in selected if category in categories[word.id])
 
     params = payload.model_dump()
     params["seed"] = seed
     params_json = canonical_json(params)
-    requested = {key: limits[key] for key in ("new", "error", "due", "custom")}
-    actual = {"unique_total": len(selected)}
-    for category in ("new", "error", "due", "custom"):
-        actual[category] = sum(1 for word in selected if category in categories[word.id])
     session = PracticeSession(
-        strategy_version="v1",
+        strategy_version="v2",
         strategy_params_json=params_json,
         strategy_hash=hashlib.sha256(params_json.encode("utf-8")).hexdigest(),
         seed=seed,
@@ -144,7 +158,11 @@ def generate_session(
     db.add(session)
     db.flush()
     for position, word in enumerate(selected, 1):
-        word_categories = [key for key in PRIORITY if key in categories[word.id]]
+        word_categories = (
+            ["selected"]
+            if payload.word_ids
+            else [key for key in PRIORITY if key in categories[word.id]]
+        )
         reason = _reason(word, stats_map.get(word.id), word_categories, recent_unknown[word.id])
         db.add(
             PracticeSessionItem(
@@ -173,5 +191,6 @@ def _reason(
         return f"已到期：{stats.due_at or stats.last_effective_reviewed_at}"
     if "custom" in categories:
         return "自定义词"
+    if "selected" in categories:
+        return "用户明确选择"
     return "尚无复习记录的新词"
-
