@@ -88,6 +88,10 @@ jobs:
       - name: Install backend (base, for export_openapi)
         run: pip install -e '.'
       - name: Regenerate OpenAPI
+        # Importing app.main validates Settings, which requires a pepper. OpenAPI
+        # generation never uses it, so a dummy value is fine here.
+        env:
+          API_TOKEN_PEPPER: ci-openapi-export-not-a-real-secret
         run: python scripts/export_openapi.py
       - name: Fail if committed contract drifted from code
         run: git diff --exit-code -- contracts/openapi.yaml
