@@ -18,6 +18,14 @@ override the Vue production build directory; it defaults to `frontend/dist` at
 the repository root. Existing API and health routes are never handled by the
 SPA deep-link fallback.
 
+The production container is built by the repo-root `Dockerfile` (multi-stage,
+non-root UID 10001). Python dependencies are pinned with hashes in
+`requirements.lock` (regenerate with
+`pip-compile --generate-hashes --extra pdf -o requirements.lock pyproject.toml`,
+Python 3.12) and installed with `pip install --require-hashes`. The `[pdf]`
+extra (markdown + weasyprint) is included so the `/recitation` PDF endpoint
+works; the image also installs the matching system libs + CJK fonts via apt.
+
 English-only create/import uses `DICTIONARY_INDEX_PATH`, which defaults to
 `dictionary-index.json` at the repository root. The file is intentionally not
 tracked until its source and redistribution license are documented. Set

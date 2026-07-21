@@ -13,8 +13,8 @@ frontend/playwright-report/
 *.db-shm
 *.db-wal
 # Local secrets (AI keys etc.) — never commit
-.env
-.env.*
+.env*
+!.env.example
 # Local dictionary data is ignored until its source and redistribution license is recorded.
 dictionary-index.json
 dictionary-index.json.full.json

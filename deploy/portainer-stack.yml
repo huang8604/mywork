@@ -1,0 +1,59 @@
+# Portainer / Docker Compose stack for the word-memory assistant.
+#
+# This is a TEMPLATE. Before deploying, replace every REPLACE_ME value and the
+# reverse-proxy CIDR. The image is published by GitHub Actions (see
+# ../.github/workflows/ci.yml) on every push to main as
+#   ghcr.io/huang8604/vocab-app:latest          (rolling, main only)
+#   ghcr.io/huang8604/vocab-app:sha-<commit>    (immutable, for audit/rollback)
+#
+# Release model (phase-5 design §6): the operator CONFIRMS the CI run on the
+# target commit, backs up the DB, then in Portainer manually Pulls latest and
+# Recreates. There is NO Watchtower / webhook / auto-pull — Recreate is a brief
+# restart, not a "zero-downtime" deploy.
+
+services:
+  vocab-app:
+    image: ghcr.io/huang8604/vocab-app:latest
+    container_name: vocab-app
+    restart: unless-stopped
+    ports:
+      # Publish on the host. Put a reverse proxy (HTTPS, auth, rate limit) in
+      # front and firewall 8080 so the public internet cannot bypass it.
+      - "8080:8000"
+    volumes:
+      # Persistent SQLite database + uploads. Host dir MUST be pre-created and
+      # owned by UID/GID 10001 (the non-root user baked into the image).
+      - /share/Container/vocab-app/data:/app/data
+      # Token pepper (>=32 bytes). chmod 0400, owned by 10001.
+      - /share/Container/vocab-app/secrets/api-token-pepper:/run/secrets/api-token-pepper:ro
+      # Optional: mount the dictionary index to re-enable word enrichment in
+      # production (disabled by default; resolves to "not found" otherwise).
+      # - /share/Container/vocab-app/dictionary-index.json:/app/dictionary-index.json:ro
+    environment:
+      DATABASE_URL: sqlite:////app/data/vocab.db
+      APP_TIMEZONE: Asia/Shanghai
+      # REPLACE_ME: your public URL behind the reverse proxy.
+      PUBLIC_BASE_URL: https://words.REPLACE_ME.example.com
+      CORS_ORIGINS: https://words.REPLACE_ME.example.com
+      TRUSTED_HOSTS: words.REPLACE_ME.example.com
+      API_TOKEN_PEPPER_FILE: /run/secrets/api-token-pepper
+      API_RATE_LIMIT_PER_MINUTE: "60"
+      # REPLACE_ME: only the CIDR(s) of the actual reverse proxy. uvicorn honors
+      # --proxy-headers for X-Forwarded-* only from these IPs.
+      FORWARDED_ALLOW_IPS: 172.18.0.0/16
+      # Uncomment + point at the mounted index if you enabled the volume above.
+      # DICTIONARY_INDEX_PATH: /app/dictionary-index.json
+      # Optional AI enrichment (server-side). Leave unset to disable.
+      # AI_BASE_URL: https://api.REPLACE_ME.com
+      # AI_API_KEY_FILE: /run/secrets/ai-api-key
+      # AI_MODEL: gpt-4o-mini
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/live', timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

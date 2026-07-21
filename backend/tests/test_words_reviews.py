@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import json
 
 from sqlalchemy import select, text
@@ -522,7 +521,6 @@ def test_delete_session_removes_reviews_and_rebuilds_stats(client, db_session):
     sid = session["session_id"]
     item_id = session["items"][0]["item_id"]
     word_id = session["items"][0]["word_id"]
-    version = session["version"]
 
     rnd = client.post(
         f"/api/v1/practice-sessions/{sid}/review-rounds",

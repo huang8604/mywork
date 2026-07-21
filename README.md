@@ -1,6 +1,6 @@
 # 单词记忆辅助系统
 
-面向个人 NAS 部署的轻量级单词管理与复习系统。当前仓库已完成**阶段四单词复习表、打印与回录闭环**；生产容器和 NAS 发布将在阶段五实施。
+面向个人 NAS 部署的轻量级单词管理与复习系统。当前仓库已完成**阶段一至阶段五**:四态复习闭环(单词 → 复习表 → 三态记录 → 历史)与生产容器、CI 和 NAS 人工发布。
 
 ## 已冻结的关键决策
 
@@ -11,6 +11,12 @@
 - 复习闭环：主要生成并打印单词复习表，用户在线下复习后回到网页记录每个单词的结果；线上卡片复习作为偶尔使用的辅助方式。
 - 外部 Skill：通过带权限的版本化 REST API 生成单词复习表、创建复习轮次并批量录入“认识 / 不认识 / 跳过”，不允许直接访问数据库。
 - 部署：GitHub Actions 自动测试、构建并推送 GHCR 的 `latest` 与 `sha-*` 镜像；NAS 运维人员手动进入 Portainer 执行 Pull latest 和 Recreate。此人工步骤是明确要求，不计划继续自动化。
+
+## 部署
+
+- **生产镜像**:`Dockerfile`(多阶段,Node 构建 Vue + Python 运行 FastAPI,非 root UID 10001,带 weasyprint/CJK 字体以支持背诵表 PDF)。依赖锁定在 `backend/requirements.lock`(带 hash,`pip install --require-hashes`)。
+- **CI**:`.github/workflows/ci.yml` —— push 到 `main` 与 PR 都跑门禁(ruff + 后端 pytest / 前端 typecheck+单测+构建 / OpenAPI 契约一致性 / 镜像构建+smoke+Trivy 扫描);仅 push 到 `main` 才发布 `ghcr.io/huang8604/vocab-app:latest` 与 `sha-<commit>`。
+- **NAS 发布**:`deploy/portainer-stack.yml`(模板)+ [`deploy/README.md`](./deploy/README.md)(备份/更新/回滚 runbook)。运维**人工**在 Portainer Pull latest + Recreate,**无**自动部署链路。
 
 ## 文档索引
 
@@ -47,4 +53,5 @@
 
 ## 当前限制
 
-仓库尚无阶段五生产 Dockerfile、GitHub Actions 和 NAS 发布配置；这些内容按阶段五设计实施。
+- 生产镜像以 `latest` / `sha-<commit>` 发布,但 NAS 更新需运维人工在 Portainer 操作;`latest` 会漂移,回滚应改用具体 `sha-<commit>` 标签。
+- 镜像默认不含 `dictionary-index.json`(体积大、许可证待确认),如需词库自动补全需在 NAS 上挂载该文件并设置 `DICTIONARY_INDEX_PATH`。

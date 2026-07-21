@@ -1,0 +1,46 @@
+# Keep the build context small and prevent secrets / large local-only data from
+# leaking into image layers. Phase-5 design §2.1.
+
+# VCS and CI/agent state
+.git/
+.gitignore
+.github/
+.gitattributes
+.claude/
+.agents/
+.codex/
+
+# Local secrets — NEVER bake into an image
+.env
+.env.*
+.env_bak
+
+# Large, license-undocumented local dictionary data (enrichment resolves to
+# "not found" in the image; mount + DICTIONARY_INDEX_PATH on the NAS if needed)
+dictionary-index.json
+dictionary-index.json.full.json
+temp/
+
+# Frontend build inputs/outputs that must not be copied (rebuilt in the builder)
+frontend/node_modules/
+frontend/dist/
+frontend/coverage/
+frontend/test-results/
+frontend/playwright-report/
+
+# Backend local artifacts / caches / dev DB
+backend/.venv/
+backend/**/__pycache__/
+backend/.pytest_cache/
+backend/word_memory_backend.egg-info/
+backend/data/
+
+# Python caches anywhere
+**/__pycache__/
+*.py[cod]
+
+# Design docs and dev tooling — not needed at runtime
+*.md
+dev-lan.sh
+deploy/
+skills/

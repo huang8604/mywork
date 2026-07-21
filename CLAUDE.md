@@ -6,7 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Single-user, NAS-deployed vocabulary practice system (单词记忆辅助系统). UI and design docs are in Chinese; code and identifiers are in English. The primary loop is **offline**: generate a printable word worksheet, review on paper, then come back to the web app to record three-state results (`known` / `unknown` / `skipped`). Online flashcard review is a secondary, occasional path. Both paths share the same data model and result-recording rules.
 
-Development is staged into five phases with frozen decisions in the `单词记忆辅助系统*.md` design docs at the repo root. Phases 1–4 are implemented; **phase 5 (Dockerfile, GitHub Actions, GHCR, Portainer deploy) is not yet started** — do not assume CI/Docker config exists. Each phase doc ends with a "Definition of Done" that gates the next phase.
+Development is staged into five phases with frozen decisions in the `单词记忆辅助系统*.md` design docs at the repo root. Phases 1–5 are implemented. Each phase doc ends with a "Definition of Done" that gates the next phase.
+
+### Production image, CI, and NAS deploy (phase 5)
+
+- **Image**: repo-root `Dockerfile` is multi-stage — `node:22-alpine` builds the Vue SPA (`npm ci` + `npm run build`), `python:3.12-slim` runs FastAPI serving API + the built SPA. Base images are pinned to a version+digest. Runtime is non-root UID/GID 10001 (only `/app/data` writable). `backend/docker-entrypoint.sh` runs `alembic upgrade head` before `uvicorn`, so `/healthz/ready` passes on a fresh DB. The runtime stage installs weasyprint system libs + `fonts-noto-cjk` so the phase-4 `/recitation` PDF endpoint works.
+- **Locked deps**: `backend/requirements.lock` is a hashed, fully-pinned lockfile (includes the `[pdf]` extra); the Dockerfile installs it with `pip install --require-hashes`. Regenerate with `pip-compile --generate-hashes --extra pdf -o requirements.lock pyproject.toml` (Python 3.12).
+- **CI**: `.github/workflows/ci.yml` runs gates on push-to-main and PR (backend `ruff check app tests` + `pytest`; frontend `typecheck` + vitest + build; OpenAPI-contract drift check; docker build + container smoke test of `/healthz/*` + SPA deep link + API-not-swallowed; Trivy HIGH/CRITICAL scan). Only push-to-main publishes `ghcr.io/huang8604/vocab-app:latest` + `sha-<short>` to GHCR. Third-party actions are pinned to commit SHAs.
+- **NAS**: `deploy/portainer-stack.yml` (template, REPLACE_ME placeholders) + `deploy/README.md` runbook. Release is **manual**: operator backs up the DB, then Pulls latest + Recreates in Portainer. No Watchtower/webhook/auto-pull. Rollback targets a `sha-<commit>` tag, not `latest`.
 
 ## Common commands
 

@@ -180,8 +180,8 @@ def test_custom_selection_generates_exact_words_in_requested_order(client):
 
 
 def test_generate_round_batch_correction_and_replay(client, db_session):
-    first = create_word(client, {"en_word": "warm", "cn_meaning": "温暖", "tags": []})
-    second = create_word(client, {"en_word": "horse", "cn_meaning": "马", "tags": []})
+    create_word(client, {"en_word": "warm", "cn_meaning": "温暖", "tags": []})
+    create_word(client, {"en_word": "horse", "cn_meaning": "马", "tags": []})
     generated = client.post(
         "/api/v1/daily-table/generate",
         headers={"Idempotency-Key": "generate-1"},
