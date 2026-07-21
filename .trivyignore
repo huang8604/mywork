@@ -1,0 +1,13 @@
+# Trivy findings suppressed by deliberate risk-acceptance.
+# Each entry MUST have a matching justification in deploy/README.md
+# ("Security" -> "Accepted known risks"). Re-evaluate on every dependency
+# upgrade — remove an entry when the fixed version is pinned in requirements.lock.
+
+# WeasyPrint SSRF (CVE-2025-68616, HIGH). Fixed in 68.0; we ship 65.1.
+# Single-user NAS app: the only content that flows into the /recitation PDF
+# render (word text/cn_meaning/example_sentence) is writable solely by the
+# authenticated web admin (the owner) or the owner's own words:write API
+# client. No untrusted/anonymous user can inject the markdown image/CSS URL
+# needed to trigger server-side fetching, so there is no privilege boundary
+# to cross. Upgrading is tracked as a follow-up; suppressed until then.
+CVE-2025-68616

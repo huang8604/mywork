@@ -156,12 +156,16 @@ jobs:
           [ "$api_code" = "401" ] || { echo "!! /api/v1/words returned $api_code (expected 401)"; exit 1; }
           echo "smoke OK"
       - name: Scan image (Trivy, HIGH/CRITICAL)
+        # `trivyignores` points at the repo-root .trivyignore, which lists CVEs
+        # deliberately accepted with a written justification (see deploy/README.md
+        # §4 "已知接受的漏洞风险"). Re-evaluate on every dependency upgrade.
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
           image-ref: ${{ env.IMAGE }}:smoke
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"
+          trivyignores: .trivyignore
 
   publish:
     name: publish (GHCR latest + sha)

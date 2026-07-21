@@ -88,3 +88,9 @@ docker exec vocab-app python -c "import sqlite3; c=sqlite3.connect('/app/data/vo
 - 外部 Skill 必须经 HTTPS 反代访问 API,由应用自身验证 Bearer Token + scope;**服务端到服务端不适用 CORS,不要把 CORS 当认证**。
 - token pepper 文件仅运行 UID 可读;各 Skill 明文 Token 只存在对应 Skill 的 Secret 配置中,不写入 Compose / 镜像 / 仓库 / 日志。
 - 应用响应已带 `Content-Security-Policy`、`X-Content-Type-Options`、`Referrer-Policy`(见 `app/main.py`)。
+
+### 已知接受的漏洞风险(`.trivyignore`)
+
+CI 的 Trivy 门禁扫到、但经评估**在本系统威胁模型下不可利用**、故写入仓库根 `.trivyignore` 显式抑制的条目。每项都必须有理由,并在升级依赖时复核(修复版本一旦进入 `requirements.lock` 就删掉对应行)。
+
+- **CVE-2025-68616**(WeasyPrint SSRF,HIGH;修复于 68.0,当前镜像装 65.1)。该 SSRF 需在渲染内容里塞入 `http(s)://` URL(如 markdown 图片或 CSS `url()`)才会触发服务端抓取;而 `/practice-sessions/{id}/recitation` PDF 渲染的 markdown 来自单词字段(text / cn_meaning / example_sentence),这些字段**仅**认证 web admin(即 owner 本人)或 owner 自己持有 `words:write` 的 API client 可写。无任何匿名/不可信用户能注入,因此不存在可越权的边界 → 实际风险为零。**待办**:待后续 `requirements.lock` 整体升级时一并把 weasyprint 升到 ≥68.0,并删除此条抑制。
