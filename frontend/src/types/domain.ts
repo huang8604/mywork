@@ -70,7 +70,7 @@ export interface PracticeSession {
   completed_at: string | null; archived_at: string | null; items?: PracticeItem[]; rounds?: PracticeRound[]
   web_url?: string; print_url?: string
 }
-export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; total: number; dry_run: boolean; dictionary_matches?: number }
+export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; unresolved?: number; unresolved_words?: string[]; total: number; dry_run: boolean; dictionary_matches?: number }
 export interface EnrichedWord extends WordPayload {
   dictionary_found: boolean; source: 'dictionary-index' | null; missing_fields: string[]
 }

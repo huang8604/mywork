@@ -256,20 +256,25 @@ async def import_words(
     actor: Annotated[Actor, Depends(require_scopes("words:write"))],
     file: Annotated[UploadFile, File()],
     conflict_policy: Annotated[str, Form()] = "reject",
+    unresolved_policy: Annotated[str, Form()] = "reject",
     dry_run: Annotated[bool, Form()] = False,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
     if conflict_policy not in {"skip", "update", "reject"}:
         raise AppError(422, "VALIDATION_ERROR", "unsupported conflict policy")
+    if unresolved_policy not in {"skip", "reject"}:
+        raise AppError(422, "VALIDATION_ERROR", "unsupported unresolved policy")
     raw = await file.read(get_settings().max_import_bytes + 1)
     if len(raw) > get_settings().max_import_bytes:
         raise AppError(413, "PAYLOAD_TOO_LARGE", "import file is too large")
     payloads = _parse_import(file.filename or "", file.content_type or "", raw)
     if len(payloads) > get_settings().max_import_rows:
         raise AppError(413, "PAYLOAD_TOO_LARGE", "import has too many rows")
+    input_total = len(payloads)
     enriched_payloads: list[WordCreate] = []
     dictionary_matches = 0
     unresolved_details: list[dict[str, object]] = []
+    unresolved_words: list[str] = []
     for row_number, payload in enumerate(payloads, 1):
         try:
             enriched, found = enrich_word(payload)
@@ -278,6 +283,13 @@ async def import_words(
         except AppError as exc:
             if exc.code != "DICTIONARY_ENTRY_NOT_FOUND":
                 raise
+            # "reject" (default) collects every unresolved word and aborts the
+            # whole batch atomically; "skip" drops just that word, counts it as
+            # unresolved, and lets the rest import — so one missing dictionary
+            # entry no longer zeroes out the entire import.
+            if unresolved_policy == "skip":
+                unresolved_words.append(payload.en_word)
+                continue
             unresolved_details.append(
                 {
                     "path": ["file", row_number, "en_word"],
@@ -297,8 +309,10 @@ async def import_words(
     idem_payload = {
         "sha256": __import__("hashlib").sha256(raw).hexdigest(),
         "conflict_policy": conflict_policy,
+        "unresolved_policy": unresolved_policy,
         "dry_run": dry_run,
         "dictionary_matches": dictionary_matches,
+        "unresolved": len(unresolved_words),
     }
     idem = claim(
         db,
@@ -361,7 +375,9 @@ async def import_words(
         "updated": updated,
         "skipped": skipped,
         "rejected": 0,
-        "total": len(payloads),
+        "unresolved": len(unresolved_words),
+        "unresolved_words": unresolved_words,
+        "total": input_total,
         "dry_run": dry_run,
         "dictionary_matches": dictionary_matches,
     }
@@ -379,6 +395,7 @@ async def import_words(
                 "created",
                 "updated",
                 "skipped",
+                "unresolved",
                 "total",
                 "dry_run",
                 "dictionary_matches",
@@ -386,12 +403,13 @@ async def import_words(
         },
     )
     logger.info(
-        "word_import request_id=%s total=%s created=%s updated=%s skipped=%s dictionary_matches=%s dry_run=%s",
+        "word_import request_id=%s total=%s created=%s updated=%s skipped=%s unresolved=%s dictionary_matches=%s dry_run=%s",
         _request_id(request),
         data["total"],
         data["created"],
         data["updated"],
         data["skipped"],
+        data["unresolved"],
         data["dictionary_matches"],
         data["dry_run"],
     )

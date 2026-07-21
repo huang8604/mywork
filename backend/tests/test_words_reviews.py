@@ -179,6 +179,69 @@ def test_import_skip_policy_dedupes_in_file_duplicates(client):
     assert rejected.json()["message"] == "duplicate word inside import file"
 
 
+def test_import_unresolved_policy_skip_avoids_zero_write(client, monkeypatch, tmp_path):
+    # No dictionary configured: a word with cn_meaning still imports; a word
+    # without one is "unresolved". Under skip the rest imports (no zero-write);
+    # under reject (default) the whole batch still aborts.
+    monkeypatch.setenv("DICTIONARY_INDEX_PATH", str(tmp_path / "missing.json"))
+    get_settings.cache_clear()
+    clear_dictionary_cache()
+    try:
+        rows = [
+            {"en_word": "warm", "cn_meaning": "暖", "is_custom": False, "tags": []},
+            {"en_word": "flibbertigibbet", "is_custom": False, "tags": []},
+        ]
+        skipped = client.post(
+            "/api/v1/words/import",
+            files={"file": ("words.json", json.dumps(rows).encode(), "application/json")},
+            data={"conflict_policy": "reject", "unresolved_policy": "skip"},
+        )
+        assert skipped.status_code == 200, skipped.text
+        summary = skipped.json()["data"]
+        assert (summary["created"], summary["unresolved"], summary["total"]) == (1, 1, 2)
+        assert summary["unresolved_words"] == ["flibbertigibbet"]
+        assert client.get("/api/v1/words?keyword=warm").json()["data"]
+
+        rejected = client.post(
+            "/api/v1/words/import",
+            files={"file": ("words.json", json.dumps(rows).encode(), "application/json")},
+            data={"conflict_policy": "reject"},
+        )
+        assert rejected.status_code == 422
+        assert rejected.json()["code"] == "DICTIONARY_ENTRY_NOT_FOUND"
+    finally:
+        get_settings.cache_clear()
+        clear_dictionary_cache()
+
+
+def test_shorten_translations_drops_surnames_glosses_and_caps_length():
+    from app.services.dictionary import shorten_translations
+
+    # surname sense dropped, primary sense kept
+    camera = [
+        {"pos": "n.", "cn": "照相机；摄影机"},
+        {"pos": "n.", "cn": "（Camera）人名；（英、意、西）卡梅拉"},
+    ]
+    assert shorten_translations(camera) == "n. 照相机；摄影机"
+
+    # English parenthetical gloss stripped
+    laptop = [{"pos": "n.", "cn": "膝上型计算机，便携式电脑（=laptop computer）"}]
+    assert shorten_translations(laptop) == "n. 膝上型计算机，便携式电脑"
+
+    # length cap truncates on a ；boundary and adds an ellipsis
+    long_cn = "；".join("释义文字" for _ in range(20))
+    capped = shorten_translations([{"pos": "n.", "cn": long_cn}])
+    assert len(capped) <= 40 and capped.endswith("…")
+
+    # max_senses limits the number of kept senses
+    many = [{"pos": "n.", "cn": c} for c in ("甲等", "乙等", "丙等", "丁等", "戊等")]
+    assert shorten_translations(many, max_senses=2) == "n. 甲等；n. 乙等"
+
+    # an entry whose every sense is a surname falls back to the raw sense
+    fallback = shorten_translations([{"pos": "n.", "cn": "（Foo）人名"}])
+    assert fallback is not None and "人名" in fallback
+
+
 def test_english_only_create_preview_and_txt_import_use_local_dictionary(
     client, tmp_path, monkeypatch
 ):

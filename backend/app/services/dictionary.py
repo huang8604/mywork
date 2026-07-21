@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
@@ -91,19 +92,94 @@ def _phonetic(entry: dict[str, Any]) -> str | None:
     return None
 
 
-def _meaning(entry: dict[str, Any]) -> str | None:
-    translations = entry.get("t")
+_PAREN_RE = re.compile(r"[（(][^（）()]*[）)]")
+_LATIN_RE = re.compile(r"[A-Za-z]")
+_MEANING_PUNCT = " ；;,，.。"
+
+
+def clean_translation_items(
+    translations: Any,
+    *,
+    max_senses: int = 3,
+) -> list[dict[str, str]]:
+    """Return the surviving ``{pos, cn}`` senses after dropping noise.
+
+    Filters out surname senses (``人名``), parenthetical English glosses
+    (``（=laptop computer）``), near-English senses (>75% Latin), and duplicate
+    meanings; caps to ``max_senses`` primary senses. Returns an empty list when
+    every sense is filtered out (≈17 entries that are only surnames/glosses).
+    """
+    items: list[dict[str, str]] = []
+    seen: set[str] = set()
+    if not isinstance(translations, list):
+        return items
+    for entry in translations:
+        if not isinstance(entry, dict):
+            continue
+        meaning = str(entry.get("cn") or "").strip()
+        if not meaning or "人名" in meaning:
+            continue
+        meaning = _PAREN_RE.sub("", meaning).strip(_MEANING_PUNCT)
+        if not meaning:
+            continue
+        non_latin = len(_LATIN_RE.sub("", meaning))
+        if non_latin < max(2, len(meaning) // 4):
+            continue  # >75% Latin → almost certainly an English gloss
+        if meaning in seen:
+            continue
+        seen.add(meaning)
+        part = str(entry.get("pos") or "").strip()
+        items.append({"pos": part, "cn": meaning})
+        if len(items) >= max_senses:
+            break
+    return items
+
+
+def shorten_translations(
+    translations: Any,
+    *,
+    max_senses: int = 3,
+    hard_cap: int = 40,
+) -> str | None:
+    """Collapse a word's translation senses into one short Chinese meaning.
+
+    The raw ``t`` list joins *every* sense — surnames, parenthetical English
+    glosses, near-English senses, and duplicates — which inflates meanings to
+    hundreds of characters and breaks the printed worksheet. This keeps up to
+    ``max_senses`` primary senses and caps total length at ``hard_cap``
+    (truncating on a ``；`` boundary). When every sense is filtered out it
+    falls back to the raw joined senses, capped, so a word never loses its
+    meaning entirely.
+    """
     if not isinstance(translations, list):
         return None
-    values = []
-    for item in translations:
-        if not isinstance(item, dict):
-            continue
-        meaning = str(item.get("cn") or "").strip()
-        part = str(item.get("pos") or "").strip()
-        if meaning:
-            values.append(f"{part} {meaning}".strip())
-    return "；".join(values) or None
+    items = clean_translation_items(translations, max_senses=max_senses)
+    if items:
+        parts = [f"{it['pos']} {it['cn']}".strip() for it in items]
+    else:
+        parts = []
+        for entry in translations:
+            if not isinstance(entry, dict):
+                continue
+            meaning = str(entry.get("cn") or "").strip()
+            if not meaning:
+                continue
+            part = str(entry.get("pos") or "").strip()
+            parts.append(f"{part} {meaning}".strip())
+    text = "；".join(parts)
+    if not text:
+        return None
+    if len(text) <= hard_cap:
+        return text
+    cut = text[:hard_cap]
+    boundary = cut.rfind("；")
+    if boundary > 8:
+        cut = cut[:boundary]
+    return cut + "…"
+
+
+def _meaning(entry: dict[str, Any]) -> str | None:
+    return shorten_translations(entry.get("t"))
 
 
 def _example(entry: dict[str, Any]) -> str | None:

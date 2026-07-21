@@ -171,6 +171,7 @@ class BatchResults(StrictModel):
 
 class ImportOptions(StrictModel):
     conflict_policy: Literal["skip", "update", "reject"] = "reject"
+    unresolved_policy: Literal["skip", "reject"] = "reject"
     dry_run: bool = False
 
 

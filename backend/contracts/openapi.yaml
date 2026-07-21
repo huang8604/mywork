@@ -104,6 +104,11 @@
             "contentMediaType": "application/octet-stream",
             "title": "File",
             "type": "string"
+          },
+          "unresolved_policy": {
+            "default": "reject",
+            "title": "Unresolved Policy",
+            "type": "string"
           }
         },
         "required": [
