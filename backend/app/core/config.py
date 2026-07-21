@@ -39,6 +39,9 @@ class Settings:
     log_level: str
     dictionary_index_path: str
     frontend_dist: str
+    ai_base_url: str
+    ai_api_key: str
+    ai_model: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -67,6 +70,9 @@ class Settings:
                 "FRONTEND_DIST",
                 str(Path(__file__).resolve().parents[3] / "frontend" / "dist"),
             ),
+            ai_base_url=os.getenv("AI_BASE_URL", "").rstrip("/"),
+            ai_api_key=os.getenv("AI_API_KEY", ""),
+            ai_model=os.getenv("AI_MODEL", "gpt-4o-mini"),
         )
         value.validate()
         return value
@@ -99,6 +105,10 @@ class Settings:
         if len(self.api_token_pepper.encode("utf-8")) < 16:
             raise ValueError("API_TOKEN_PEPPER must contain at least 16 bytes")
         return self.api_token_pepper.encode("utf-8")
+
+    @property
+    def ai_enabled(self) -> bool:
+        return bool(self.ai_base_url and self.ai_api_key)
 
 
 @lru_cache

@@ -20,13 +20,24 @@ class AppError(Exception):
         self.headers = headers or {}
 
 
+_RESOURCE_ZH = {
+    "resource": "资源",
+    "word": "单词",
+    "review": "复习记录",
+    "round item": "本题",
+    "practice session": "复习表",
+    "practice review round": "复习轮次",
+}
+
+
 def not_found(resource: str = "resource") -> AppError:
-    return AppError(404, "NOT_FOUND", f"{resource} not found")
+    zh = _RESOURCE_ZH.get(resource, resource)
+    return AppError(404, "NOT_FOUND", f"{zh}不存在")
 
 
 def validation(path: list[object], reason: str, value: object | None = None) -> AppError:
     detail: dict[str, Any] = {"path": path, "reason": reason}
     if value is not None:
         detail["value"] = value
-    return AppError(422, "VALIDATION_ERROR", "request validation failed", [detail])
+    return AppError(422, "VALIDATION_ERROR", "请求参数校验失败", [detail])
 

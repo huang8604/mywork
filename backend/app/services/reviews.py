@@ -77,7 +77,7 @@ def create_quick_review(
         supplied_time = reviewed_at_text(payload.reviewed_at) if payload.reviewed_at else None
         if _same_event(existing, payload.status, payload.word_id, supplied_time):
             return existing, rebuild_word_stats(db, existing.word_id), True
-        raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "client_event_id is already used")
+        raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "该复习记录已被提交，请勿重复提交")
     reviewed_at = reviewed_at_text(payload.reviewed_at)
     now = utc_text()
     result = db.execute(
@@ -107,12 +107,12 @@ def create_quick_review(
         )
     )
     if log is None:
-        raise AppError(503, "SERVICE_BUSY", "could not write review")
+        raise AppError(503, "SERVICE_BUSY", "复习记录写入失败，请稍后重试")
     if result.rowcount == 0:
         supplied_time = reviewed_at_text(payload.reviewed_at) if payload.reviewed_at else None
         if _same_event(log, payload.status, payload.word_id, supplied_time):
             return log, rebuild_word_stats(db, log.word_id), True
-        raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "client_event_id is already used")
+        raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "该复习记录已被提交，请勿重复提交")
     return log, rebuild_word_stats(db, word.id), False
 
 
@@ -125,14 +125,14 @@ def correct_review(
     if actor.actor_type == "api_client" and (
         log.actor_type != "api_client" or log.actor_id != actor.actor_id
     ):
-        raise AppError(403, "FORBIDDEN_SCOPE", "cannot modify another actor's review")
+        raise AppError(403, "FORBIDDEN_SCOPE", "不能修改其他用户的复习记录")
     if log.client_event_id != payload.client_event_id:
-        raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "client_event_id does not match")
+        raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "client_event_id 与原记录不一致")
     if log.version != payload.expected_version:
         raise AppError(
             409,
             "VERSION_CONFLICT",
-            "review was modified",
+            "复习记录已被修改，请刷新后重试",
             [{"current_version": log.version}],
         )
     values: dict[str, object] = {
@@ -158,7 +158,7 @@ def correct_review(
         raise AppError(
             409,
             "VERSION_CONFLICT",
-            "review was modified",
+            "复习记录已被修改，请刷新后重试",
             [{"current_version": current_version}],
         )
     db.expire(log)
@@ -181,7 +181,7 @@ def _round_context(
     if session is None or word is None:
         raise not_found("practice session")
     if word.deleted_at:
-        raise AppError(409, "INVALID_STATE", "word is deleted")
+        raise AppError(409, "INVALID_STATE", "该单词已被删除")
     return round_, session, item, word
 
 
@@ -252,9 +252,9 @@ def put_round_result(
         log, stats = correct_review(db, existing.id, correction, actor)
         return log, stats, False
     if round_.status == "completed":
-        raise AppError(409, "INVALID_STATE", "completed round cannot accept a new item")
+        raise AppError(409, "INVALID_STATE", "已完成的复习轮次不能再添加题目")
     if payload.expected_version is not None:
-        raise AppError(422, "VALIDATION_ERROR", "expected_version is only for correction")
+        raise AppError(422, "VALIDATION_ERROR", "expected_version 仅用于修改已有结果")
     event = db.scalar(
         select(ReviewLog).where(
             ReviewLog.actor_type == actor.actor_type,
@@ -269,7 +269,7 @@ def put_round_result(
             and event.status == payload.status
         ):
             return event, rebuild_word_stats(db, event.word_id), False
-        raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "client_event_id is already used")
+        raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "该复习记录已被提交，请勿重复提交")
     now = utc_text()
     result = db.execute(
         sqlite_insert(ReviewLog)
@@ -297,7 +297,7 @@ def put_round_result(
         )
     )
     if log is None:
-        raise AppError(503, "SERVICE_BUSY", "could not write round result")
+        raise AppError(503, "SERVICE_BUSY", "复习结果写入失败，请稍后重试")
     if result.rowcount == 0:
         if (
             log.actor_type == actor.actor_type
@@ -306,7 +306,7 @@ def put_round_result(
             and log.status == payload.status
         ):
             return log, rebuild_word_stats(db, log.word_id), False
-        raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "result already exists")
+        raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "该题结果已存在")
     stats = rebuild_word_stats(db, word.id)
     _refresh_item_and_round(db, item.id, round_.id)
     db.flush()
@@ -329,22 +329,22 @@ def batch_round_results(
             )
         )
         if existing is None and round_.status == "completed":
-            raise AppError(409, "INVALID_STATE", "completed round cannot accept a new item")
+            raise AppError(409, "INVALID_STATE", "已完成的复习轮次不能再添加题目")
         if existing is None and payload.expected_version is not None:
-            raise AppError(422, "VALIDATION_ERROR", "unexpected expected_version")
+            raise AppError(422, "VALIDATION_ERROR", "此处不需要 expected_version")
         if existing is not None and payload.expected_version is None:
-            raise AppError(422, "VALIDATION_ERROR", "expected_version is required")
+            raise AppError(422, "VALIDATION_ERROR", "修改已有结果时需要提供 expected_version")
         if existing is not None and existing.version != payload.expected_version:
             raise AppError(
                 409,
                 "VERSION_CONFLICT",
-                "review was modified",
+                "复习记录已被修改，请刷新后重试",
                 [{"item_id": item.id, "current_version": existing.version}],
             )
         if existing is not None and actor.actor_type == "api_client" and (
             existing.actor_type != "api_client" or existing.actor_id != actor.actor_id
         ):
-            raise AppError(403, "FORBIDDEN_SCOPE", "cannot modify another actor's review")
+            raise AppError(403, "FORBIDDEN_SCOPE", "不能修改其他用户的复习记录")
     results: list[tuple[ReviewLog, WordStats, bool]] = []
     for payload in items:
         results.append(put_round_result(db, round_id, payload.item_id, payload, actor))

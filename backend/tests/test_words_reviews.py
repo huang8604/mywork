@@ -176,7 +176,7 @@ def test_import_skip_policy_dedupes_in_file_duplicates(client):
         data={"conflict_policy": "reject"},
     )
     assert rejected.status_code == 422
-    assert rejected.json()["message"] == "duplicate word inside import file"
+    assert rejected.json()["message"] == "导入文件内存在重复单词"
 
 
 def test_import_unresolved_policy_skip_avoids_zero_write(client, monkeypatch, tmp_path):
@@ -240,6 +240,100 @@ def test_shorten_translations_drops_surnames_glosses_and_caps_length():
     # an entry whose every sense is a surname falls back to the raw sense
     fallback = shorten_translations([{"pos": "n.", "cn": "（Foo）人名"}])
     assert fallback is not None and "人名" in fallback
+
+
+def test_import_restores_deleted_word(client, word_payload):
+    word = create_word(client, word_payload)
+    current = client.get(f"/api/v1/words/{word['id']}").json()["data"]
+    deleted = client.delete(
+        f"/api/v1/words/{word['id']}",
+        headers={"If-Match": f'"{current["version"]}"'},
+    )
+    assert deleted.status_code == 204
+    assert client.get(f"/api/v1/words/{word['id']}").status_code == 404
+
+    # Re-importing a soft-deleted word restores it instead of failing with
+    # WORD_DELETED — cn_meaning is supplied so enrichment passes without AI.
+    rows = [
+        {
+            "en_word": word["en_word"],
+            "cn_meaning": word["cn_meaning"],
+            "is_custom": False,
+            "tags": [],
+        }
+    ]
+    resp = client.post(
+        "/api/v1/words/import",
+        files={"file": ("words.json", json.dumps(rows).encode(), "application/json")},
+        data={"conflict_policy": "reject"},
+    )
+    assert resp.status_code == 200, resp.text
+    summary = resp.json()["data"]
+    assert summary["updated"] == 1
+    assert summary["created"] == 0
+    restored = client.get(f"/api/v1/words/{word['id']}").json()["data"]
+    assert restored["deleted_at"] is None
+
+
+def test_create_uses_ai_fallback_when_configured(client, monkeypatch, tmp_path):
+    # No local dictionary + AI configured: an unknown word is enriched by AI.
+    monkeypatch.setenv("DICTIONARY_INDEX_PATH", str(tmp_path / "missing.json"))
+    monkeypatch.setenv("AI_BASE_URL", "https://example.com/v1")
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    monkeypatch.setenv("AI_MODEL", "test-model")
+    get_settings.cache_clear()
+    clear_dictionary_cache()
+
+    def fake_ai(word):
+        return {
+            "cn_meaning": "测试的释义",
+            "phonetic": "/tɛst/",
+            "example_sentence": "This is a test sentence.",
+        }
+
+    monkeypatch.setattr("app.services.dictionary.ai_enrich_word", fake_ai)
+    try:
+        created = client.post("/api/v1/words", json={"en_word": "syzygy"})
+        assert created.status_code == 201, created.text
+        data = created.json()["data"]
+        assert data["cn_meaning"] == "测试的释义"
+        assert data["phonetic"] == "/tɛst/"
+        assert data["example_sentence"] == "This is a test sentence."
+
+        # When AI returns nothing, the word degrades to unresolved (422).
+        monkeypatch.setattr("app.services.dictionary.ai_enrich_word", lambda w: None)
+        failed = client.post("/api/v1/words", json={"en_word": "other"})
+        assert failed.status_code == 422
+        assert failed.json()["code"] == "DICTIONARY_ENTRY_NOT_FOUND"
+    finally:
+        get_settings.cache_clear()
+        clear_dictionary_cache()
+
+
+def test_import_ai_policy_resolves_unresolved_words(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("DICTIONARY_INDEX_PATH", str(tmp_path / "missing.json"))
+    monkeypatch.setenv("AI_BASE_URL", "https://example.com/v1")
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    clear_dictionary_cache()
+    monkeypatch.setattr(
+        "app.services.dictionary.ai_enrich_word",
+        lambda w: {"cn_meaning": "AI 释义", "phonetic": None, "example_sentence": None},
+    )
+    try:
+        rows = [{"en_word": "syzygy", "is_custom": False, "tags": []}]
+        resp = client.post(
+            "/api/v1/words/import",
+            files={"file": ("words.json", json.dumps(rows).encode(), "application/json")},
+            data={"conflict_policy": "reject", "unresolved_policy": "ai"},
+        )
+        assert resp.status_code == 200, resp.text
+        summary = resp.json()["data"]
+        assert summary["created"] == 1
+        assert summary["unresolved"] == 0
+    finally:
+        get_settings.cache_clear()
+        clear_dictionary_cache()
 
 
 def test_english_only_create_preview_and_txt_import_use_local_dictionary(

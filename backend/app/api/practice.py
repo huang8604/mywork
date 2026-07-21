@@ -97,9 +97,9 @@ def list_sessions(
     generated_to: str | None = None,
 ):
     if status and status not in {"active", "archived"}:
-        raise AppError(422, "VALIDATION_ERROR", "invalid session status")
+        raise AppError(422, "VALIDATION_ERROR", "无效的复习表状态")
     if created_by_actor_type and created_by_actor_type not in {"web_user", "api_client"}:
-        raise AppError(422, "VALIDATION_ERROR", "invalid actor type")
+        raise AppError(422, "VALIDATION_ERROR", "无效的来源类型")
     filters = []
     for column, value in (
         (PracticeSession.status, status),
@@ -197,7 +197,7 @@ def archive(
         raise AppError(
             409,
             "VERSION_CONFLICT",
-            "session was modified",
+            "复习表已被修改，请刷新后重试",
             [{"current_version": session.version}],
         )
     if session.status != "archived":
@@ -241,14 +241,14 @@ def create_round(
         return _idem_response(request, idem)
     session = _session(db, session_id)
     if session.status != "active":
-        raise AppError(409, "INVALID_STATE", "session is archived")
+        raise AppError(409, "INVALID_STATE", "复习表已归档")
     item_count = db.scalar(
         select(func.count())
         .select_from(PracticeSessionItem)
         .where(PracticeSessionItem.session_id == session.id)
     ) or 0
     if item_count == 0:
-        raise AppError(409, "INVALID_STATE", "empty session cannot create a round")
+        raise AppError(409, "INVALID_STATE", "复习表为空，无法开始复习")
     now = utc_text()
     round_ = PracticeReviewRound(
         session_id=session.id,
@@ -339,7 +339,7 @@ def put_results(
     idempotency_key: Annotated[str, Header(alias="Idempotency-Key")],
 ):
     if len(payload.items) > get_settings().max_batch_results:
-        raise AppError(422, "VALIDATION_ERROR", "batch result limit exceeded")
+        raise AppError(422, "VALIDATION_ERROR", "批量回录数量超过上限")
     idem = claim(
         db,
         actor=actor,

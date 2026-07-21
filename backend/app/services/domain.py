@@ -14,9 +14,9 @@ _WHITESPACE = re.compile(r"\s+")
 def normalize_display(value: str, *, maximum: int, field: str) -> str:
     normalized = _WHITESPACE.sub(" ", unicodedata.normalize("NFKC", value).strip())
     if not normalized:
-        raise validation(["body", field], "must not be blank")
+        raise validation(["body", field], "不能为空")
     if len(normalized) > maximum:
-        raise validation(["body", field], f"must contain at most {maximum} characters")
+        raise validation(["body", field], f"不能超过 {maximum} 个字符")
     return normalized
 
 
@@ -45,10 +45,10 @@ def utc_text(value: datetime | None = None) -> str:
 def reviewed_at_text(value: datetime | None = None) -> str:
     moment = value or datetime.now(UTC)
     if moment.tzinfo is None:
-        raise validation(["body", "reviewed_at"], "timezone is required")
+        raise validation(["body", "reviewed_at"], "时间需要包含时区信息")
     moment = moment.astimezone(UTC)
     if moment > datetime.now(UTC) + timedelta(minutes=5):
-        raise validation(["body", "reviewed_at"], "must not be over five minutes in the future")
+        raise validation(["body", "reviewed_at"], "不能超过当前时间 5 分钟")
     return utc_text(moment)
 
 

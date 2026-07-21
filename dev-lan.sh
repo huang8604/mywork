@@ -75,6 +75,9 @@ ensure_backend() {
     -e "PUBLIC_BASE_URL=${want_url}" \
     -e "CORS_ORIGINS=${want_url}" \
     -e TRUSTED_PROXY_CIDRS=172.16.0.0/12 \
+    -e "AI_BASE_URL=${AI_BASE_URL:-}" \
+    -e "AI_API_KEY=${AI_API_KEY:-}" \
+    -e "AI_MODEL=${AI_MODEL:-gpt-4o-mini}" \
     "$IMAGE" \
     sh -lc 'pip install -e . && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000' >/dev/null
 }

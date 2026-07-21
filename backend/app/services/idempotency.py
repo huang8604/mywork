@@ -43,10 +43,10 @@ def claim(
 ) -> IdempotencyClaim | None:
     if not key:
         if required:
-            raise AppError(422, "VALIDATION_ERROR", "Idempotency-Key is required")
+            raise AppError(422, "VALIDATION_ERROR", "需要提供 Idempotency-Key")
         return None
     if not 1 <= len(key) <= 128:
-        raise AppError(422, "VALIDATION_ERROR", "invalid Idempotency-Key length")
+        raise AppError(422, "VALIDATION_ERROR", "Idempotency-Key 长度无效")
     digest = request_hash(payload)
     now_text = utc_text()
     existing = db.scalar(
@@ -64,12 +64,12 @@ def claim(
         existing = None
     if existing is not None:
         if existing.request_hash != digest:
-            raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "key is used for a different request")
+            raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "该 Idempotency-Key 已用于不同的请求")
         if existing.state == "processing":
             raise AppError(
                 409,
                 "REQUEST_IN_PROGRESS",
-                "request is still processing",
+                "请求仍在处理中，请稍后重试",
                 headers={"Retry-After": "1"},
             )
         return IdempotencyClaim(
@@ -112,15 +112,15 @@ def claim(
         )
     )
     if record is None:
-        raise AppError(503, "SERVICE_BUSY", "could not claim idempotency key")
+        raise AppError(503, "SERVICE_BUSY", "无法占用幂等键，请稍后重试")
     if result.rowcount == 0:
         if record.request_hash != digest:
-            raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "key is used for a different request")
+            raise AppError(409, "IDEMPOTENCY_KEY_REUSE", "该 Idempotency-Key 已用于不同的请求")
         if record.state == "processing":
             raise AppError(
                 409,
                 "REQUEST_IN_PROGRESS",
-                "request is still processing",
+                "请求仍在处理中，请稍后重试",
                 headers={"Retry-After": "1"},
             )
         return IdempotencyClaim(

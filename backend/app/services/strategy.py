@@ -43,7 +43,7 @@ def generate_session(
         + payload.custom_words_limit
     )
     if requested_total > settings.max_practice_words:
-        raise AppError(422, "VALIDATION_ERROR", "practice word limit exceeded")
+        raise AppError(422, "VALIDATION_ERROR", "练习单词数量超过上限")
     seed = payload.seed if payload.seed is not None else random.SystemRandom().randint(0, 2_147_483_647)
     rng = random.Random(seed)
     now = datetime.now(UTC)
@@ -107,8 +107,8 @@ def generate_session(
             raise AppError(
                 422,
                 "VALIDATION_ERROR",
-                "custom selection contains missing or deleted words",
-                [{"path": ["body", "word_ids"], "reason": "unavailable word ids", "value": missing_ids}],
+                "自选单词中包含不存在或已删除的词",
+                [{"path": ["body", "word_ids"], "reason": "包含不可用的单词 ID", "value": missing_ids}],
             )
         selected = [words_by_id[word_id] for word_id in payload.word_ids]
         requested = {"selected": len(selected)}

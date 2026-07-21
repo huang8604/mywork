@@ -67,7 +67,7 @@ async def request_context(request: Request, call_next):
                 status_code=403,
                 content={
                     "code": "FORBIDDEN_ORIGIN",
-                    "message": "request origin is not allowed",
+                    "message": "请求来源不被允许",
                     "details": [],
                     "request_id": request_id,
                 },
@@ -180,7 +180,7 @@ async def validation_error_handler(request: Request, exc: RequestValidationError
         status_code=422,
         content={
             "code": "VALIDATION_ERROR",
-            "message": "request validation failed",
+            "message": "请求参数校验失败",
             "details": details,
             "request_id": request.state.request_id,
         },
@@ -197,7 +197,7 @@ async def integrity_error_handler(request: Request, _exc: IntegrityError):
         status_code=409,
         content={
             "code": "INVALID_STATE",
-            "message": "database constraint conflict",
+            "message": "数据约束冲突",
             "details": [],
             "request_id": request.state.request_id,
         },
@@ -217,7 +217,7 @@ async def operational_error_handler(request: Request, exc: OperationalError):
         status_code=status_code,
         content={
             "code": code,
-            "message": "database is busy" if busy else "internal server error",
+            "message": "数据库繁忙，请稍后重试" if busy else "服务器内部错误",
             "details": [],
             "request_id": request.state.request_id,
         },

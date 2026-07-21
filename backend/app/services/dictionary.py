@@ -10,6 +10,7 @@ from typing import Any
 from app.core.config import get_settings
 from app.core.errors import AppError
 from app.schemas import WordCreate
+from app.services.ai_enrich import ai_enrich_word
 from app.services.domain import normalize_word
 
 
@@ -26,9 +27,9 @@ def _load_index(path_text: str) -> dict[str, dict[str, Any]]:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         logger.exception("dictionary_index_invalid path=%s", path)
-        raise AppError(503, "DICTIONARY_UNAVAILABLE", "dictionary resource is unavailable") from exc
+        raise AppError(503, "DICTIONARY_UNAVAILABLE", "词典资源暂时不可用") from exc
     if not isinstance(data, dict):
-        raise AppError(503, "DICTIONARY_UNAVAILABLE", "dictionary resource has an invalid shape")
+        raise AppError(503, "DICTIONARY_UNAVAILABLE", "词典资源格式异常")
     normalized = {
         str(key).casefold().strip(): value
         for key, value in data.items()
@@ -42,20 +43,34 @@ def clear_dictionary_cache() -> None:
     _load_index.cache_clear()
 
 
-def enrich_word(payload: WordCreate, *, require_meaning: bool = True) -> tuple[WordCreate, bool]:
+def enrich_word(
+    payload: WordCreate,
+    *,
+    require_meaning: bool = True,
+    allow_ai: bool = False,
+) -> tuple[WordCreate, bool]:
     display, normalized = normalize_word(payload.en_word)
     entry = _load_index(get_settings().dictionary_index_path).get(normalized)
     found = entry is not None
     phonetic = payload.phonetic or (_phonetic(entry) if entry else None)
     cn_meaning = payload.cn_meaning or (_meaning(entry) if entry else None)
     example_sentence = payload.example_sentence or (_example(entry) if entry else None)
+    if require_meaning and not cn_meaning and allow_ai:
+        # Dictionary miss with no manual meaning: try the AI fallback before
+        # giving up. ai_enrich_word returns None when disabled/unavailable, so
+        # this is a no-op unless AI is configured.
+        ai = ai_enrich_word(display)
+        if ai:
+            phonetic = phonetic or ai["phonetic"]
+            cn_meaning = shorten_translations([{"pos": "", "cn": ai["cn_meaning"]}]) or ai["cn_meaning"]
+            example_sentence = example_sentence or ai["example_sentence"]
     if require_meaning and not cn_meaning:
         logger.debug("dictionary_entry_unresolved normalized_word=%s", normalized)
         raise AppError(
             422,
             "DICTIONARY_ENTRY_NOT_FOUND",
-            "dictionary has no usable Chinese meaning for this word",
-            [{"path": ["body", "en_word"], "reason": "provide cn_meaning manually", "value": display}],
+            "词典未收录该词，且未提供中文释义",
+            [{"path": ["body", "en_word"], "reason": "请手动填写中文释义", "value": display}],
         )
     return (
         payload.model_copy(

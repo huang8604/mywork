@@ -30,6 +30,7 @@ from app.services.words import (
     get_word,
     iter_words,
     list_words,
+    reimport_word,
     restore_word,
     update_word,
 )
@@ -82,7 +83,7 @@ def create(
             status_code=idem.replay_status or 201,
             headers={"Idempotency-Replayed": "true"},
         )
-    payload, dictionary_found = enrich_word(payload)
+    payload, dictionary_found = enrich_word(payload, allow_ai=get_settings().ai_enabled)
     word = create_word(db, payload)
     data = word_data(db, word)
     complete(idem, data=data, status_code=201, resource_type="word", resource_id=word.id)
@@ -125,9 +126,9 @@ def index(
     sort: str = "created_at_desc",
 ):
     if sort not in SORTS:
-        raise AppError(422, "VALIDATION_ERROR", "unsupported sort")
+        raise AppError(422, "VALIDATION_ERROR", "不支持的排序方式")
     if created_from and created_to and created_from > created_to:
-        raise AppError(422, "VALIDATION_ERROR", "created_from must not exceed created_to")
+        raise AppError(422, "VALIDATION_ERROR", "创建开始日期不能晚于结束日期")
     words, total = list_words(
         db,
         page=page,
@@ -160,11 +161,11 @@ def export_words(
     sort: str = "created_at_desc",
 ):
     if format not in {"csv", "json"}:
-        raise AppError(422, "VALIDATION_ERROR", "format must be csv or json")
+        raise AppError(422, "VALIDATION_ERROR", "导出格式必须是 csv 或 json")
     if sort not in SORTS:
-        raise AppError(422, "VALIDATION_ERROR", "unsupported sort")
+        raise AppError(422, "VALIDATION_ERROR", "不支持的排序方式")
     if created_from and created_to and created_from > created_to:
-        raise AppError(422, "VALIDATION_ERROR", "created_from must not exceed created_to")
+        raise AppError(422, "VALIDATION_ERROR", "创建开始日期不能晚于结束日期")
 
     def words():
         return iter_words(
@@ -261,39 +262,40 @@ async def import_words(
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
     if conflict_policy not in {"skip", "update", "reject"}:
-        raise AppError(422, "VALIDATION_ERROR", "unsupported conflict policy")
-    if unresolved_policy not in {"skip", "reject"}:
-        raise AppError(422, "VALIDATION_ERROR", "unsupported unresolved policy")
+        raise AppError(422, "VALIDATION_ERROR", "不支持的冲突处理策略")
+    if unresolved_policy not in {"skip", "reject", "ai"}:
+        raise AppError(422, "VALIDATION_ERROR", "不支持的未命中处理策略")
     raw = await file.read(get_settings().max_import_bytes + 1)
     if len(raw) > get_settings().max_import_bytes:
-        raise AppError(413, "PAYLOAD_TOO_LARGE", "import file is too large")
+        raise AppError(413, "PAYLOAD_TOO_LARGE", "导入文件过大")
     payloads = _parse_import(file.filename or "", file.content_type or "", raw)
     if len(payloads) > get_settings().max_import_rows:
-        raise AppError(413, "PAYLOAD_TOO_LARGE", "import has too many rows")
+        raise AppError(413, "PAYLOAD_TOO_LARGE", "导入行数过多")
     input_total = len(payloads)
     enriched_payloads: list[WordCreate] = []
     dictionary_matches = 0
     unresolved_details: list[dict[str, object]] = []
     unresolved_words: list[str] = []
+    allow_ai = unresolved_policy == "ai"
     for row_number, payload in enumerate(payloads, 1):
         try:
-            enriched, found = enrich_word(payload)
+            enriched, found = enrich_word(payload, allow_ai=allow_ai)
             enriched_payloads.append(enriched)
             dictionary_matches += int(found)
         except AppError as exc:
             if exc.code != "DICTIONARY_ENTRY_NOT_FOUND":
                 raise
             # "reject" (default) collects every unresolved word and aborts the
-            # whole batch atomically; "skip" drops just that word, counts it as
-            # unresolved, and lets the rest import — so one missing dictionary
-            # entry no longer zeroes out the entire import.
-            if unresolved_policy == "skip":
+            # whole batch atomically. "skip" drops just that word. "ai" already
+            # tried the AI fallback inside enrich_word; whatever still raises
+            # here is unresolved (AI disabled/failed) and is dropped like skip.
+            if unresolved_policy in {"skip", "ai"}:
                 unresolved_words.append(payload.en_word)
                 continue
             unresolved_details.append(
                 {
                     "path": ["file", row_number, "en_word"],
-                    "reason": "dictionary entry not found; provide cn_meaning manually",
+                    "reason": "词典未收录该词，请手动填写中文释义",
                     "value": payload.en_word,
                 }
             )
@@ -301,7 +303,7 @@ async def import_words(
         raise AppError(
             422,
             "DICTIONARY_ENTRY_NOT_FOUND",
-            "some words could not be enriched",
+            "部分单词无法获取释义",
             unresolved_details,
         )
     payloads = enriched_payloads
@@ -346,8 +348,8 @@ async def import_words(
             raise AppError(
                 422,
                 "VALIDATION_ERROR",
-                "duplicate word inside import file",
-                [{"path": ["file", row_number, "en_word"], "reason": "duplicate normalized word"}],
+                "导入文件内存在重复单词",
+                [{"path": ["file", row_number, "en_word"], "reason": "归一化后与文件内其他单词重复"}],
             )
         seen.add(normalized)
         existing = db.scalar(select(Word).where(Word.normalized_en_word == normalized))
@@ -357,9 +359,16 @@ async def import_words(
             created += 1
             continue
         if existing.deleted_at:
-            raise AppError(409, "WORD_DELETED", "import matches a deleted word")
+            # Re-importing a soft-deleted word restores it (undelete + refresh),
+            # regardless of conflict_policy — bringing a deleted word back is the
+            # explicit intent of importing it again. The unique normalized_en_word
+            # constraint guarantees `existing` is the only matching row.
+            if not dry_run:
+                reimport_word(db, existing.id, payload)
+            updated += 1
+            continue
         if conflict_policy == "reject":
-            raise AppError(409, "DUPLICATE_WORD", "import contains an existing word")
+            raise AppError(409, "DUPLICATE_WORD", "导入内容包含已存在的单词")
         if conflict_policy == "skip":
             skipped += 1
             continue
@@ -421,7 +430,7 @@ def _parse_import(filename: str, content_type: str, raw: bytes) -> list[WordCrea
     try:
         text = raw.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
-        raise AppError(422, "VALIDATION_ERROR", "import must be UTF-8") from exc
+        raise AppError(422, "VALIDATION_ERROR", "导入文件必须是 UTF-8 编码") from exc
     adapter = TypeAdapter(list[WordCreate])
     try:
         if filename.lower().endswith(".json") or content_type == "application/json":
@@ -434,7 +443,7 @@ def _parse_import(filename: str, content_type: str, raw: bytes) -> list[WordCrea
             ]
             return adapter.validate_python(rows)
         if not filename.lower().endswith(".csv") and "csv" not in content_type:
-            raise AppError(415, "UNSUPPORTED_MEDIA_TYPE", "only TXT, CSV and JSON are supported")
+            raise AppError(415, "UNSUPPORTED_MEDIA_TYPE", "仅支持 TXT、CSV 和 JSON 文件")
         reader = csv.DictReader(io.StringIO(text))
         required = {
             "en_word",
@@ -445,7 +454,7 @@ def _parse_import(filename: str, content_type: str, raw: bytes) -> list[WordCrea
             "tags",
         }
         if set(reader.fieldnames or []) != required:
-            raise AppError(422, "VALIDATION_ERROR", "invalid CSV header")
+            raise AppError(422, "VALIDATION_ERROR", "CSV 表头无效")
         rows = []
         for row in reader:
             rows.append(
@@ -467,7 +476,7 @@ def _parse_import(filename: str, content_type: str, raw: bytes) -> list[WordCrea
         raise AppError(
             422,
             "VALIDATION_ERROR",
-            "invalid import data",
+            "导入数据无效",
             [{"path": ["file", exc.lineno, exc.colno], "reason": exc.msg}],
         ) from exc
     except ValidationError as exc:
@@ -482,7 +491,7 @@ def _parse_import(filename: str, content_type: str, raw: bytes) -> list[WordCrea
                     "reason": error["msg"],
                 }
             )
-        raise AppError(422, "VALIDATION_ERROR", "invalid import data", details) from exc
+        raise AppError(422, "VALIDATION_ERROR", "导入数据无效", details) from exc
 
 
 @router.get("/{word_id}")

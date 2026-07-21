@@ -14,10 +14,10 @@ def _duplicate_error(word: Word) -> AppError:
         return AppError(
             409,
             "WORD_DELETED",
-            "a deleted word uses the same normalized spelling",
-            [{"path": ["body", "en_word"], "reason": "restore existing word", "word_id": word.id}],
+            "已存在相同拼写的已删除单词",
+            [{"path": ["body", "en_word"], "reason": "可恢复该已删除的单词", "word_id": word.id}],
         )
-    return AppError(409, "DUPLICATE_WORD", "word already exists")
+    return AppError(409, "DUPLICATE_WORD", "该单词已存在")
 
 
 def _set_tags(db: Session, word: Word, values: list[str]) -> None:
@@ -38,7 +38,7 @@ def create_word(db: Session, payload: WordCreate) -> Word:
     if duplicate is not None:
         raise _duplicate_error(duplicate)
     if not payload.cn_meaning:
-        raise AppError(422, "VALIDATION_ERROR", "cn_meaning is required after enrichment")
+        raise AppError(422, "VALIDATION_ERROR", "未能获取中文释义，请手动填写")
     now = utc_text()
     word = Word(
         en_word=display,
@@ -69,7 +69,7 @@ def update_word(db: Session, word_id: int, payload: WordUpdate) -> Word:
         raise AppError(
             409,
             "VERSION_CONFLICT",
-            "word was modified",
+            "单词已被其他操作修改，请刷新后重试",
             [{"current_version": word.version}],
         )
     display, normalized = normalize_word(payload.en_word)
@@ -104,7 +104,7 @@ def delete_word(db: Session, word_id: int, expected_version: int | None) -> Word
         raise AppError(
             409,
             "VERSION_CONFLICT",
-            "word was modified",
+            "单词已被其他操作修改，请刷新后重试",
             [{"current_version": word.version}],
         )
     now = utc_text()
@@ -121,7 +121,7 @@ def restore_word(db: Session, word_id: int, expected_version: int) -> Word:
         raise AppError(
             409,
             "VERSION_CONFLICT",
-            "word was modified",
+            "单词已被其他操作修改，请刷新后重试",
             [{"current_version": word.version}],
         )
     if word.deleted_at:
@@ -129,6 +129,31 @@ def restore_word(db: Session, word_id: int, expected_version: int) -> Word:
         word.version += 1
         word.updated_at = utc_text()
         db.flush()
+    return word
+
+
+def reimport_word(db: Session, word_id: int, payload: WordCreate) -> Word:
+    """Restore a soft-deleted word and overwrite it with an import payload.
+
+    Importing a word whose normalized spelling matches a deleted word brings
+    that word back instead of failing: undelete, refresh all fields from the
+    payload, single version bump.
+    """
+    word = db.get(Word, word_id)
+    if word is None:
+        raise not_found("word")
+    display, normalized = normalize_word(payload.en_word)
+    word.en_word = display
+    word.normalized_en_word = normalized
+    word.phonetic = payload.phonetic
+    word.cn_meaning = payload.cn_meaning.strip()
+    word.example_sentence = payload.example_sentence
+    word.is_custom = int(payload.is_custom)
+    word.deleted_at = None
+    word.version += 1
+    word.updated_at = utc_text()
+    _set_tags(db, word, payload.tags)
+    db.flush()
     return word
 
 

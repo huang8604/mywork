@@ -132,10 +132,10 @@ def _authenticate_bearer(
         or matched.revoked_at is not None
         or parse_utc(matched.expires_at) <= now
     ):
-        raise AppError(401, "AUTH_REQUIRED", "invalid or expired bearer token")
+        raise AppError(401, "AUTH_REQUIRED", "令牌无效或已过期")
     client = db.get(ApiClient, matched.api_client_id)
     if client is None or client.status != "active":
-        raise AppError(401, "AUTH_REQUIRED", "API client is disabled")
+        raise AppError(401, "AUTH_REQUIRED", "该 API 客户端已被禁用")
     _check_rate_limit(request, f"client:{client.id}", settings)
     scopes = frozenset(
         db.scalars(
@@ -163,7 +163,7 @@ def get_actor(
     settings = get_settings()
     if credentials is not None:
         if credentials.scheme.lower() != "bearer":
-            raise AppError(401, "AUTH_REQUIRED", "bearer token required")
+            raise AppError(401, "AUTH_REQUIRED", "需要提供 Bearer 令牌")
         actor = _authenticate_bearer(db, credentials.credentials, settings, request)
         request.state.actor = actor
         return actor
@@ -172,10 +172,10 @@ def get_actor(
         request.state.actor = actor
         return actor
     if not _trusted_peer(request, settings):
-        raise AppError(401, "AUTH_REQUIRED", "trusted proxy required")
+        raise AppError(401, "AUTH_REQUIRED", "需要通过受信任的代理访问")
     forwarded_user = request.headers.get("X-Forwarded-User", "").strip()
     if not forwarded_user or len(forwarded_user) > 128:
-        raise AppError(401, "AUTH_REQUIRED", "trusted web identity required")
+        raise AppError(401, "AUTH_REQUIRED", "需要受信任的 Web 身份")
     actor = Actor("web_user", forwarded_user, frozenset(ALL_SCOPES))
     request.state.actor = actor
     return actor

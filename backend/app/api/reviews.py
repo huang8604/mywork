@@ -103,15 +103,15 @@ def list_reviews(
     sort: str = "reviewed_at_desc",
 ):
     if status and status not in {"known", "unknown", "skipped"}:
-        raise AppError(422, "VALIDATION_ERROR", "invalid status")
+        raise AppError(422, "VALIDATION_ERROR", "无效的复习状态")
     if source and source not in {"quick_review", "online_practice", "print_manual"}:
-        raise AppError(422, "VALIDATION_ERROR", "invalid source")
+        raise AppError(422, "VALIDATION_ERROR", "无效的复习来源")
     if actor_type and actor_type not in {"web_user", "api_client"}:
-        raise AppError(422, "VALIDATION_ERROR", "invalid actor_type")
+        raise AppError(422, "VALIDATION_ERROR", "无效的来源类型")
     if sort not in {"reviewed_at_desc", "reviewed_at_asc"}:
-        raise AppError(422, "VALIDATION_ERROR", "invalid sort")
+        raise AppError(422, "VALIDATION_ERROR", "无效的排序方式")
     if reviewed_from and reviewed_to and reviewed_from > reviewed_to:
-        raise AppError(422, "VALIDATION_ERROR", "invalid reviewed range")
+        raise AppError(422, "VALIDATION_ERROR", "复习时间范围无效：开始不能晚于结束")
     filters = []
     for column, value in (
         (ReviewLog.word_id, word_id),
