@@ -90,6 +90,7 @@ class WordUpdate(StrictModel):
 
 class WordEnrichRequest(StrictModel):
     words: list[NonEmpty200] = Field(min_length=1, max_length=200)
+    allow_ai: bool = False
 
     @field_validator("words")
     @classmethod

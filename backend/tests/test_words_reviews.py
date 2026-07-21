@@ -38,14 +38,22 @@ def test_word_crud_soft_delete_restore_and_global_uniqueness(client, word_payloa
     )
     assert deleted.status_code == 204
     assert client.get(f"/api/v1/words/{word['id']}").status_code == 404
-    deleted_duplicate = client.post("/api/v1/words", json=word_payload)
-    assert deleted_duplicate.status_code == 409
-    assert deleted_duplicate.json()["code"] == "WORD_DELETED"
+    # Re-creating a soft-deleted word restores it (same id, undeleted) instead
+    # of failing with WORD_DELETED.
+    recreated = client.post("/api/v1/words", json=word_payload)
+    assert recreated.status_code == 201
+    assert recreated.json()["data"]["id"] == word["id"]
+    assert recreated.json()["data"]["deleted_at"] is None
 
-    version = current["version"] + 1
+    # The explicit /restore endpoint still works on a freshly deleted word.
+    current2 = recreated.json()["data"]
+    client.delete(
+        f"/api/v1/words/{word['id']}",
+        headers={"If-Match": f'"{current2["version"]}"'},
+    )
     restored = client.post(
         f"/api/v1/words/{word['id']}/restore",
-        json={"expected_version": version},
+        json={"expected_version": current2["version"] + 1},
     )
     assert restored.status_code == 200
     assert restored.json()["data"]["deleted_at"] is None
@@ -406,3 +414,62 @@ def test_csv_formula_protection_is_reversible():
     values = ["=SUM(A1:A2)", " +command", "-1", "@mention", "'literal", "plain"]
     for value in values:
         assert _decode_safe_csv(_safe_csv(value)) == value
+
+
+def test_enrich_preview_supports_ai_fallback(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("DICTIONARY_INDEX_PATH", str(tmp_path / "missing.json"))
+    monkeypatch.setenv("AI_BASE_URL", "https://example.com/v1")
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    clear_dictionary_cache()
+    monkeypatch.setattr(
+        "app.services.dictionary.ai_enrich_word",
+        lambda w: {"cn_meaning": "AI 释义", "phonetic": "/x/", "example_sentence": "an example"},
+    )
+    try:
+        resp = client.post("/api/v1/words/enrich", json={"words": ["syzygy"], "allow_ai": True})
+        assert resp.status_code == 200, resp.text
+        draft = resp.json()["data"][0]
+        assert draft["source"] == "ai"
+        assert draft["dictionary_found"] is False
+        assert draft["cn_meaning"] == "AI 释义"
+        assert draft["phonetic"] == "/x/"
+
+        # Without allow_ai the same unresolved word gets no source.
+        plain = client.post("/api/v1/words/enrich", json={"words": ["syzygy"]})
+        assert plain.json()["data"][0]["source"] is None
+    finally:
+        get_settings.cache_clear()
+        clear_dictionary_cache()
+
+
+def test_recitation_md_and_pdf_export(client):
+    import pytest
+
+    word = create_word(client)
+    gen = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "gen-recitation"},
+        json={
+            "new_words_limit": 0,
+            "error_words_limit": 0,
+            "due_words_limit": 0,
+            "custom_words_limit": 0,
+            "fallback_unreviewed_days": 3,
+            "word_ids": [word["id"]],
+        },
+    )
+    assert gen.status_code == 201, gen.text
+    session_id = gen.json()["data"]["session_id"]
+
+    md = client.get(f"/api/v1/practice-sessions/{session_id}/recitation?format=md")
+    assert md.status_code == 200, md.text
+    assert "text/markdown" in md.headers["content-type"]
+    assert "|单词|音标|中文|例句|" in md.text
+    assert word["en_word"] in md.text
+
+    pytest.importorskip("weasyprint")
+    pdf = client.get(f"/api/v1/practice-sessions/{session_id}/recitation?format=pdf")
+    assert pdf.status_code == 200, pdf.text
+    assert pdf.headers["content-type"] == "application/pdf"
+    assert pdf.content.startswith(b"%PDF-")

@@ -530,6 +530,11 @@
       "WordEnrichRequest": {
         "additionalProperties": false,
         "properties": {
+          "allow_ai": {
+            "default": false,
+            "title": "Allow Ai",
+            "type": "boolean"
+          },
           "words": {
             "items": {
               "maxLength": 200,
@@ -1313,6 +1318,73 @@
         ],
         "x-required-scopes": [
           "practice:write"
+        ]
+      }
+    },
+    "/api/v1/practice-sessions/{session_id}/recitation": {
+      "get": {
+        "operationId": "recitation_api_v1_practice_sessions__session_id__recitation_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "format",
+            "required": false,
+            "schema": {
+              "default": "pdf",
+              "title": "Format",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Recitation",
+        "tags": [
+          "practice"
+        ],
+        "x-required-scopes": [
+          "practice:read"
         ]
       }
     },

@@ -36,6 +36,10 @@ def create_word(db: Session, payload: WordCreate) -> Word:
     display, normalized = normalize_word(payload.en_word)
     duplicate = db.scalar(select(Word).where(Word.normalized_en_word == normalized))
     if duplicate is not None:
+        if duplicate.deleted_at:
+            # Re-creating a soft-deleted word restores it (undelete + refresh)
+            # instead of failing — same behavior as importing a deleted word.
+            return reimport_word(db, duplicate.id, payload)
         raise _duplicate_error(duplicate)
     if not payload.cn_meaning:
         raise AppError(422, "VALIDATION_ERROR", "未能获取中文释义，请手动填写")

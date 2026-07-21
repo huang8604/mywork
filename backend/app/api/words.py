@@ -108,7 +108,7 @@ def enrich(
     payload: WordEnrichRequest,
     _actor: Annotated[Actor, Depends(require_scopes("words:write"))],
 ):
-    return envelope(request, [enrich_preview(word) for word in payload.words])
+    return envelope(request, [enrich_preview(word, allow_ai=payload.allow_ai) for word in payload.words])
 
 
 @router.get("")

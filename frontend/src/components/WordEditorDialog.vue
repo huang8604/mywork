@@ -20,18 +20,25 @@ watch(() => [props.modelValue, props.word] as const, () => {
   Object.assign(form,{en_word:word?.en_word??'',phonetic:word?.phonetic??'',cn_meaning:word?.cn_meaning??'',example_sentence:word?.example_sentence??'',is_custom:word?.is_custom??false,tags:word?.tags.join(', ')??''})
 })
 async function submit(){if(!await formRef.value?.validate().catch(()=>false))return;emit('submit',{en_word:form.en_word,phonetic:form.phonetic.trim()||null,cn_meaning:form.cn_meaning,example_sentence:form.example_sentence.trim()||null,is_custom:form.is_custom,tags:form.tags.split(/[,，]/).map(v=>v.trim()).filter(Boolean)})}
-async function autofill(){
+async function autofill(useAi=false){
   if(!form.en_word.trim()){enrichError.value='请先输入英文单词';return}
   enriching.value=true;enrichError.value=''
-  try{const [draft]=await enrichWords([form.en_word]);if(!draft?.dictionary_found){enrichError.value='本地词库没有找到该词，请手动填写。';return}form.phonetic ||= draft.phonetic||'';form.cn_meaning ||= draft.cn_meaning;form.example_sentence ||= draft.example_sentence||'';ElMessage.success('已从本地词库补全')}
-  catch(error){enrichError.value=normalizeApiError(error).message}
+  try{const [draft]=await enrichWords([form.en_word],useAi)
+    if(useAi){
+      if(!draft?.phonetic&&!draft?.cn_meaning&&!draft?.example_sentence){enrichError.value='AI 补全失败，请手动填写或检查 AI 是否已配置。';return}
+      form.phonetic ||= draft.phonetic||'';form.cn_meaning ||= draft.cn_meaning||'';form.example_sentence ||= draft.example_sentence||'';ElMessage.success('已通过 AI 补全')
+    }else{
+      if(!draft?.dictionary_found){enrichError.value='本地词库没有找到该词，可尝试 AI 补全。';return}
+      form.phonetic ||= draft.phonetic||'';form.cn_meaning ||= draft.cn_meaning||'';form.example_sentence ||= draft.example_sentence||'';ElMessage.success('已从本地词库补全')
+    }
+  }catch(error){enrichError.value=normalizeApiError(error).message}
   finally{enriching.value=false}
 }
 </script>
 <template>
   <el-dialog :model-value="modelValue" :title="word?'编辑单词':'新增单词'" width="min(620px, calc(100vw - 24px))" destroy-on-close @update:model-value="emit('update:modelValue',$event)">
     <el-form ref="formRef" :model="form" :rules="rules" label-position="top" @submit.prevent="submit">
-      <div class="form-grid"><el-form-item label="英文" prop="en_word"><el-input v-model="form.en_word" maxlength="200" autofocus><template #append><el-button :loading="enriching" @click="autofill">自动补全</el-button></template></el-input></el-form-item><el-form-item label="音标"><el-input v-model="form.phonetic" maxlength="200" /></el-form-item></div>
+      <div class="form-grid"><el-form-item label="英文" prop="en_word"><el-input v-model="form.en_word" maxlength="200" autofocus><template #append><el-dropdown trigger="click" :loading="enriching" @command="(c:string)=>autofill(c==='ai')"><el-button :loading="enriching">补全 ▾</el-button><template #dropdown><el-dropdown-menu><el-dropdown-item command="local">本地词库补全</el-dropdown-item><el-dropdown-item command="ai">AI 补全</el-dropdown-item></el-dropdown-menu></template></el-dropdown></template></el-input></el-form-item><el-form-item label="音标"><el-input v-model="form.phonetic" maxlength="200" /></el-form-item></div>
       <el-form-item label="中文释义" prop="cn_meaning"><el-input v-model="form.cn_meaning" type="textarea" :rows="3" maxlength="2000" show-word-limit /></el-form-item>
       <el-form-item label="例句"><el-input v-model="form.example_sentence" type="textarea" :rows="3" maxlength="5000" /></el-form-item>
       <el-form-item label="标签（逗号分隔）"><el-input v-model="form.tags" placeholder="例如：四级, 工作" /></el-form-item>

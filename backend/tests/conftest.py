@@ -9,6 +9,11 @@ from sqlalchemy.orm import Session, sessionmaker
 
 os.environ.setdefault("TRUSTED_LOCAL_WEB", "true")
 os.environ.setdefault("API_TOKEN_PEPPER", "test-pepper-at-least-16-bytes")
+# Force AI enrichment OFF by default so the suite is deterministic regardless of
+# the container's real AI_BASE_URL/AI_API_KEY. Tests that need AI opt in via
+# monkeypatch.setenv + get_settings.cache_clear().
+os.environ["AI_BASE_URL"] = ""
+os.environ["AI_API_KEY"] = ""
 
 from app.core.database import Base, build_engine, get_db
 from app.main import app

@@ -55,10 +55,12 @@ def enrich_word(
     phonetic = payload.phonetic or (_phonetic(entry) if entry else None)
     cn_meaning = payload.cn_meaning or (_meaning(entry) if entry else None)
     example_sentence = payload.example_sentence or (_example(entry) if entry else None)
-    if require_meaning and not cn_meaning and allow_ai:
+    if allow_ai and not cn_meaning:
         # Dictionary miss with no manual meaning: try the AI fallback before
-        # giving up. ai_enrich_word returns None when disabled/unavailable, so
-        # this is a no-op unless AI is configured.
+        # giving up. Runs for both create/import (require_meaning=True) and the
+        # editor's /words/enrich preview (require_meaning=False) so the "AI
+        # 补全" button works. ai_enrich_word returns None when disabled, making
+        # this a no-op unless AI is configured.
         ai = ai_enrich_word(display)
         if ai:
             phonetic = phonetic or ai["phonetic"]
@@ -85,12 +87,20 @@ def enrich_word(
     )
 
 
-def enrich_preview(word: str) -> dict[str, object]:
-    enriched, found = enrich_word(WordCreate(en_word=word), require_meaning=False)
+def enrich_preview(word: str, *, allow_ai: bool = False) -> dict[str, object]:
+    enriched, found = enrich_word(
+        WordCreate(en_word=word), require_meaning=False, allow_ai=allow_ai
+    )
+    ai_used = (
+        allow_ai
+        and not found
+        and bool(enriched.cn_meaning or enriched.phonetic or enriched.example_sentence)
+    )
+    source = "dictionary-index" if found else ("ai" if ai_used else None)
     return {
         **enriched.model_dump(mode="json"),
         "dictionary_found": found,
-        "source": "dictionary-index" if found else None,
+        "source": source,
         "missing_fields": [
             field
             for field in ("phonetic", "cn_meaning", "example_sentence")

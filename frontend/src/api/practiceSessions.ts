@@ -17,3 +17,8 @@ export async function putRoundResult(roundId: number, itemId: number, status: Re
 export async function putBatchRoundResults(roundId: number, items: BatchRoundResult[], idempotencyKey: string) {
   return unwrap((await apiClient.put<ApiEnvelope<BatchRoundResponse>>(`/practice-review-rounds/${roundId}/results`, { items }, { headers: { 'Idempotency-Key': idempotencyKey } })).data)
 }
+export async function downloadRecitation(sessionId: number, format: 'pdf' | 'md') {
+  const response = await apiClient.get<Blob>(`/practice-sessions/${sessionId}/recitation`, { params: { format }, responseType: 'blob', timeout: 60_000 })
+  const url = URL.createObjectURL(response.data); const link = document.createElement('a')
+  link.href = url; link.download = `recitation.${format}`; document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url)
+}

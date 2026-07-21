@@ -14,6 +14,16 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# Load local secrets (AI_BASE_URL/AI_API_KEY/AI_MODEL) if present. .env is
+# gitignored — never commit real keys. Sourced vars are exported so the
+# docker run below picks them up via ${AI_BASE_URL:-} etc.
+if [[ -f "$REPO/.env" ]]; then
+  set -a
+  . "$REPO/.env"
+  set +a
+fi
+
 IMAGE="python:3.12-slim"
 CONTAINER="myword-lan-backend"
 HOST_PORT="${MYWORD_HOST_PORT:-8001}"
@@ -79,7 +89,7 @@ ensure_backend() {
     -e "AI_API_KEY=${AI_API_KEY:-}" \
     -e "AI_MODEL=${AI_MODEL:-gpt-4o-mini}" \
     "$IMAGE" \
-    sh -lc 'pip install -e . && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000' >/dev/null
+    sh -lc 'dpkg -s fonts-noto-cjk >/dev/null 2>&1 || (apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz0b libfontconfig1 libcairo2) && pip install -e ".[pdf]" && alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000' >/dev/null
 }
 
 wait_health() {

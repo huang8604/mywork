@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request
+from fastapi.responses import Response
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.orm import Session
 
@@ -16,6 +17,7 @@ from app.models import PracticeReviewRound, PracticeSession, PracticeSessionItem
 from app.schemas import BatchResults, RoundCreate, RoundResult, StrategyRequest, VersionRequest
 from app.services.domain import utc_text
 from app.services.idempotency import claim, complete
+from app.services.recitation import build_recitation_md, render_recitation_pdf
 from app.services.reviews import batch_round_results, put_round_result
 from app.services.serializers import review_data, round_data, session_data
 from app.services.strategy import generate_session
@@ -217,6 +219,44 @@ def archive(
     )
     _commit(db)
     return envelope(request, data)
+
+
+@router.get("/practice-sessions/{session_id}/recitation")
+def recitation(
+    request: Request,
+    session_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+    format: str = "pdf",
+):
+    # Export a session as the 单词背诵表 handout: markdown (the canonical
+    # template) or PDF rendered from it via markdown+weasyprint ([pdf] extra).
+    _session(db, session_id)
+    if format not in {"pdf", "md"}:
+        raise AppError(422, "VALIDATION_ERROR", "format 必须是 pdf 或 md")
+    items = list(
+        db.scalars(
+            select(PracticeSessionItem)
+            .where(PracticeSessionItem.session_id == session_id)
+            .order_by(PracticeSessionItem.position)
+        )
+    )
+    md_text = build_recitation_md(items)
+    if format == "md":
+        return Response(
+            content=md_text.encode("utf-8"),
+            media_type="text/markdown; charset=utf-8",
+            headers={"Content-Disposition": 'attachment; filename="recitation.md"'},
+        )
+    pdf = render_recitation_pdf(md_text)
+    return Response(
+        content=pdf,
+        media_type="application/pdf",
+        headers={
+            "Content-Disposition": 'attachment; filename="recitation.pdf"',
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 @router.post("/practice-sessions/{session_id}/review-rounds")
