@@ -14,10 +14,11 @@ from app.core.database import get_db
 from app.core.errors import AppError, not_found
 from app.core.responses import envelope
 from app.models import PracticeReviewRound, PracticeSession, PracticeSessionItem
-from app.schemas import BatchResults, RoundCreate, RoundResult, StrategyRequest, VersionRequest
+from app.schemas import BatchResults, RoundCreate, RoundResult, SessionUpdate, StrategyRequest, VersionRequest
 from app.services.domain import utc_text
 from app.services.idempotency import claim, complete
 from app.services.recitation import build_recitation_md, render_recitation_pdf
+from app.services.sessions import delete_session, update_session
 from app.services.reviews import batch_round_results, put_round_result
 from app.services.serializers import review_data, round_data, session_data
 from app.services.strategy import generate_session
@@ -219,6 +220,53 @@ def archive(
     )
     _commit(db)
     return envelope(request, data)
+
+
+@router.patch("/practice-sessions/{session_id}")
+def update_session_route(
+    request: Request,
+    session_id: int,
+    payload: SessionUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("practice:write"))],
+):
+    session = update_session(db, session_id, payload)
+    data = session_data(db, session, include_items=False)
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="practice.update",
+        outcome="success",
+        http_status=200,
+        target_type="practice_session",
+        target_id=session_id,
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
+@router.delete("/practice-sessions/{session_id}", status_code=204)
+def delete_session_route(
+    request: Request,
+    session_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("practice:write"))],
+    expected_version: Annotated[int, Query(gt=0)],
+):
+    delete_session(db, session_id, expected_version)
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="practice.delete",
+        outcome="success",
+        http_status=204,
+        target_type="practice_session",
+        target_id=session_id,
+    )
+    _commit(db)
+    return Response(status_code=204)
 
 
 @router.get("/practice-sessions/{session_id}/recitation")

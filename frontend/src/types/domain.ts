@@ -68,11 +68,12 @@ export interface PracticeSession {
   created_by_actor_type: ActorType; created_by_actor_id: string | null; skill_name: string | null
   skill_version: string | null; version: number; generated_at: string; printed_at: string | null
   completed_at: string | null; archived_at: string | null; items?: PracticeItem[]; rounds?: PracticeRound[]
+  title: string | null; note: string | null
   web_url?: string; print_url?: string
 }
 export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; unresolved?: number; unresolved_words?: string[]; total: number; dry_run: boolean; dictionary_matches?: number }
 export interface EnrichedWord extends WordPayload {
-  dictionary_found: boolean; source: 'dictionary-index' | null; missing_fields: string[]
+  dictionary_found: boolean; source: 'dictionary-index' | 'ai' | null; missing_fields: string[]
 }
 export interface BatchRoundResult {
   item_id: number; status: ReviewStatus; client_event_id: string

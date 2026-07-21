@@ -71,6 +71,72 @@ def test_strategy_boundaries_empty_candidates_limit_and_seed_reproducibility(cli
     ]
 
 
+def test_strategy_priority_is_error_new_due_custom(client):
+    # 新优先级 error→new→due→custom:一个同时属于 new 与 custom 的词,
+    # 标签顺序应是 new 在前(旧顺序 error→due→custom→new 会得到 ["custom","new"])。
+    custom_word = create_word(
+        client, {"en_word": "myword", "cn_meaning": "自造词", "is_custom": True, "tags": []}
+    )
+    gen = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "gen-priority"},
+        json={
+            "new_words_limit": 1,
+            "error_words_limit": 0,
+            "due_words_limit": 0,
+            "custom_words_limit": 1,
+            "fallback_unreviewed_days": 3,
+            "seed": 42,
+        },
+    )
+    assert gen.status_code == 201, gen.text
+    data = gen.json()["data"]
+    # 该词被"新词"池优先消费(new 优先级高于 custom),source_categories 按新优先级排序。
+    assert [item["word_id"] for item in data["items"]] == [custom_word["id"]]
+    assert data["items"][0]["source_categories"] == ["new", "custom"]
+
+
+def test_strategy_backfills_shortfall_from_next_pool(client):
+    # 错词池不足时,缺额顺延到新词池补足,使总数达到 sum(limits)。
+    recent = utc_text(datetime.now(UTC) - timedelta(hours=1))  # 近期、不到期、非新词
+    for i in range(2):
+        w = create_word(
+            client, {"en_word": f"err{chr(97 + i)}", "cn_meaning": f"错{i}", "is_custom": False, "tags": []}
+        )
+        client.post(
+            "/api/v1/reviews",
+            json={
+                "word_id": w["id"],
+                "status": "unknown",
+                "source": "quick_review",
+                "client_event_id": f"err-ev-{i}",
+                "reviewed_at": recent,
+            },
+        )
+    for i in range(8):
+        create_word(
+            client, {"en_word": f"new{chr(97 + i)}", "cn_meaning": f"新{i}", "is_custom": False, "tags": []}
+        )
+    gen = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "gen-backfill"},
+        json={
+            "new_words_limit": 2,
+            "error_words_limit": 5,
+            "due_words_limit": 0,
+            "custom_words_limit": 0,
+            "fallback_unreviewed_days": 3,
+            "seed": 1,
+        },
+    )
+    assert gen.status_code == 201, gen.text
+    data = gen.json()["data"]
+    # 错词要 5 只有 2 → 缺 3;新词本要 2,补足缺额后挑 5 个 → 总数 7。
+    assert data["actual_counts"]["unique_total"] == 7
+    assert data["actual_counts"]["error"] == 2
+    assert data["actual_counts"]["new"] == 5
+
+
 def test_custom_selection_generates_exact_words_in_requested_order(client):
     first = create_word(client, {"en_word": "first", "cn_meaning": "第一", "tags": []})
     second = create_word(client, {"en_word": "second", "cn_meaning": "第二", "tags": []})

@@ -12,5 +12,12 @@ frontend/playwright-report/
 *.db
 *.db-shm
 *.db-wal
-# Local dictionary data is ignored until its source and redistribution license are recorded.
+# Local secrets (AI keys etc.) — never commit
+.env
+.env.*
+# Local dictionary data is ignored until its source and redistribution license is recorded.
 dictionary-index.json
+dictionary-index.json.full.json
+temp/
+# Local agent state
+.claude/

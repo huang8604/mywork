@@ -248,6 +248,8 @@ REQUIRED_SCOPES: dict[tuple[str, str], list[str]] = {
     ("POST", "/api/v1/daily-table/generate"): ["practice:generate"],
     ("GET", "/api/v1/practice-sessions"): ["practice:read"],
     ("GET", "/api/v1/practice-sessions/{session_id}"): ["practice:read"],
+    ("PATCH", "/api/v1/practice-sessions/{session_id}"): ["practice:write"],
+    ("DELETE", "/api/v1/practice-sessions/{session_id}"): ["practice:write"],
     ("GET", "/api/v1/practice-sessions/{session_id}/recitation"): ["practice:read"],
     ("POST", "/api/v1/practice-sessions/{session_id}/printed"): ["practice:write"],
     ("POST", "/api/v1/practice-sessions/{session_id}/archive"): ["practice:write"],

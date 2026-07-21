@@ -16,7 +16,7 @@ from app.services.domain import canonical_json, parse_utc, utc_text
 from app.services.reviews import ActorLike
 
 
-PRIORITY = ("error", "due", "custom", "new")
+PRIORITY = ("error", "new", "due", "custom")
 
 
 def _error_score(stats: WordStats, recent_unknown: int, now: datetime) -> int:
@@ -122,18 +122,25 @@ def generate_session(
         }
         selected = []
         selected_ids: set[int] = set()
-        contribution_counts = {key: 0 for key in PRIORITY}
+        # 某池缺额时,把缺额顺延到下一池补足,使总数尽量达到 sum(limits)。
+        # 例:错词要 5 个但池里只有 2 个 → 缺 3 个,由下一池(新词)多挑 3 个补上。
+        deficit = 0
         for category in PRIORITY:
+            quota = limits[category] + deficit
+            taken = 0
             for word in pools[category]:
-                if contribution_counts[category] >= limits[category]:
+                if taken >= quota:
                     break
                 if word.id in selected_ids:
                     continue
                 selected.append(word)
                 selected_ids.add(word.id)
-                contribution_counts[category] += 1
+                taken += 1
                 if len(selected) >= settings.max_practice_words:
                     break
+            deficit = quota - taken
+            if len(selected) >= settings.max_practice_words:
+                break
         requested = {key: limits[key] for key in ("new", "error", "due", "custom")}
         actual = {"unique_total": len(selected)}
         for category in ("new", "error", "due", "custom"):
@@ -143,7 +150,7 @@ def generate_session(
     params["seed"] = seed
     params_json = canonical_json(params)
     session = PracticeSession(
-        strategy_version="v2",
+        strategy_version="v3",
         strategy_params_json=params_json,
         strategy_hash=hashlib.sha256(params_json.encode("utf-8")).hexdigest(),
         seed=seed,

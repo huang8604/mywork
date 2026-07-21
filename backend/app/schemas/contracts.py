@@ -178,3 +178,9 @@ class ImportOptions(StrictModel):
 
 class VersionRequest(StrictModel):
     expected_version: int = Field(gt=0)
+
+
+class SessionUpdate(StrictModel):
+    title: str | None = Field(default=None, max_length=200)
+    note: str | None = Field(default=None, max_length=5000)
+    expected_version: int = Field(gt=0)

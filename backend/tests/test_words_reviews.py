@@ -3,10 +3,11 @@ from __future__ import annotations
 import io
 import json
 
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from app.api.words import _decode_safe_csv, _safe_csv
 from app.core.config import get_settings
+from app.models import ReviewLog, WordStats
 from app.services.dictionary import clear_dictionary_cache
 from conftest import create_word
 
@@ -473,3 +474,77 @@ def test_recitation_md_and_pdf_export(client):
     assert pdf.status_code == 200, pdf.text
     assert pdf.headers["content-type"] == "application/pdf"
     assert pdf.content.startswith(b"%PDF-")
+
+
+def _session_with_word(client, *, key):
+    word = create_word(client)
+    gen = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": key},
+        json={
+            "new_words_limit": 0,
+            "error_words_limit": 0,
+            "due_words_limit": 0,
+            "custom_words_limit": 0,
+            "fallback_unreviewed_days": 3,
+            "word_ids": [word["id"]],
+        },
+    )
+    assert gen.status_code == 201, gen.text
+    return gen.json()["data"]
+
+
+def test_update_session_title_and_note_with_version_check(client):
+    session = _session_with_word(client, key="gen-update-session")
+    sid = session["session_id"]
+    version = session["version"]
+    updated = client.patch(
+        f"/api/v1/practice-sessions/{sid}",
+        json={"title": "考前冲刺", "note": "重点复习", "expected_version": version},
+    )
+    assert updated.status_code == 200, updated.text
+    data = updated.json()["data"]
+    assert data["title"] == "考前冲刺"
+    assert data["note"] == "重点复习"
+    assert data["version"] == version + 1
+    assert client.get(f"/api/v1/practice-sessions/{sid}").json()["data"]["title"] == "考前冲刺"
+
+    stale = client.patch(
+        f"/api/v1/practice-sessions/{sid}",
+        json={"title": "旧版本", "expected_version": version},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "VERSION_CONFLICT"
+
+
+def test_delete_session_removes_reviews_and_rebuilds_stats(client, db_session):
+    session = _session_with_word(client, key="gen-delete-session")
+    sid = session["session_id"]
+    item_id = session["items"][0]["item_id"]
+    word_id = session["items"][0]["word_id"]
+    version = session["version"]
+
+    rnd = client.post(
+        f"/api/v1/practice-sessions/{sid}/review-rounds",
+        headers={"Idempotency-Key": "round-delete"},
+        json={"mode": "offline"},
+    )
+    assert rnd.status_code == 201, rnd.text
+    rid = rnd.json()["data"]["round_id"]
+    batch = client.put(
+        f"/api/v1/practice-review-rounds/{rid}/results",
+        headers={"Idempotency-Key": "batch-delete"},
+        json={"items": [{"item_id": item_id, "status": "known", "client_event_id": "del-ev-1"}]},
+    )
+    assert batch.status_code == 200, batch.text
+    assert db_session.get(WordStats, word_id).known_count == 1
+
+    # Creating the round + saving results bumps the session version; re-read it.
+    current_version = client.get(f"/api/v1/practice-sessions/{sid}").json()["data"]["version"]
+    deleted = client.delete(f"/api/v1/practice-sessions/{sid}?expected_version={current_version}")
+    assert deleted.status_code == 204
+
+    db_session.expire_all()
+    assert client.get(f"/api/v1/practice-sessions/{sid}").status_code == 404
+    assert db_session.scalar(select(ReviewLog).where(ReviewLog.word_id == word_id)) is None
+    assert db_session.get(WordStats, word_id).known_count == 0

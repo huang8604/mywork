@@ -151,6 +151,8 @@ class PracticeSession(Base):
     printed_at: Mapped[str | None] = mapped_column(String(32))
     completed_at: Mapped[str | None] = mapped_column(String(32))
     archived_at: Mapped[str | None] = mapped_column(String(32))
+    title: Mapped[str | None] = mapped_column(String(200))
+    note: Mapped[str | None] = mapped_column(Text)
 
 
 class PracticeSessionItem(Base):

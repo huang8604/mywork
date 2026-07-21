@@ -95,7 +95,7 @@ Creating/importing a word runs through `enrich_word()` (`services/dictionary.py`
 
 ### Worksheet generation (strategy engine)
 
-`generate_session()` in `services/strategy.py` builds four priority pools — `error`, `due`, `custom`, `new` — assigns each word all its source labels, and selects up to `MAX_PRACTICE_WORDS`. Output is **deterministic given the seed** (`seed` persisted on the session; `strategy_hash` over canonicalized params). Each `PracticeSessionItem` snapshots the word's text at generation time so printed worksheets stay stable as the word library changes. Supports either category-quota selection or an explicit `word_ids` list (preserves user order).
+`generate_session()` in `services/strategy.py` builds four priority pools consumed in order `error → new → due → custom` (`PRIORITY`), assigns each word all its source labels, and selects up to `MAX_PRACTICE_WORDS`. When a pool can't fill its quota the shortfall cascades to the next pool, so the total still reaches `sum(limits)` whenever enough words exist (Plan-A backfill). Output is **deterministic given the seed** (`seed` persisted on the session; `strategy_hash` over canonicalized params). Each `PracticeSessionItem` snapshots the word's text at generation time so printed worksheets stay stable as the word library changes. Supports either category-quota selection or an explicit `word_ids` list (preserves user order).
 
 ### Stats rebuild
 

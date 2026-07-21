@@ -143,6 +143,8 @@ def session_data(db: Session, session: PracticeSession, *, include_items: bool) 
         "printed_at": session.printed_at,
         "completed_at": session.completed_at,
         "archived_at": session.archived_at,
+        "title": session.title,
+        "note": session.note,
     }
     if include_items:
         items = db.scalars(

@@ -343,6 +343,45 @@
         "title": "RoundResult",
         "type": "object"
       },
+      "SessionUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "expected_version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "note": {
+            "anyOf": [
+              {
+                "maxLength": 5000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Note"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          }
+        },
+        "required": [
+          "expected_version"
+        ],
+        "title": "SessionUpdate",
+        "type": "object"
+      },
       "StrategyRequest": {
         "additionalProperties": false,
         "properties": {
@@ -1125,6 +1164,66 @@
       }
     },
     "/api/v1/practice-sessions/{session_id}": {
+      "delete": {
+        "operationId": "delete_session_route_api_v1_practice_sessions__session_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "expected_version",
+            "required": true,
+            "schema": {
+              "exclusiveMinimum": 0,
+              "title": "Expected Version",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Delete Session Route",
+        "tags": [
+          "practice"
+        ],
+        "x-required-scopes": [
+          "practice:write"
+        ]
+      },
       "get": {
         "operationId": "get_session_api_v1_practice_sessions__session_id__get",
         "parameters": [
@@ -1178,6 +1277,71 @@
         ],
         "x-required-scopes": [
           "practice:read"
+        ]
+      },
+      "patch": {
+        "operationId": "update_session_route_api_v1_practice_sessions__session_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "session_id",
+            "required": true,
+            "schema": {
+              "title": "Session Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SessionUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Update Session Route",
+        "tags": [
+          "practice"
+        ],
+        "x-required-scopes": [
+          "practice:write"
         ]
       }
     },
