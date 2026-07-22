@@ -54,7 +54,7 @@ test('word CRUD autofill and English-only import remain usable', async ({ page }
   const visibleWord = (text: string) => page.locator('.mobile-word-cards:visible h3, .desktop-word-table:visible .table-word').filter({ hasText: text })
   await page.goto('/words'); await expect(visibleWord('serendipity')).toBeVisible()
   await page.getByRole('button', { name: '新增单词' }).first().click(); await page.getByLabel('英文', { exact: true }).fill('resilient'); await page.getByRole('button', { name: /补全/ }).click(); await page.getByText('本地词库补全', { exact: true }).click(); await expect(page.getByLabel('中文释义', { exact: true })).toHaveValue('有韧性的'); await page.getByRole('button', { name: '保存' }).click(); await expect(visibleWord('resilient')).toBeVisible()
-  await page.getByRole('button', { name: '导入 / 导出' }).click(); await page.getByLabel('英文单词列表').fill('focus\ncamera'); await page.getByRole('button', { name: '开始导入' }).click(); await expect(page.getByText('词典命中')).toBeVisible()
+  await page.getByRole('button', { name: '导入 / 导出' }).click(); await expect(page.getByRole('radio', { name: 'AI 补充' })).toBeChecked(); await page.getByLabel('英文单词列表').fill('focus\ncamera'); await page.getByRole('button', { name: '开始导入' }).click(); await expect(page.getByText('词典命中')).toBeVisible()
 })
 
 test('online review records three-state result and history permits correction', async ({ page }) => {
