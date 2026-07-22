@@ -9,7 +9,7 @@ export interface ReviewSummary {
  * Label for the primary 下一题 button in the locked (revealed) state.
  * On the last card (or when there are no cards) it becomes a 已完成 ✓ marker.
  */
-export function nextButtonLabel(state: { index: number; total: number; revealed: boolean }): string {
+export function nextButtonLabel(state: { index: number; total: number }): string {
   return isLast(state) ? '已完成 ✓' : '下一题'
 }
 
@@ -24,7 +24,7 @@ export function nextButtonDisabled(state: { index: number; total: number }): boo
  * Tally in-memory results into known/unknown/skipped/total counts for the
  * read-only finish summary. Unknown status values simply aren't counted.
  */
-export function summarize(results: Map<number, { status: string }>): ReviewSummary {
+export function summarize<R extends { status: string }>(results: Map<number, R>): ReviewSummary {
   let known = 0
   let unknown = 0
   let skipped = 0
