@@ -55,6 +55,20 @@ def enrich_word(
     phonetic = payload.phonetic or (_phonetic(entry) if entry else None)
     cn_meaning = payload.cn_meaning or (_meaning(entry) if entry else None)
     example_sentence = payload.example_sentence or (_example(entry) if entry else None)
+    # Meaning too long and unshorten-able: try AI re-translation before the
+    # hard cap. Runs for both create/import and the editor preview so the AI
+    # 补全 button can also retranslate an over-long stored meaning.
+    if cn_meaning and len(cn_meaning) > 16 and shorten_translations([{"pos": "", "cn": cn_meaning}]) is None:
+        if allow_ai and get_settings().ai_enabled:
+            ai = ai_enrich_word(display)
+            if ai and ai.get("cn_meaning"):
+                phonetic = phonetic or ai["phonetic"]
+                cn_meaning = ai["cn_meaning"]
+                example_sentence = example_sentence or ai["example_sentence"]
+        if cn_meaning and len(cn_meaning) > 16:
+            # still too long (AI off / failed / also over-long): hard-cap to 16
+            # chars with an ellipsis so the worksheet column never overflows.
+            cn_meaning = cn_meaning[:16].rstrip(_MEANING_PUNCT) + "…"
     if allow_ai and not cn_meaning:
         # Dictionary miss with no manual meaning: try the AI fallback before
         # giving up. Runs for both create/import (require_meaning=True) and the
@@ -160,22 +174,31 @@ def clean_translation_items(
     return items
 
 
+_BOUNDARY_CHARS = " ；;,，.。、"
+
+
 def shorten_translations(
     translations: Any,
     *,
     max_senses: int = 3,
-    hard_cap: int = 40,
+    target: int = 16,
+    min_keep: int = 10,
+    hard_cap: int = 16,
 ) -> str | None:
-    """Collapse a word's translation senses into one short Chinese meaning.
+    """Collapse senses into one short Chinese meaning (≤ ``target`` when possible).
 
-    The raw ``t`` list joins *every* sense — surnames, parenthetical English
-    glosses, near-English senses, and duplicates — which inflates meanings to
-    hundreds of characters and breaks the printed worksheet. This keeps up to
-    ``max_senses`` primary senses and caps total length at ``hard_cap``
-    (truncating on a ``；`` boundary). When every sense is filtered out it
-    falls back to the raw joined senses, capped, so a word never loses its
-    meaning entirely.
+    1) join up to ``max_senses`` cleaned senses with ``；``;
+    2) if already ≤ ``target``, return it;
+    3) else look for the LAST boundary char (``。 ； ， , ; . 、``) whose cut yields
+       a length within ``[min_keep, target]``; if found, cut there (trim trailing
+       punct);
+    4) else return ``None`` — the caller (``enrich_word``) decides the
+       AI-retranslate / hard-cap fallback.
+
+    ``hard_cap`` is kept for compatibility but no longer appends ``…`` here; the
+    caller does the hard cap so it can run AI first.
     """
+    del hard_cap  # kept in signature for call-site compatibility; no longer used
     if not isinstance(translations, list):
         return None
     items = clean_translation_items(translations, max_senses=max_senses)
@@ -194,17 +217,32 @@ def shorten_translations(
     text = "；".join(parts)
     if not text:
         return None
-    if len(text) <= hard_cap:
+    if len(text) <= target:
         return text
-    cut = text[:hard_cap]
-    boundary = cut.rfind("；")
-    if boundary > 8:
-        cut = cut[:boundary]
-    return cut + "…"
+    # search the last boundary whose resulting cut stays within [min_keep, target]
+    for i in range(min(target, len(text)), min_keep - 1, -1):
+        if text[i - 1] in _BOUNDARY_CHARS:
+            return text[: i - 1].strip(_MEANING_PUNCT)
+    return None
 
 
 def _meaning(entry: dict[str, Any]) -> str | None:
-    return shorten_translations(entry.get("t"))
+    translations = entry.get("t")
+    if not isinstance(translations, list):
+        return None
+    shortened = shorten_translations(translations)
+    if shortened is not None:
+        return shortened
+    # shorten_translations returns None when senses exist but every cut leaves
+    # the text too long with no boundary in window. Fall back to the raw joined
+    # text so ``enrich_word`` can still see the meaning and run its AI/hard-cap
+    # branch — without this, a long unshortenable meaning would look identical
+    # to a dictionary miss and raise DICTIONARY_ENTRY_NOT_FOUND.
+    items = clean_translation_items(translations)
+    if not items:
+        return None
+    parts = [f"{it['pos']} {it['cn']}".strip() for it in items]
+    return "；".join(parts) or None
 
 
 def _example(entry: dict[str, Any]) -> str | None:

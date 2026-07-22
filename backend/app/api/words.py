@@ -333,7 +333,11 @@ async def import_words(
             headers={"Idempotency-Replayed": "true"},
         )
     created = updated = skipped = 0
+    resolved: list[dict] = []
     seen: set[str] = set()
+    # normalized → word_id of the first in-file occurrence, so a later duplicate
+    # (under conflict_policy=skip) can report the same word_id rather than null.
+    seen_ids: dict[str, int | None] = {}
     from app.services.domain import normalize_word
 
     for row_number, payload in enumerate(payloads, 1):
@@ -344,6 +348,13 @@ async def import_words(
             # duplicate as a conflict and abort the whole batch atomically.
             if conflict_policy == "skip":
                 skipped += 1
+                resolved.append(
+                    {
+                        "en_word": payload.en_word,
+                        "word_id": seen_ids.get(normalized),
+                        "action": "skipped",
+                    }
+                )
                 continue
             raise AppError(
                 422,
@@ -354,9 +365,12 @@ async def import_words(
         seen.add(normalized)
         existing = db.scalar(select(Word).where(Word.normalized_en_word == normalized))
         if existing is None:
+            new_id: int | None = None
             if not dry_run:
-                create_word(db, payload)
+                new_id = create_word(db, payload).id
             created += 1
+            seen_ids[normalized] = new_id
+            resolved.append({"en_word": payload.en_word, "word_id": new_id, "action": "created"})
             continue
         if existing.deleted_at:
             # Re-importing a soft-deleted word restores it (undelete + refresh),
@@ -366,11 +380,15 @@ async def import_words(
             if not dry_run:
                 reimport_word(db, existing.id, payload)
             updated += 1
+            seen_ids[normalized] = existing.id
+            resolved.append({"en_word": payload.en_word, "word_id": existing.id, "action": "updated"})
             continue
         if conflict_policy == "reject":
             raise AppError(409, "DUPLICATE_WORD", "导入内容包含已存在的单词")
         if conflict_policy == "skip":
             skipped += 1
+            seen_ids[normalized] = existing.id
+            resolved.append({"en_word": payload.en_word, "word_id": existing.id, "action": "skipped"})
             continue
         if not dry_run:
             update_word(
@@ -379,6 +397,11 @@ async def import_words(
                 WordUpdate(**payload.model_dump(), expected_version=existing.version),
             )
         updated += 1
+        seen_ids[normalized] = existing.id
+        resolved.append({"en_word": payload.en_word, "word_id": existing.id, "action": "updated"})
+    # Words dropped before the main loop (dictionary miss under skip/ai policy).
+    for en_word in unresolved_words:
+        resolved.append({"en_word": en_word, "word_id": None, "action": "unresolved"})
     data = {
         "created": created,
         "updated": updated,
@@ -386,6 +409,7 @@ async def import_words(
         "rejected": 0,
         "unresolved": len(unresolved_words),
         "unresolved_words": unresolved_words,
+        "resolved": resolved,
         "total": input_total,
         "dry_run": dry_run,
         "dictionary_matches": dictionary_matches,

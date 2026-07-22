@@ -42,7 +42,7 @@ def ai_enrich_word(en_word: str) -> dict[str, str | None] | None:
         return None
     prompt = (
         f"给出英文单词「{en_word}」用于单词记忆卡的内容，要求："
-        "1) cn_meaning 为简明中文释义（主要词义，不超过 40 字）；"
+        "1) cn_meaning 为简明中文释义（主要词义，不超过 16 个汉字）；"
         "2) phonetic 为国际音标；"
         "3) example 为一句简短英文例句。"
         '严格只返回 JSON，不要任何解释：{"cn_meaning":"...","phonetic":"...","example":"..."}'
@@ -77,6 +77,9 @@ def ai_enrich_word(en_word: str) -> dict[str, str | None] | None:
     cn_meaning = str(parsed.get("cn_meaning") or "").strip()
     if not cn_meaning:
         return None
+    if len(cn_meaning) > 16:
+        # Hard cap: the prompt asks for ≤16 chars but models sometimes overshoot.
+        cn_meaning = cn_meaning[:16].rstrip(" ；;,，.。、") + "…"
     logger.debug("ai_enrich_hit word=%s", en_word)
     return {
         "cn_meaning": cn_meaning,

@@ -236,10 +236,10 @@ def test_shorten_translations_drops_surnames_glosses_and_caps_length():
     laptop = [{"pos": "n.", "cn": "膝上型计算机，便携式电脑（=laptop computer）"}]
     assert shorten_translations(laptop) == "n. 膝上型计算机，便携式电脑"
 
-    # length cap truncates on a ；boundary and adds an ellipsis
+    # length cap now targets ≤16 chars, cutting on the last boundary in window
     long_cn = "；".join("释义文字" for _ in range(20))
     capped = shorten_translations([{"pos": "n.", "cn": long_cn}])
-    assert len(capped) <= 40 and capped.endswith("…")
+    assert capped is not None and len(capped) <= 16
 
     # max_senses limits the number of kept senses
     many = [{"pos": "n.", "cn": c} for c in ("甲等", "乙等", "丙等", "丁等", "戊等")]
