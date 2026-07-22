@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { formatPhonetic } from '@/utils/formatPhonetic'
 import type { PracticeItem, PracticeSession } from '@/types/domain'
 
-export type WorksheetMode = 'cn-to-en' | 'en-to-cn' | 'cloze'
+export type WorksheetMode = 'cn-to-en' | 'en-to-cn'
 const props = defineProps<{ session: PracticeSession; mode: WorksheetMode; answer?: boolean }>()
 const title = computed(() => props.answer ? '单词复习表 · 答案' : '单词复习表')
 const date = computed(() => new Date(props.session.generated_at).toLocaleDateString('zh-CN'))
