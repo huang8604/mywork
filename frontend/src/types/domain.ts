@@ -98,3 +98,47 @@ export interface WebUser {
 }
 export interface UserCreatePayload { username: string; password: string; role: WebRole }
 export interface UserUpdatePayload { role?: WebRole; disabled?: boolean }
+
+export type ApiScope =
+  | 'words:read' | 'words:write' | 'words:export'
+  | 'practice:generate' | 'practice:read' | 'practice:write'
+  | 'reviews:write' | 'reviews:read'
+
+export const ALL_API_SCOPES: ApiScope[] = [
+  'words:read', 'words:write', 'words:export',
+  'practice:generate', 'practice:read', 'practice:write',
+  'reviews:write', 'reviews:read',
+]
+
+export interface ApiClientTokenInfo {
+  id: number
+  prefix: string
+  state: string
+  expires_at: string
+  last_used_at: string | null
+}
+export interface ApiClient {
+  id: number
+  name: string
+  description: string | null
+  skill_name: string
+  skill_version: string
+  status: string
+  scopes: string[]
+  tokens: ApiClientTokenInfo[]
+  created_at: string
+}
+export interface ApiClientCreated extends ApiClient { token: string }
+export interface ApiClientCreatePayload {
+  name: string
+  skill_name: string
+  skill_version: string
+  scopes: string[]
+  expires_days: number
+  description?: string
+}
+export interface ApiClientUpdatePayload {
+  scopes?: string[]
+  description?: string
+  status?: 'active' | 'disabled'
+}

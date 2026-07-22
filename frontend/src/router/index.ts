@@ -36,6 +36,7 @@ export const routes: RouteRecordRaw[] = [
       { path: 'daily/sessions/:id', name: 'practice-session', component: () => import('@/views/PracticeSessionView.vue'), meta: { label: '复习回录', shortLabel: '回录', icon: '✓', title: '复习结果回录', roles: ['admin'] } },
       { path: 'history', name: 'history', component: () => import('@/views/HistoryView.vue'), meta: { label: '复习历史', shortLabel: '历史', icon: '↺', nav: true, title: '复习历史', roles: ['admin'] } },
       { path: 'users', name: 'users', component: () => import('@/views/UsersView.vue'), meta: { label: '用户管理', shortLabel: '用户', icon: '◐', nav: true, title: '用户管理', roles: ['admin'] } },
+      { path: 'system', name: 'system', component: () => import('@/views/SystemView.vue'), meta: { label: '系统管理', shortLabel: '系统', icon: '⚙', nav: true, title: '系统管理', roles: ['admin'] } },
       { path: ':pathMatch(.*)*', name: 'not-found', component: () => import('@/views/NotFoundView.vue'), meta: { label: '页面不存在', shortLabel: '404', icon: '?', title: '页面不存在' } },
     ],
   },
