@@ -79,14 +79,18 @@ Every `/api/v1` JSON success is wrapped by `envelope()` in `core/responses.py`:
 ```
 Errors use `{"code", "message", "details": [...], "request_id"}`. Raise `AppError(status, code, message, details, headers)` **anywhere** in the call stack — handlers in `main.py` convert it (plus `RequestValidationError`, `IntegrityError`, SQLite `OperationalError`) to the error envelope. Always raise `AppError`/`not_found()`/`validation()` rather than `HTTPException`. The SQLite-busy branch returns `503 SERVICE_BUSY` with `Retry-After`.
 
-### Authentication & authorization (dual model)
+### Authentication & authorization (bearer + three web paths)
 
-`get_actor` (in `core/auth.py`, applied via `require_scopes(...)`) resolves one of two identities:
+`get_actor` (in `core/auth.py`, applied via `require_scopes(...)`) resolves identity in this order:
 
-1. **Browser / web** — either a trusted reverse proxy (`X-Forwarded-User` accepted only from `TRUSTED_PROXY_CIDRS`) or local dev (`TRUSTED_LOCAL_WEB=true`, loopback → `local-admin`). Web users receive all scopes.
-2. **External Skill / API client** — Argon2-hashed Bearer token (`wm_...`), prefix-indexed for lookup, rate-limited per peer+identity, with explicitly granted scopes from `ApiClientScope`.
+1. **External Skill / API client** — Argon2-hashed Bearer token (`wm_...`), prefix-indexed, rate-limited per peer+identity, with explicitly granted scopes from `ApiClientScope`.
+2. **Web login (session cookie)** — a `wm_session` cookie signed by Starlette `SessionMiddleware` (secret = `SESSION_SECRET(_FILE)`, defaulting to the token pepper). The cookie holds only `{sub: username}`; on each request `_session_actor` looks up `WebCredential` for the current role + disabled state, so role/disable changes take effect immediately. Scopes come from `ROLE_SCOPES`: `admin` → all scopes, `student` → `{practice:generate, practice:read, reviews:write}` (the online-review flow only). This is the path behind the `/login` page.
+3. **Local dev** — `TRUSTED_LOCAL_WEB=true` + loopback peer → full-admin `local-admin`.
+4. **Trusted reverse proxy** — `X-Forwarded-User` accepted only from `TRUSTED_PROXY_CIDRS`, granted all scopes. **Skipped entirely when `WEB_LOGIN_REQUIRED=true`** — that flag makes the cookie login the only web path (use it to expose the app publicly behind HTTPS without relying on the proxy to vouch for identity).
 
-`Actor` (with `actor_type`, `actor_id`, `scopes`, optional `api_client_id`/`skill_name`/`skill_version`) is threaded through services. The route→scopes mapping lives in `REQUIRED_SCOPES` in `main.py` and is also injected into OpenAPI as `x-required-scopes`. **When adding or changing a route, update `REQUIRED_SCOPES` there** (and re-export the OpenAPI contract).
+`Actor` carries `actor_type`, `actor_id`, `scopes`, `role` (web only), and optional `api_client_id`/`skill_name`/`skill_version`. CSRF on cookie-authenticated writes is handled by the existing Origin check in `main.py` (`Origin == PUBLIC_BASE_URL` for POST/PUT/PATCH/DELETE) — no separate CSRF token. The route→scopes mapping is `REQUIRED_SCOPES` in `main.py` (injected into OpenAPI as `x-required-scopes`); `/api/v1/auth/*` and `/api/v1/users/*` are intentionally NOT scope-gated — user management is role-gated via the `require_web_admin` dependency (`Actor.role == "admin"`), keeping `ALL_SCOPES` (the API-client scope universe) unchanged. **When adding or changing a route, update `REQUIRED_SCOPES` there** (and re-export the OpenAPI contract).
+
+The initial admin is bootstrapped from `WEB_ADMIN_USERNAME`/`WEB_ADMIN_PASSWORD(_FILE)` by `app/bootstrap.py` (run from `docker-entrypoint.sh`); admin then creates students via the 用户管理 page or `scripts/set_web_password.py --role student`. Self-delete / last-admin deletion is refused (lockout guard).
 
 ### Idempotency & optimistic locking
 
@@ -122,6 +126,7 @@ In production the backend serves the built SPA from `FRONTEND_DIST` (default `fr
 - **`src/types/domain.ts` is the source of truth for response types**, not OpenAPI — the backend's success schemas are not fully described, and types are validated by API unit tests + e2e mocks instead.
 - Routing in `src/router/index.ts`; each nav route carries `meta` used for labels and document title. Responsive breakpoints in `src/styles/breakpoints.css`; print rules in `src/styles/print.css`.
 - `newEventId()` generates the `client_event_id` for each review submission.
+- **Auth**: `useAuthStore` (`stores/auth.ts`) holds the logged-in identity (`username`/`role`); the router `beforeEach` awaits `fetchMe()` once, then enforces each route's `meta.roles` (`admin` sees everything, `student` only `/review`). `apiClient` uses `withCredentials` and, on a non-`/auth/*` 401, clears the store and redirects to `/login`. Login is a server-set session cookie — no token lives in JS.
 
 ## External Skills
 
@@ -131,6 +136,8 @@ The repo ships an `add-words` Skill (`skills/add-words/`) that adds words via th
 
 `Settings.from_env()` (`core/config.py`, `lru_cache`d) is the single source for config. Required for startup: `API_TOKEN_PEPPER` or `API_TOKEN_PEPPER_FILE` (≥32 bytes). Production also needs `DATABASE_URL`, `PUBLIC_BASE_URL`, `TRUSTED_HOSTS`, `TRUSTED_PROXY_CIDRS`. `TRUSTED_LOCAL_WEB` defaults to `false`. Wildcard CORS origins are rejected. Set `LOG_LEVEL=DEBUG` to log route templates, latency, dictionary misses, and actor type — tokens and request bodies are never logged.
 
+**Web login (optional):** set `WEB_LOGIN_REQUIRED=true` + `WEB_ADMIN_PASSWORD` (or `WEB_ADMIN_PASSWORD_FILE`) to expose a `/login` page backed by a signed session cookie (`wm_session`, secret = `SESSION_SECRET(_FILE)`, defaulting to the token pepper). Optional: `WEB_ADMIN_USERNAME` (default `admin`), `SESSION_MAX_AGE` (default 7d). With `WEB_LOGIN_REQUIRED=true`, the proxy/local web-admin branches are disabled — only the cookie login (and bearer tokens) authenticate. Provision/rotate web credentials with `scripts/set_web_password.py`.
+
 ## Conventions to follow
 
 - Keep the four-layer split: routes call services; services own DB writes and transactions; raise `AppError` for any business failure.
@@ -138,4 +145,6 @@ The repo ships an `add-words` Skill (`skills/add-words/`) that adds words via th
 - New write route? Decide on `Idempotency-Key` (header, for whole-request replay) vs `client_event_id` (per-item dedup), wire `claim()`/`complete()`, and **add the entry to `REQUIRED_SCOPES` in `main.py`**.
 - New enum value or constraint? Add it in `models/entities.py` (DB-level `CheckConstraint`), `schemas/contracts.py` (Pydantic `Literal`), and `src/types/domain.ts`.
 - After touching any request/response shape or scope, regenerate `backend/contracts/openapi.yaml` with `export_openapi.py`.
-- Mutable business state is single-user; don't introduce multi-user assumptions.
+- The deployment is single-tenant (one owner): all web logins share one word library — `admin` owns it, `student` accounts can only do online review. There is no per-user data isolation; don't add multi-tenant assumptions.
+- New web role? Add it to `ROLE_SCOPES` in `core/auth.py`, declare it in `WebRole` (`schemas/contracts.py` + `src/types/domain.ts`), and gate routes with `meta.roles` in `frontend/src/router/index.ts`.
+- Login/user-management routes (`/api/v1/auth/*`, `/api/v1/users/*`) are NOT in `REQUIRED_SCOPES` — `/auth/*` is public/session-self-managed, `/users/*` is admin-only via the `require_web_admin` dependency. Keep `ALL_SCOPES` (the API-client scope universe) free of any `users:manage`-style scope.

@@ -26,7 +26,7 @@ def ready(db: Annotated[Session, Depends(get_db)]):
     try:
         db.execute(text("SELECT 1"))
         revision = db.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        if revision != "0002":
+        if revision != "0003":
             raise RuntimeError("migration is not current")
     except (SQLAlchemyError, RuntimeError):
         from fastapi.responses import JSONResponse
@@ -44,7 +44,7 @@ def discovery() -> dict[str, object]:
         "api_base_url": f"{base}/api/v1",
         "openapi_url": f"{base}/openapi.json",
         "capabilities_url": f"{base}/api/v1/capabilities",
-        "auth": ["bearer"],
+        "auth": ["bearer", "web_login"],
     }
 
 
@@ -74,6 +74,7 @@ def capabilities(
                 "review_rounds",
                 "batch_results",
                 "review_correction",
+                "web_login",
             ],
         },
     )

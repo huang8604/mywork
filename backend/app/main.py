@@ -11,13 +11,16 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.trustedhost import TrustedHostMiddleware
 from fastapi.openapi.utils import get_openapi
+from starlette.middleware.sessions import SessionMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy import select
 
+from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.practice import router as practice_router
 from app.api.reviews import router as reviews_router
+from app.api.users import router as users_router
 from app.api.words import router as words_router
 from app.core.auth import ALL_SCOPES
 from app.core.config import get_settings
@@ -48,6 +51,14 @@ app.add_middleware(
         "If-Match",
         "X-Request-ID",
     ],
+)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=settings.session_secret_bytes(),
+    session_cookie="wm_session",
+    max_age=settings.session_max_age,
+    https_only=settings.public_base_url.startswith("https"),
+    same_site="lax",
 )
 
 
@@ -229,6 +240,8 @@ app.include_router(health_router)
 app.include_router(words_router)
 app.include_router(reviews_router)
 app.include_router(practice_router)
+app.include_router(auth_router)
+app.include_router(users_router)
 
 REQUIRED_SCOPES: dict[tuple[str, str], list[str]] = {
     ("POST", "/api/v1/words"): ["words:write"],
@@ -302,6 +315,9 @@ def custom_openapi() -> dict:
     }
     for path, path_item in schema.get("paths", {}).items():
         if not path.startswith("/api/v1"):
+            continue
+        # auth/users are gated by session/role, not Bearer/TrustedProxyUser scopes.
+        if path.startswith("/api/v1/auth") or path.startswith("/api/v1/users"):
             continue
         for method, operation in path_item.items():
             if method.lower() not in {"get", "post", "put", "patch", "delete"}:

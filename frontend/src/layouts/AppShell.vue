@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { routes, type NavMeta } from '@/router'
 import { usePreferencesStore } from '@/stores/preferences'
+import { useAuthStore } from '@/stores/auth'
 
-const route = useRoute(); const preferences = usePreferencesStore()
+const route = useRoute(); const router = useRouter(); const preferences = usePreferencesStore(); const auth = useAuthStore()
 const children = routes.find((item) => item.path === '/' && item.children)?.children ?? []
 const navItems = computed(() => children.flatMap((item) => {
   const meta = item.meta as unknown as NavMeta | undefined
-  return meta?.nav ? [{ name: item.name, ...meta }] : []
+  if (!meta?.nav) return []
+  if (meta.roles && (!auth.role || !meta.roles.includes(auth.role))) return []
+  return [{ name: item.name, ...meta }]
 }))
 function focusMain() { document.querySelector<HTMLElement>('#main-content')?.focus({ preventScroll: true }) }
+async function logout() { await auth.logout(); router.push('/login') }
 </script>
 
 <template>
@@ -30,7 +34,7 @@ function focusMain() { document.querySelector<HTMLElement>('#main-content')?.foc
     </aside>
 
     <div class="content-shell">
-      <header class="topbar"><div><p class="eyebrow">WORD MEMORY</p><h1>{{ route.meta.title || route.meta.label }}</h1></div><span class="offline-hint" title="网络状态"><i /> 本地优先</span></header>
+      <header class="topbar"><div><p class="eyebrow">WORD MEMORY</p><h1>{{ route.meta.title || route.meta.label }}</h1></div><div class="topbar-right"><span v-if="auth.username" class="who">{{ auth.username }}</span><el-button size="small" @click="logout">退出</el-button></div></header>
       <main id="main-content" tabindex="-1"><RouterView /></main>
     </div>
 

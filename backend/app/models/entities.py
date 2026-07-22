@@ -322,6 +322,31 @@ class ApiClientToken(Base):
     revoked_at: Mapped[str | None] = mapped_column(String(32))
 
 
+class WebCredential(Base):
+    """A username/password login identity (session-cookie web auth).
+
+    Single-user in spirit: typically one `admin` (full scopes) plus any number of
+    `student` accounts (online-review only, see ROLE_SCOPES in core/auth.py).
+    `disabled_at` set means login is rejected and an existing session is ignored.
+    """
+
+    __tablename__ = "web_credentials"
+    __table_args__ = (
+        CheckConstraint(
+            "length(username) BETWEEN 1 AND 64", name="ck_web_credentials_username_length"
+        ),
+        CheckConstraint("role IN ('admin','student')", name="ck_web_credentials_role"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    role: Mapped[str] = mapped_column(String(16), nullable=False, default="admin")
+    disabled_at: Mapped[str | None] = mapped_column(String(32))
+    created_at: Mapped[str] = mapped_column(String(32), nullable=False, default=utc_now_text)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False, default=utc_now_text)
+
+
 class IdempotencyRecord(Base):
     __tablename__ = "idempotency_records"
     __table_args__ = (

@@ -21,7 +21,7 @@ export class ApiError extends Error {
   get isCanceled() { return this.code === 'REQUEST_CANCELED' }
 }
 
-export const apiClient = axios.create({ baseURL: '/api/v1', timeout: 15_000 })
+export const apiClient = axios.create({ baseURL: '/api/v1', timeout: 15_000, withCredentials: true })
 
 apiClient.interceptors.request.use((config) => {
   debugLog('api.request', { method: config.method?.toUpperCase(), url: config.url })
@@ -38,7 +38,7 @@ apiClient.interceptors.response.use(
     })
     return response
   },
-  (error: AxiosError<ApiErrorBody>) => {
+  async (error: AxiosError<ApiErrorBody>) => {
     const normalized = normalizeApiError(error)
     debugLog('api.error', {
       method: error.config?.method?.toUpperCase(),
@@ -47,6 +47,20 @@ apiClient.interceptors.response.use(
       code: normalized.code,
       requestId: normalized.requestId,
     })
+    // A 401 on a non-auth endpoint means the session expired mid-use: clear the
+    // cached identity and bounce to /login. /auth/* 401s are handled by their
+    // callers (login form / the boot fetchMe), so they must not loop here.
+    if (normalized.status === 401) {
+      const url = error.config?.url || ''
+      if (!url.startsWith('/auth/')) {
+        const { default: router } = await import('@/router')
+        const { useAuthStore } = await import('@/stores/auth')
+        useAuthStore().reset()
+        if (router.currentRoute.value.path !== '/login') {
+          router.push({ path: '/login', query: { redirect: router.currentRoute.value.fullPath } })
+        }
+      }
+    }
     return Promise.reject(normalized)
   },
 )

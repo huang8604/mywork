@@ -87,3 +87,13 @@ export interface Capabilities {
   max_batch_results: number; idempotency_retention_days: number
   features: Record<string, boolean>
 }
+
+export type WebRole = 'admin' | 'student'
+export interface AuthUser { username: string | null; role: WebRole | null; actor_type: string }
+export interface LoginPayload { username: string; password: string }
+export interface PasswordChangePayload { old_password: string; new_password: string }
+export interface WebUser {
+  id: number; username: string; role: WebRole; disabled_at: string | null; created_at: string
+}
+export interface UserCreatePayload { username: string; password: string; role: WebRole }
+export interface UserUpdatePayload { role?: WebRole; disabled?: boolean }

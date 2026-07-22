@@ -9,6 +9,7 @@ from app.models.entities import (
     PracticeSessionItem,
     ReviewLog,
     Tag,
+    WebCredential,
     Word,
     WordStats,
     WordTag,
@@ -25,8 +26,8 @@ __all__ = [
     "PracticeSessionItem",
     "ReviewLog",
     "Tag",
+    "WebCredential",
     "Word",
     "WordStats",
     "WordTag",
 ]
-

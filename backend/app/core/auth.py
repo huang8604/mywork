@@ -20,7 +20,7 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings, get_settings
 from app.core.database import get_db
 from app.core.errors import AppError
-from app.models import ApiClient, ApiClientScope, ApiClientToken, AuditLog
+from app.models import ApiClient, ApiClientScope, ApiClientToken, AuditLog, WebCredential
 from app.services.domain import parse_utc, utc_text
 from app.services.reviews import ActorLike
 
@@ -36,6 +36,16 @@ ALL_SCOPES = {
     "reviews:read",
 }
 
+# Web login roles map to scope sets. admin = everything; student = the online
+# review flow only (practice-session generate/read + review writes), which is
+# exactly what ReviewView.vue calls. ALL_SCOPES (the API-client scope universe)
+# is intentionally left unchanged.
+STUDENT_SCOPES = frozenset({"practice:generate", "practice:read", "reviews:write"})
+ROLE_SCOPES: dict[str, frozenset[str]] = {
+    "admin": frozenset(ALL_SCOPES),
+    "student": STUDENT_SCOPES,
+}
+
 password_hasher = PasswordHasher()
 bearer = HTTPBearer(auto_error=False)
 _rate_lock = threading.Lock()
@@ -48,6 +58,7 @@ class Actor(ActorLike):
     api_client_id: int | None = None
     skill_name: str | None = None
     skill_version: str | None = None
+    role: str | None = None
 
 
 def hash_token(token: str, settings: Settings | None = None) -> str:
@@ -60,6 +71,17 @@ def verify_token_hash(token_hash: str, token: str, settings: Settings) -> bool:
     material = token.encode("utf-8") + b"\x00" + settings.token_pepper_bytes()
     try:
         return password_hasher.verify(token_hash, material)
+    except VerifyMismatchError:
+        return False
+
+
+def hash_password(password: str) -> str:
+    return password_hasher.hash(password.encode("utf-8"))
+
+
+def verify_password(password_hash: str, password: str) -> bool:
+    try:
+        return password_hasher.verify(password_hash, password.encode("utf-8"))
     except VerifyMismatchError:
         return False
 
@@ -94,6 +116,21 @@ def _local_peer(request: Request) -> bool:
         return ipaddress.ip_address(request.client.host).is_loopback
     except ValueError:
         return False
+
+
+def _session_actor(request: Request, db: Session, settings: Settings) -> Actor | None:
+    # SessionMiddleware populates request.scope["session"]; if it is absent
+    # (middleware not installed) there is no cookie identity to resolve.
+    if "session" not in request.scope:
+        return None
+    sub = request.session.get("sub")
+    if not isinstance(sub, str) or not sub or len(sub) > 128:
+        return None
+    cred = db.scalar(select(WebCredential).where(WebCredential.username == sub))
+    # Disabled accounts can neither log in nor keep an existing session.
+    if cred is None or cred.disabled_at is not None or cred.role not in ROLE_SCOPES:
+        return None
+    return Actor("web_user", sub, ROLE_SCOPES[cred.role], role=cred.role)
 
 
 def _check_rate_limit(request: Request, identity: str, settings: Settings) -> None:
@@ -167,16 +204,22 @@ def get_actor(
         actor = _authenticate_bearer(db, credentials.credentials, settings, request)
         request.state.actor = actor
         return actor
+    session_actor = _session_actor(request, db, settings)
+    if session_actor is not None:
+        request.state.actor = session_actor
+        return session_actor
     if settings.trusted_local_web and _local_peer(request):
-        actor = Actor("web_user", "local-admin", frozenset(ALL_SCOPES))
+        actor = Actor("web_user", "local-admin", frozenset(ALL_SCOPES), role="admin")
         request.state.actor = actor
         return actor
+    if settings.web_login_required:
+        raise AppError(401, "AUTH_REQUIRED", "需要登录")
     if not _trusted_peer(request, settings):
         raise AppError(401, "AUTH_REQUIRED", "需要通过受信任的代理访问")
     forwarded_user = request.headers.get("X-Forwarded-User", "").strip()
     if not forwarded_user or len(forwarded_user) > 128:
         raise AppError(401, "AUTH_REQUIRED", "需要受信任的 Web 身份")
-    actor = Actor("web_user", forwarded_user, frozenset(ALL_SCOPES))
+    actor = Actor("web_user", forwarded_user, frozenset(ALL_SCOPES), role="admin")
     request.state.actor = actor
     return actor
 
@@ -188,12 +231,20 @@ def require_scopes(*required: str):
             raise AppError(
                 403,
                 "FORBIDDEN_SCOPE",
-                "insufficient API client scope",
+                "当前账号权限不足，缺少所需授权范围",
                 [{"missing_scopes": sorted(missing)}],
             )
         return actor
 
     return dependency
+
+
+def require_web_admin(actor: Annotated[Actor, Depends(get_actor)]) -> Actor:
+    # User management is gated by role, not scope, so the API-client scope
+    # universe (ALL_SCOPES) stays clean and unaffected.
+    if actor.actor_type != "web_user" or actor.role != "admin":
+        raise AppError(403, "FORBIDDEN", "需要管理员权限")
+    return actor
 
 
 def create_api_client_token(

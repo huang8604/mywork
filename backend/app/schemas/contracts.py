@@ -184,3 +184,54 @@ class SessionUpdate(StrictModel):
     title: str | None = Field(default=None, max_length=200)
     note: str | None = Field(default=None, max_length=5000)
     expected_version: int = Field(gt=0)
+
+
+WebRole = Literal["admin", "student"]
+
+
+def _normalize_username(value: str) -> str:
+    cleaned = value.strip()
+    if not cleaned or any(ch.isspace() for ch in cleaned):
+        raise ValueError("username cannot be empty or contain whitespace")
+    return cleaned
+
+
+class LoginRequest(StrictModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=1, max_length=256)
+
+    @field_validator("username")
+    @classmethod
+    def clean_username(cls, value: str) -> str:
+        return _normalize_username(value)
+
+
+class PasswordChangeRequest(StrictModel):
+    old_password: str = Field(min_length=1, max_length=256)
+    new_password: str = Field(min_length=8, max_length=256)
+
+
+class UserCreateRequest(StrictModel):
+    username: str = Field(min_length=1, max_length=64)
+    password: str = Field(min_length=8, max_length=256)
+    role: WebRole = "student"
+
+    @field_validator("username")
+    @classmethod
+    def clean_username(cls, value: str) -> str:
+        return _normalize_username(value)
+
+
+class UserUpdateRequest(StrictModel):
+    role: WebRole | None = None
+    disabled: bool | None = None
+
+    @model_validator(mode="after")
+    def at_least_one_field(self) -> "UserUpdateRequest":
+        if self.role is None and self.disabled is None:
+            raise ValueError("must provide role or disabled")
+        return self
+
+
+class UserPasswordResetRequest(StrictModel):
+    new_password: str = Field(min_length=8, max_length=256)

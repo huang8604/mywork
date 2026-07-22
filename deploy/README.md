@@ -94,3 +94,31 @@ docker exec vocab-app python -c "import sqlite3; c=sqlite3.connect('/app/data/vo
 CI 的 Trivy 门禁扫到、但经评估**在本系统威胁模型下不可利用**、故写入仓库根 `.trivyignore` 显式抑制的条目。每项都必须有理由,并在升级依赖时复核(修复版本一旦进入 `requirements.lock` 就删掉对应行)。
 
 - **CVE-2025-68616**(WeasyPrint SSRF,HIGH;修复于 68.0,当前镜像装 65.1)。该 SSRF 需在渲染内容里塞入 `http(s)://` URL(如 markdown 图片或 CSS `url()`)才会触发服务端抓取;而 `/practice-sessions/{id}/recitation` PDF 渲染的 markdown 来自单词字段(text / cn_meaning / example_sentence),这些字段**仅**认证 web admin(即 owner 本人)或 owner 自己持有 `words:write` 的 API client 可写。无任何匿名/不可信用户能注入,因此不存在可越权的边界 → 实际风险为零。**待办**:待后续 `requirements.lock` 整体升级时一并把 weasyprint 升到 ≥68.0,并删除此条抑制。
+
+---
+
+## 5. Web 登录与角色(可选)
+
+默认 Web 身份由反代注入(`X-Forwarded-User`),应用无登录页。若要用**账号密码登录**(公网暴露、多设备访问、或给学生开只读账号),启用 cookie 登录。
+
+**角色**
+
+- **admin**:全部权限,并在「用户管理」页增删用户、改口令、启用/禁用。
+- **student**:只能使用「在线复习」(`/review`)。后端按 scope 自动挡住词库 CRUD、导出、复习表等管理操作(`ROLE_SCOPES` 里 student = `{practice:generate, practice:read, reviews:write}`)。
+
+**启用(Portainer)**:在 `environment` 加(并**撤销**此前为反代方案加的 `command:` 覆盖;Lucky 反代**移除** `X-Forwarded-User` 注入、只保留 HTTPS):
+
+```yaml
+WEB_LOGIN_REQUIRED: "true"
+WEB_ADMIN_USERNAME: owner            # 可选,默认 admin
+WEB_ADMIN_PASSWORD: "<初始口令,≥8 位>"  # 或 WEB_ADMIN_PASSWORD_FILE 挂 secret
+# 可选:SESSION_SECRET(_FILE)(默认复用 token pepper)、SESSION_MAX_AGE(默认 7 天)
+```
+
+镜像启动会自动跑迁移 `0003` + `app.bootstrap`(用上面 env 建首个 admin,幂等)。流程:Pull latest → Recreate → 等 healthy → 浏览器开域名跳 `/login` → 初始口令登录 → admin 在「用户管理」新增学生 → 学生登录默认进 `/review`。
+
+**运维**
+
+- 轮换口令:登录后在「用户管理」改密,或 `docker exec vocab-app python /app/scripts/set_web_password.py --username X --password Y --role student`。
+- 登录即访问门槛:启用后任何人需登录才能进入;cookie 仅存用户名(签名),role/禁用态每次请求查库,改了即时生效。CSRF 由 `Origin == PUBLIC_BASE_URL` 校验承担,无需额外配置。
+- 关掉登录:删除上面 env 并 Recreate,即回到反代/loopback 认证。

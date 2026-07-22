@@ -42,6 +42,13 @@ class Settings:
     ai_base_url: str
     ai_api_key: str
     ai_model: str
+    web_login_required: bool
+    web_admin_username: str
+    web_admin_password: str
+    web_admin_password_file: str | None
+    session_secret: str
+    session_secret_file: str | None
+    session_max_age: int
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -73,6 +80,13 @@ class Settings:
             ai_base_url=os.getenv("AI_BASE_URL", "").rstrip("/"),
             ai_api_key=os.getenv("AI_API_KEY", ""),
             ai_model=os.getenv("AI_MODEL", "gpt-4o-mini"),
+            web_login_required=_boolean("WEB_LOGIN_REQUIRED", False),
+            web_admin_username=os.getenv("WEB_ADMIN_USERNAME", "admin"),
+            web_admin_password=os.getenv("WEB_ADMIN_PASSWORD", ""),
+            web_admin_password_file=os.getenv("WEB_ADMIN_PASSWORD_FILE"),
+            session_secret=os.getenv("SESSION_SECRET", ""),
+            session_secret_file=os.getenv("SESSION_SECRET_FILE"),
+            session_max_age=int(os.getenv("SESSION_MAX_AGE", "604800")),
         )
         value.validate()
         return value
@@ -81,6 +95,8 @@ class Settings:
         ZoneInfo(self.app_timezone)
         if self.idempotency_retention_days < 30:
             raise ValueError("IDEMPOTENCY_RETENTION_DAYS must be at least 30")
+        if self.session_max_age <= 0:
+            raise ValueError("SESSION_MAX_AGE must be positive")
         if min(
             self.api_rate_limit_per_minute,
             self.max_import_bytes,
@@ -105,6 +121,20 @@ class Settings:
         if len(self.api_token_pepper.encode("utf-8")) < 16:
             raise ValueError("API_TOKEN_PEPPER must contain at least 16 bytes")
         return self.api_token_pepper.encode("utf-8")
+
+    def session_secret_bytes(self) -> bytes:
+        if self.session_secret_file:
+            secret = Path(self.session_secret_file).read_bytes().strip()
+            if len(secret) < 32:
+                raise ValueError("session secret file must contain at least 32 bytes")
+            return secret
+        if self.session_secret:
+            if len(self.session_secret.encode("utf-8")) < 32:
+                raise ValueError("SESSION_SECRET must contain at least 32 bytes")
+            return self.session_secret.encode("utf-8")
+        # Fall back to the token pepper (already a high-entropy secret) so deployers
+        # don't have to provision a second secret just to enable cookie login.
+        return self.token_pepper_bytes()
 
     @property
     def ai_enabled(self) -> bool:

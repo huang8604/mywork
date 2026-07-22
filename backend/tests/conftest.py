@@ -65,3 +65,38 @@ def create_word(client: TestClient, payload: dict[str, object] | None = None) ->
     )
     assert response.status_code == 201, response.text
     return response.json()["data"]
+
+
+@pytest.fixture
+def login_mode(monkeypatch):
+    """Force the cookie-login path: disable loopback auto-admin and require login.
+
+    The suite defaults to TRUSTED_LOCAL_WEB=true (loopback auto-admin), which
+    bypasses the session-cookie branch entirely. Flipping it off (and login on)
+    makes the cookie identity the only web path, so login/role tests are real.
+    """
+    from app.core.config import get_settings
+
+    monkeypatch.setenv("TRUSTED_LOCAL_WEB", "false")
+    monkeypatch.setenv("WEB_LOGIN_REQUIRED", "true")
+    get_settings.cache_clear()
+    yield
+    get_settings.cache_clear()
+
+
+def seed_credential(db_session: Session, username: str, password: str, role: str = "admin"):
+    from app.core.auth import hash_password
+    from app.models import WebCredential
+    from app.models.entities import utc_now_text
+
+    cred = WebCredential(
+        username=username,
+        password_hash=hash_password(password),
+        role=role,
+        created_at=utc_now_text(),
+        updated_at=utc_now_text(),
+    )
+    db_session.add(cred)
+    db_session.commit()
+    db_session.refresh(cred)
+    return cred

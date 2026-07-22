@@ -2,7 +2,7 @@
 # Production container entrypoint.
 #
 # Runs versioned Alembic migrations against the mounted SQLite volume BEFORE
-# starting uvicorn, so /healthz/ready (which asserts alembic_version == "0002")
+# starting uvicorn, so /healthz/ready (which asserts alembic_version == "0003")
 # can pass on a fresh database. Failures here surface as a non-ready container
 # rather than a silently-unmigrated one (phase-5 design §4.2).
 #
@@ -12,5 +12,7 @@
 set -eu
 
 alembic upgrade head
+# Provision the initial web admin from WEB_ADMIN_PASSWORD(_FILE) if none exists.
+python -m app.bootstrap
 
 exec "$@"

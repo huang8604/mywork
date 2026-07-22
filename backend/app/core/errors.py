@@ -22,6 +22,7 @@ class AppError(Exception):
 
 _RESOURCE_ZH = {
     "resource": "资源",
+    "user": "用户",
     "word": "单词",
     "review": "复习记录",
     "round item": "本题",
