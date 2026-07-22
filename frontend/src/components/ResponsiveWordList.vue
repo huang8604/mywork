@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { Word } from '@/types/domain'
+import { formatPhonetic } from '@/utils/formatPhonetic'
 import WordCard from './WordCard.vue'
 defineProps<{ words: Word[] }>()
 defineEmits<{ edit: [word: Word]; remove: [word: Word]; review: [word: Word] }>()
@@ -8,7 +9,7 @@ const accuracy = (word: Word) => word.stats.accuracy === null ? '—' : `${Math.
 <template>
   <div class="desktop-word-table local-scroll">
     <el-table :data="words" row-key="id" style="min-width:760px">
-      <el-table-column label="单词" min-width="175"><template #default="{row}"><strong class="table-word">{{ row.en_word }}</strong><small v-if="row.phonetic">{{ row.phonetic }}</small></template></el-table-column>
+      <el-table-column label="单词" min-width="175"><template #default="{row}"><strong class="table-word">{{ row.en_word }}</strong><small v-if="row.phonetic">{{ formatPhonetic(row.phonetic) }}</small></template></el-table-column>
       <el-table-column prop="cn_meaning" label="中文释义" min-width="220" show-overflow-tooltip />
       <el-table-column label="标签" min-width="150"><template #default="{row}"><div class="tag-list"><el-tag v-for="tag in row.tags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag></div></template></el-table-column>
       <el-table-column label="正确率" width="90"><template #default="{row}">{{ accuracy(row) }}</template></el-table-column>

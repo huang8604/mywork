@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Single-user, NAS-deployed vocabulary practice system (单词记忆辅助系统). UI and design docs are in Chinese; code and identifiers are in English. The primary loop is **offline**: generate a printable word worksheet, review on paper, then come back to the web app to record three-state results (`known` / `unknown` / `skipped`). Online flashcard review is a secondary, occasional path. Both paths share the same data model and result-recording rules.
 
-Development is staged into five phases with frozen decisions in the `单词记忆辅助系统*.md` design docs at the repo root. Phases 1–5 are implemented. Each phase doc ends with a "Definition of Done" that gates the next phase.
+Development is staged into six phases with frozen decisions in the root design docs and `docs/superpowers/`. Phases 1–6 are implemented. Each phase doc or enhancement spec defines the completion gates for its scope.
 
 ### Production image, CI, and NAS deploy (phase 5)
 
@@ -102,7 +102,7 @@ Three overlapping safety mechanisms — know which applies where:
 
 ### Word creation & dictionary enrichment
 
-Creating/importing a word runs through `enrich_word()` (`services/dictionary.py`), which fills `phonetic` / `cn_meaning` / `example_sentence` from `dictionary-index.json` at the repo root (path overridable via `DICTIONARY_INDEX_PATH`). `cn_meaning` is then shortened to **≤16 chars** via `shorten_translations()` (multi-boundary cut on `。；，`; if still >16 and `ai_enabled`, AI re-translates; otherwise hard-capped to 16 + `…`). **`cn_meaning` is required after enrichment** — an English-only word with no dictionary entry raises `422 DICTIONARY_ENTRY_NOT_FOUND` unless a meaning is supplied. Only the enrich path is affected; existing words are not re-shortened. The index file is large and **intentionally git-ignored** (license not yet documented); don't commit it. If the file is missing, enrichment resolves to "not found".
+Creating/importing a word runs through `enrich_word()` (`services/dictionary.py`), which fills `phonetic` / `cn_meaning` / `example_sentence` from `dictionary-index.json` at the repo root (path overridable via `DICTIONARY_INDEX_PATH`). `cn_meaning` is then shortened to **≤16 chars** via `shorten_translations()` (multi-boundary cut on `。；，`; if still >16 and `ai_enabled`, AI re-translates; otherwise it is hard-capped to ≤16 characters including `…`). **`cn_meaning` is required after enrichment** — an English-only word with no dictionary entry raises `422 DICTIONARY_ENTRY_NOT_FOUND` unless a meaning is supplied. Only the enrich path is affected; existing words are not re-shortened. The index file is large and **intentionally git-ignored** (license not yet documented); don't commit it. If the file is missing, enrichment resolves to "not found".
 
 ### Worksheet generation (strategy engine)
 

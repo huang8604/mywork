@@ -36,7 +36,7 @@ def download_backup(_actor: Annotated[Actor, Depends(require_web_admin)]):
     finally:
         dst.close()
         src.close()
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
     return FileResponse(
         dst_path,
         media_type="application/octet-stream",

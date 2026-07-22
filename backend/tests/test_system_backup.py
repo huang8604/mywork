@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import tempfile
 
@@ -21,8 +22,7 @@ def test_admin_downloads_valid_sqlite(client, db_session, login_mode):
     resp = client.get("/api/v1/system/backup")
     assert resp.status_code == 200, resp.text
     cd = resp.headers["content-disposition"]
-    assert cd.startswith('attachment; filename="vocab-'), cd
-    assert cd.endswith('.db"'), cd
+    assert re.fullmatch(r'attachment; filename="vocab-\d{14}\.db"', cd), cd
 
     # body is a valid SQLite file: write to a temp path and inspect it.
     fd, path = tempfile.mkstemp(suffix=".db")

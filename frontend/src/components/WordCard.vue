@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import type { Word } from '@/types/domain'
+import { formatPhonetic } from '@/utils/formatPhonetic'
 defineProps<{ word: Word }>()
 defineEmits<{ edit: []; remove: []; review: [] }>()
 </script>
 <template>
   <article class="word-card">
-    <div class="word-head"><div><h3>{{ word.en_word }}</h3><p v-if="word.phonetic">{{ word.phonetic }}</p></div><span v-if="word.is_custom" class="source-pill">自定义</span></div>
+    <div class="word-head"><div><h3>{{ word.en_word }}</h3><p v-if="word.phonetic">{{ formatPhonetic(word.phonetic) }}</p></div><span v-if="word.is_custom" class="source-pill">自定义</span></div>
     <p class="meaning">{{ word.cn_meaning }}</p><p v-if="word.example_sentence" class="example">{{ word.example_sentence }}</p>
     <div class="tag-list"><el-tag v-for="tag in word.tags" :key="tag" size="small" effect="plain">{{ tag }}</el-tag></div>
     <div class="word-meta"><span>复习 {{ word.stats.total_attempts }} 次</span><span v-if="word.stats.accuracy !== null">正确率 {{ Math.round(word.stats.accuracy*100) }}%</span></div>

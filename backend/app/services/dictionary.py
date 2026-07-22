@@ -66,9 +66,8 @@ def enrich_word(
                 cn_meaning = ai["cn_meaning"]
                 example_sentence = example_sentence or ai["example_sentence"]
         if cn_meaning and len(cn_meaning) > 16:
-            # still too long (AI off / failed / also over-long): hard-cap to 16
-            # chars with an ellipsis so the worksheet column never overflows.
-            cn_meaning = cn_meaning[:16].rstrip(_MEANING_PUNCT) + "…"
+            # Keep the ellipsis inside the 16-character display budget.
+            cn_meaning = cn_meaning[:15].rstrip(_MEANING_PUNCT) + "…"
     if allow_ai and not cn_meaning:
         # Dictionary miss with no manual meaning: try the AI fallback before
         # giving up. Runs for both create/import (require_meaning=True) and the

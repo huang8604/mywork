@@ -10,6 +10,7 @@ async function installApi(page: Page) {
   const words = [word]
   await page.route('**/api/v1/**', async (route: Route) => {
     const request = route.request(); const url = new URL(request.url()); const path = url.pathname; const method = request.method()
+    if (path === '/api/v1/auth/me' && method === 'GET') return route.fulfill({ json: envelope({ username: 'admin', role: 'admin' }) })
     if (path === '/api/v1/stats/summary') return route.fulfill({ json: envelope(stats) })
     if (path === '/api/v1/practice-sessions' && method === 'GET') return route.fulfill({ json: envelope([session], { page: 1, size: 20, total: 1 }) })
     if (path === '/api/v1/practice-sessions/1' && method === 'GET') return route.fulfill({ json: envelope(session) })
@@ -34,6 +35,10 @@ test('responsive dashboard and deep links never overflow the page', async ({ pag
   await page.goto('/dashboard'); await expect(page.getByRole('heading', { name: '今日概览' })).toBeVisible()
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
   expect(overflow).toBe(false)
+  if (page.viewportSize()!.width < 640) {
+    const navRows = await page.locator('.bottom-nav-item').evaluateAll(items => new Set(items.map(item => Math.round(item.getBoundingClientRect().top))).size)
+    expect(navRows).toBe(1)
+  }
   await page.goto('/does-not-exist'); await expect(page.getByRole('heading', { name: '这一页没有收录' })).toBeVisible()
 })
 
@@ -42,18 +47,18 @@ test('keyboard focus and navigation targets meet accessibility basics', async ({
   await page.keyboard.press('Enter'); await expect(page.locator('#main-content')).toBeFocused()
   const targetHeights = await page.locator('.bottom-nav-item:visible, .nav-item:visible').evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height))
   expect(targetHeights.length).toBeGreaterThan(0); expect(targetHeights.every((height) => height >= 44)).toBe(true)
-  await page.goto('/review'); await page.getByRole('button', { name: '开始在线复习' }).click(); await page.keyboard.press('Space'); await expect(page.locator('.answer')).toBeFocused(); await page.keyboard.press('1'); await expect(page.locator('.status-live')).toBeFocused(); await expect(page.locator('.status-live')).toContainText('已保存：认识')
+  await page.goto('/review'); await page.getByRole('button', { name: '开始在线复习' }).click(); await page.keyboard.press('1'); await expect(page.locator('.answer')).toBeFocused(); await expect(page.getByText('已记录：认识')).toBeVisible()
 })
 
 test('word CRUD autofill and English-only import remain usable', async ({ page }) => {
   const visibleWord = (text: string) => page.locator('.mobile-word-cards:visible h3, .desktop-word-table:visible .table-word').filter({ hasText: text })
   await page.goto('/words'); await expect(visibleWord('serendipity')).toBeVisible()
-  await page.getByRole('button', { name: '新增单词' }).first().click(); await page.getByLabel('英文', { exact: true }).fill('resilient'); await page.getByRole('button', { name: '自动补全' }).click(); await expect(page.getByLabel('中文释义', { exact: true })).toHaveValue('有韧性的'); await page.getByRole('button', { name: '保存' }).click(); await expect(visibleWord('resilient')).toBeVisible()
+  await page.getByRole('button', { name: '新增单词' }).first().click(); await page.getByLabel('英文', { exact: true }).fill('resilient'); await page.getByRole('button', { name: /补全/ }).click(); await page.getByText('本地词库补全', { exact: true }).click(); await expect(page.getByLabel('中文释义', { exact: true })).toHaveValue('有韧性的'); await page.getByRole('button', { name: '保存' }).click(); await expect(visibleWord('resilient')).toBeVisible()
   await page.getByRole('button', { name: '导入 / 导出' }).click(); await page.getByLabel('英文单词列表').fill('focus\ncamera'); await page.getByRole('button', { name: '开始导入' }).click(); await expect(page.getByText('词典命中')).toBeVisible()
 })
 
 test('online review records three-state result and history permits correction', async ({ page }) => {
-  await page.goto('/review'); await page.getByRole('button', { name: '开始在线复习' }).click(); await page.getByRole('button', { name: /显示答案/ }).click(); await page.getByRole('button', { name: /^认识/ }).click(); await expect(page.getByText(/已保存：认识/)).toBeVisible()
+  await page.goto('/review'); await page.getByRole('button', { name: '开始在线复习' }).click(); await page.getByRole('button', { name: /^认识/ }).click(); await expect(page.getByText('已记录：认识')).toBeVisible()
   await page.goto('/history'); await page.getByRole('button', { name: /认识.*修改|认识.*点按修改/ }).first().click(); await page.getByRole('button', { name: /^不认识/ }).first().click(); await expect(page.locator('.status-badge.unknown:visible')).toBeVisible()
 })
 

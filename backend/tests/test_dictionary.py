@@ -124,6 +124,6 @@ def test_enrich_hard_truncates_when_ai_disabled(monkeypatch):
     enriched, _ = dict_mod.enrich_word(
         WordCreate(en_word="supercalifragilistic"), allow_ai=True
     )
-    # 16-char body + optional ellipsis
-    assert len(enriched.cn_meaning) <= 17
+    # The ellipsis is included in the 16-character display budget.
+    assert len(enriched.cn_meaning) <= 16
     assert enriched.cn_meaning.endswith("…")

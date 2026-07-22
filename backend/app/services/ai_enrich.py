@@ -79,7 +79,7 @@ def ai_enrich_word(en_word: str) -> dict[str, str | None] | None:
         return None
     if len(cn_meaning) > 16:
         # Hard cap: the prompt asks for ≤16 chars but models sometimes overshoot.
-        cn_meaning = cn_meaning[:16].rstrip(" ；;,，.。、") + "…"
+        cn_meaning = cn_meaning[:15].rstrip(" ；;,，.。、") + "…"
     logger.debug("ai_enrich_hit word=%s", en_word)
     return {
         "cn_meaning": cn_meaning,

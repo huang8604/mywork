@@ -88,8 +88,8 @@ def test_ai_enrich_caps_long_meaning_to_16(monkeypatch):
 
     result = ai_enrich.ai_enrich_word("longword")
     assert result is not None
-    # 16-char body + ellipsis = 17 max
-    assert len(result["cn_meaning"]) <= 17
+    # The ellipsis is included in the 16-character display budget.
+    assert len(result["cn_meaning"]) <= 16
     assert result["cn_meaning"].endswith("…")
 
 
