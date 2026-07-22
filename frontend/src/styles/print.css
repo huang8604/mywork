@@ -21,7 +21,7 @@
   .worksheet-table .repeat-print-header { display: table-row !important; }
   .worksheet-table .repeat-print-header th { padding: 4pt 5pt !important; font-size: 8pt !important; text-align: right !important; }
   .worksheet-table .number-cell { width: 7% !important; }
-  .worksheet-table .english-cell { width: 17% !important; }
+  .worksheet-table .word-cell { width: 22% !important; white-space: nowrap !important; }
   .worksheet-table .example-cell { width: 28% !important; min-width: 0 !important; }
   .worksheet-table .mark-cell { width: 18% !important; min-width: 0 !important; font-size: 8pt !important; }
   .blank-warning { color: #333 !important; font-size: 7.5pt !important; }
