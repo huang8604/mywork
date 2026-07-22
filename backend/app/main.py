@@ -21,6 +21,7 @@ from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.practice import router as practice_router
 from app.api.reviews import router as reviews_router
+from app.api.system import router as system_router
 from app.api.users import router as users_router
 from app.api.words import router as words_router
 from app.core.auth import ALL_SCOPES
@@ -244,6 +245,7 @@ app.include_router(practice_router)
 app.include_router(auth_router)
 app.include_router(users_router)
 app.include_router(api_clients_router)
+app.include_router(system_router)
 
 REQUIRED_SCOPES: dict[tuple[str, str], list[str]] = {
     ("POST", "/api/v1/words"): ["words:write"],
@@ -318,11 +320,12 @@ def custom_openapi() -> dict:
     for path, path_item in schema.get("paths", {}).items():
         if not path.startswith("/api/v1"):
             continue
-        # auth/users/api-clients are gated by session/role, not Bearer/TrustedProxyUser scopes.
+        # auth/users/api-clients/system are gated by session/role, not Bearer/TrustedProxyUser scopes.
         if (
             path.startswith("/api/v1/auth")
             or path.startswith("/api/v1/users")
             or path.startswith("/api/v1/api-clients")
+            or path.startswith("/api/v1/system")
         ):
             continue
         for method, operation in path_item.items():
