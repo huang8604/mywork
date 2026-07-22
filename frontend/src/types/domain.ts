@@ -71,7 +71,8 @@ export interface PracticeSession {
   title: string | null; note: string | null
   web_url?: string; print_url?: string
 }
-export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; unresolved?: number; unresolved_words?: string[]; total: number; dry_run: boolean; dictionary_matches?: number }
+export interface ImportResolved { en_word: string; word_id: number | null; action: 'created' | 'updated' | 'skipped' | 'unresolved' }
+export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; unresolved?: number; unresolved_words?: string[]; total: number; dry_run: boolean; dictionary_matches?: number; resolved?: ImportResolved[] }
 export interface EnrichedWord extends WordPayload {
   dictionary_found: boolean; source: 'dictionary-index' | 'ai' | null; missing_fields: string[]
 }

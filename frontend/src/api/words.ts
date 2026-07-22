@@ -1,6 +1,9 @@
 import type { AxiosRequestConfig } from 'axios'
 import { apiClient, newEventId, unwrap } from './client'
-import type { ApiEnvelope, EnrichedWord, ImportSummary, Word, WordFilters, WordPayload, WordUpdatePayload } from '@/types/domain'
+import type { ApiEnvelope, EnrichedWord, ImportResolved, ImportSummary, Word, WordFilters, WordPayload, WordUpdatePayload } from '@/types/domain'
+
+export type { ImportResolved, ImportSummary }
+export type ImportResult = ImportSummary
 
 export async function listWords(filters: WordFilters = {}, signal?: AbortSignal) {
   const response = await apiClient.get<ApiEnvelope<Word[]>>('/words', { params: filters, signal, paramsSerializer: { indexes: null } })
