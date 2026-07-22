@@ -43,6 +43,26 @@ def test_shorten_picks_last_boundary_in_window():
     assert "；" in out  # kept at least one boundary
 
 
+def test_shorten_cut_at_position_16():
+    # boundary (，) exactly at index 16 → keep 16 chars (empty pos so text == cn)
+    t = [{"pos": "", "cn": "0123456789abcdef，XXXXXXXXXX"}]
+    out = shorten_translations(t)
+    assert out == "0123456789abcdef"  # len 16, boundary excluded
+
+
+def test_shorten_cut_at_position_10():
+    # only boundary at index 10 → keep 10 chars (the smallest in-window cut)
+    t = [{"pos": "", "cn": "0123456789，XXXXXXXXXX"}]
+    out = shorten_translations(t)
+    assert out == "0123456789"  # len 10
+
+
+def test_shorten_ignores_boundary_below_min_keep():
+    # only boundary at index 9 (< min_keep=10) → not used → None (AI fallback decides)
+    t = [{"pos": "", "cn": "012345678，XXXXXXXXXX"}]
+    assert shorten_translations(t) is None
+
+
 # ---------------------------------------------------------------------------
 # B2: enrich_word — AI re-translate when dict meaning >16 and unshortenable
 # ---------------------------------------------------------------------------

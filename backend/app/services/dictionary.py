@@ -183,7 +183,6 @@ def shorten_translations(
     max_senses: int = 3,
     target: int = 16,
     min_keep: int = 10,
-    hard_cap: int = 16,
 ) -> str | None:
     """Collapse senses into one short Chinese meaning (≤ ``target`` when possible).
 
@@ -194,11 +193,7 @@ def shorten_translations(
        punct);
     4) else return ``None`` — the caller (``enrich_word``) decides the
        AI-retranslate / hard-cap fallback.
-
-    ``hard_cap`` is kept for compatibility but no longer appends ``…`` here; the
-    caller does the hard cap so it can run AI first.
     """
-    del hard_cap  # kept in signature for call-site compatibility; no longer used
     if not isinstance(translations, list):
         return None
     items = clean_translation_items(translations, max_senses=max_senses)
@@ -219,10 +214,12 @@ def shorten_translations(
         return None
     if len(text) <= target:
         return text
-    # search the last boundary whose resulting cut stays within [min_keep, target]
-    for i in range(min(target, len(text)), min_keep - 1, -1):
-        if text[i - 1] in _BOUNDARY_CHARS:
-            return text[: i - 1].strip(_MEANING_PUNCT)
+    # Cut at the LAST boundary char (。；，,;.、) whose position yields a length
+    # within [min_keep, target]; text[:k] excludes the boundary char itself.
+    upper = min(target, len(text) - 1)
+    for k in range(upper, min_keep - 1, -1):
+        if text[k] in _BOUNDARY_CHARS:
+            return text[:k].strip(_MEANING_PUNCT)
     return None
 
 
