@@ -10,7 +10,7 @@
 |---|---|
 | #1 复习交互 | 统一「下一题」前进:三按钮任选→锁定+显示中文→「下一题」;末题置灰 |
 | #2 释义范围 | 仅新导入/新建词(走 enrich 路径);老词不动 |
-| #2 AI | 部署环境已配置 `AI_BASE_URL/AI_API_KEY`,可直接用;不可用时降级硬截断 |
+| #2 AI | 部署环境配置 `AI_BASE_URL`、`AI_API_KEY_FILE` 和 `AI_MODEL`;不可用时降级硬截断 |
 | #3 txt 词去留 | 沉淀进词库(去重),再用其 ID 生成复习表 |
 | #4 复习表模式 | 保留留空回忆(一侧留空),但不画下划线;例句全显示;词+音标同行;音标加 `/ /` |
 | #5 学员看结果 | 仅本次复习完即时汇总(页内只读,不加权限) |
@@ -57,7 +57,7 @@
 
 #### 现状
 - `services/dictionary.py`:`enrich_word()` 从 `dictionary-index.json` 取释义;`shorten_translations(hard_cap=40)` 仅在 `；` 边界截断,加 `…`。
-- `services/ai_enrich.py`:OpenAI 兼容 `/chat/completions`,prompt 限制 `cn_meaning ≤ 40` 字;仅在「字典未收录 + `allow_ai`」时触发(`enrich_word` 第 58 行)。
+- `services/ai_enrich.py`:OpenAI 兼容 `/chat/completions`,prompt 限制 `cn_meaning ≤ 40` 字;仅在「字典未收录 + `allow_ai`」时触发(`enrich_word` 第 58 行);生产 Key 通过 `AI_API_KEY_FILE` 读取。
 - `ai_enabled = bool(ai_base_url and ai_api_key)`。
 
 #### 改动

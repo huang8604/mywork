@@ -6,14 +6,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Single-user, NAS-deployed vocabulary practice system (单词记忆辅助系统). UI and design docs are in Chinese; code and identifiers are in English. The primary loop is **offline**: generate a printable word worksheet, review on paper, then come back to the web app to record three-state results (`known` / `unknown` / `skipped`). Online flashcard review is a secondary, occasional path. Both paths share the same data model and result-recording rules.
 
-Development is staged into six phases with frozen decisions in the root design docs and `docs/superpowers/`. Phases 1–6 are implemented. Each phase doc or enhancement spec defines the completion gates for its scope.
+Development is staged into six phases with frozen decisions under `docs/design/`; implementation plans and execution records live under `docs/superpowers/`. Phases 1–6 are implemented. Each phase doc or enhancement spec defines the completion gates for its scope.
 
 ### Production image, CI, and NAS deploy (phase 5)
 
 - **Image**: repo-root `Dockerfile` is multi-stage — `node:22-alpine` builds the Vue SPA (`npm ci` + `npm run build`), `python:3.12-slim` runs FastAPI serving API + the built SPA. Base images are pinned to a version+digest. Runtime is non-root UID/GID 10001 (only `/app/data` writable). `backend/docker-entrypoint.sh` runs `alembic upgrade head` before `uvicorn`, so `/healthz/ready` passes on a fresh DB. The runtime stage installs weasyprint system libs + `fonts-noto-cjk` so the phase-4 `/recitation` PDF endpoint works.
 - **Locked deps**: `backend/requirements.lock` is a hashed, fully-pinned lockfile (includes the `[pdf]` extra); the Dockerfile installs it with `pip install --require-hashes`. Regenerate with `pip-compile --generate-hashes --extra pdf -o requirements.lock pyproject.toml` (Python 3.12).
 - **CI**: `.github/workflows/ci.yml` runs gates on push-to-main and PR (backend `ruff check app tests` + `pytest`; frontend `typecheck` + vitest + build; OpenAPI-contract drift check; docker build + container smoke test of `/healthz/*` + SPA deep link + API-not-swallowed; Trivy HIGH/CRITICAL scan). Only push-to-main publishes `ghcr.io/huang8604/vocab-app:latest` + `sha-<short>` to GHCR. Third-party actions are pinned to commit SHAs.
-- **NAS**: `deploy/portainer-stack.yml` (template, REPLACE_ME placeholders) + `deploy/README.md` runbook. Release is **manual**: operator backs up the DB, then Pulls latest + Recreates in Portainer. No Watchtower/webhook/auto-pull. Rollback targets a `sha-<commit>` tag, not `latest`.
+- **NAS**: ignored local file `deploy/portainer-stack.yml` is the current NAS/Lucky deployment; tracked `deploy/portainer-stack.template.yml` is the reusable `REPLACE_ME` template; `deploy/README.md` is the runbook. Release is **manual**: operator backs up the DB, then Pulls the selected tag + Recreates in Portainer. No Watchtower/webhook/auto-pull. Rollback targets a `sha-<commit>` tag, not `latest`.
 
 ## Common commands
 
@@ -142,7 +142,7 @@ The repo ships an `add-words` Skill (`skills/add-words/`) that adds words via th
 
 ## Configuration & startup
 
-`Settings.from_env()` (`core/config.py`, `lru_cache`d) is the single source for config. Required for startup: `API_TOKEN_PEPPER` or `API_TOKEN_PEPPER_FILE` (≥32 bytes). Production also needs `DATABASE_URL`, `PUBLIC_BASE_URL`, `TRUSTED_HOSTS`, `TRUSTED_PROXY_CIDRS`. `TRUSTED_LOCAL_WEB` defaults to `false`. Wildcard CORS origins are rejected. Set `LOG_LEVEL=DEBUG` to log route templates, latency, dictionary misses, and actor type — tokens and request bodies are never logged.
+`Settings.from_env()` (`core/config.py`, `lru_cache`d) is the single source for config. Required for startup: `API_TOKEN_PEPPER` or `API_TOKEN_PEPPER_FILE` (≥32 bytes). Production also needs `DATABASE_URL`, `PUBLIC_BASE_URL`, `TRUSTED_HOSTS`, `TRUSTED_PROXY_CIDRS`. AI enrichment accepts `AI_BASE_URL`, `AI_MODEL`, and either `AI_API_KEY_FILE` (preferred; file wins) or `AI_API_KEY`. `TRUSTED_LOCAL_WEB` defaults to `false`. Wildcard CORS origins are rejected. Set `LOG_LEVEL=DEBUG` to log route templates, latency, dictionary misses, and actor type — tokens and request bodies are never logged.
 
 **Web login (optional):** set `WEB_LOGIN_REQUIRED=true` + `WEB_ADMIN_PASSWORD` (or `WEB_ADMIN_PASSWORD_FILE`) to expose a `/login` page backed by a signed session cookie (`wm_session`, secret = `SESSION_SECRET(_FILE)`, defaulting to the token pepper). Optional: `WEB_ADMIN_USERNAME` (default `admin`), `SESSION_MAX_AGE` (default 7d). With `WEB_LOGIN_REQUIRED=true`, the proxy/local web-admin branches are disabled — only the cookie login (and bearer tokens) authenticate. Provision/rotate web credentials with `scripts/set_web_password.py`.
 

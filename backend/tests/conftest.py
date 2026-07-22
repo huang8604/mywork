@@ -14,6 +14,7 @@ os.environ.setdefault("API_TOKEN_PEPPER", "test-pepper-at-least-16-bytes")
 # monkeypatch.setenv + get_settings.cache_clear().
 os.environ["AI_BASE_URL"] = ""
 os.environ["AI_API_KEY"] = ""
+os.environ.pop("AI_API_KEY_FILE", None)
 
 from app.core.database import Base, build_engine, get_db
 from app.main import app

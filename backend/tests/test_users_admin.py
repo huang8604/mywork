@@ -57,6 +57,33 @@ def test_admin_can_create_patch_reset_and_list_users(client, db_session, login_m
     )
 
 
+def test_user_password_minimum_is_six_characters(client, db_session, login_mode):
+    seed_credential(db_session, "admin", "supersecret")
+    _login(client, "admin", "supersecret")
+
+    too_short = client.post(
+        "/api/v1/users",
+        json={"username": "short", "password": "abc12", "role": "student"},
+    )
+    assert too_short.status_code == 422
+
+    created = client.post(
+        "/api/v1/users",
+        json={"username": "six", "password": "abc123", "role": "student"},
+    )
+    assert created.status_code == 201
+    user_id = created.json()["data"]["id"]
+
+    reset_too_short = client.post(
+        f"/api/v1/users/{user_id}/password", json={"new_password": "new12"}
+    )
+    assert reset_too_short.status_code == 422
+    reset = client.post(
+        f"/api/v1/users/{user_id}/password", json={"new_password": "new123"}
+    )
+    assert reset.status_code == 200
+
+
 def test_student_is_forbidden_from_user_management(client, db_session, login_mode):
     seed_credential(db_session, "admin", "supersecret")
     seed_credential(db_session, "stu", "stupass1", role="student")

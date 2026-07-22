@@ -1,7 +1,7 @@
 # 单词记忆辅助系统－阶段二详细设计
 
 > 实施状态：已完成（2026-07-20）  
-> 实现目录：[backend](./backend/README.md)  
+> 实现目录：[backend](../../../backend/README.md)  
 > 验证：Python 3.12、Alembic 空库升级、15 项 pytest、OpenAPI 导出
 
 ## 1. 阶段目标
@@ -67,6 +67,8 @@ backend/
 - `LOG_LEVEL`、`TRUSTED_HOSTS`；
 - `PUBLIC_BASE_URL`，用于生成 Skill 可打开的网页和打印 URL；
 - `API_TOKEN_PEPPER_FILE`，只读 Secret 文件路径；
+- `DICTIONARY_INDEX_PATH`，本地词典索引路径；
+- `AI_BASE_URL`、`AI_MODEL`，以及优先使用的 `AI_API_KEY_FILE`（兼容 `AI_API_KEY`），用于本地词典未命中时的 OpenAI-compatible 补全；
 - `API_RATE_LIMIT_PER_MINUTE`、`IDEMPOTENCY_RETENTION_DAYS`、`MAX_BATCH_RESULTS`。
 
 同源单容器生产环境通常不需要宽泛 CORS。禁止以 `*` 作为生产 Origins、Methods 和 Headers；仅开放前端实际需要的方法和请求头。
@@ -186,14 +188,15 @@ PRAGMA busy_timeout = 5000;
 ```python
 class StrategyRequest(BaseModel):
     new_words_limit: int = Field(10, ge=0, le=100)
-    error_words_limit: int = Field(15, ge=0, le=100)
-    due_words_limit: int = Field(20, ge=0, le=100)
+    error_words_limit: int = Field(5, ge=0, le=100)
+    due_words_limit: int = Field(5, ge=0, le=100)
     custom_words_limit: int = Field(5, ge=0, le=100)
+    total_words: int | None = Field(None, ge=1)
     fallback_unreviewed_days: int = Field(3, ge=1, le=365)
     seed: int | None = None
 ```
 
-四类数量总和不得超过配置的 `MAX_PRACTICE_WORDS`。
+未设置 `total_words` 时，四类数量总和不得超过配置的 `MAX_PRACTICE_WORDS`。设置后，四类数量作为比例权重，使用最大余数法分配为总和等于 `total_words` 的整数配额；同余数按 `error → new → due → custom` 裁决。权重不能全为 0，且总数模式与 `word_ids` 自选模式互斥。
 
 ### 6.2 候选与排序
 
@@ -202,7 +205,7 @@ class StrategyRequest(BaseModel):
 - 到期词：`due_at <= now`；对旧数据缺少 `due_at` 时才使用 `fallback_unreviewed_days`。
 - 自定义词：`is_custom=true`，仍遵循软删除和去重。
 
-每类先取得候选池，再按 `error → due → custom → new` 优先级选取。发生重叠时为单词合并所有 `source_categories`，并从相应候选池补足空缺，直到无候选或达到总上限。
+每类先取得候选池，再按 `error → new → due → custom` 优先级选取。发生重叠时为单词合并所有 `source_categories`；某类数量不足时，缺额顺延到下一类补足，直到无候选或达到总上限。
 
 ### 6.3 可复现与持久化
 

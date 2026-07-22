@@ -8,7 +8,7 @@
 
 **Tech Stack:** FastAPI + SQLAlchemy 2 + SQLite(argon2/itsdangerous);Vue 3 + Pinia + Element Plus + vitest + vue-tsc。后端测试 `.venv/bin/pytest`(FastAPI TestClient + per-test SQLite)。
 
-**Spec:** `docs/superpowers/specs/2026-07-22-phase6-enhancements-design.md`
+**Spec:** `docs/design/phases/phase-6-enhancements.md`
 
 **完成状态（2026-07-22）：** 全部任务已实现并验收。后端迁移 + 全量测试为
 `83 passed, 1 skipped`，Ruff 检查通过；前端类型检查、`41` 项单元测试、生产构建与

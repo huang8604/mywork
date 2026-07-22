@@ -40,8 +40,8 @@ def main() -> None:
     args = parser.parse_args()
 
     password = _read_password(args)
-    if len(password) < 8:
-        parser.error("password must be at least 8 characters")
+    if len(password) < 6:
+        parser.error("password must be at least 6 characters")
 
     with SessionLocal() as db:
         cred = db.scalar(

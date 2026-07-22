@@ -40,6 +40,7 @@ class Settings:
     dictionary_index_path: str
     frontend_dist: str
     ai_base_url: str
+    ai_api_key_file: str | None
     ai_api_key: str
     ai_model: str
     web_login_required: bool
@@ -52,6 +53,13 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        ai_api_key_file = os.getenv("AI_API_KEY_FILE")
+        if ai_api_key_file:
+            ai_api_key = Path(ai_api_key_file).read_text(encoding="utf-8").strip()
+            if not ai_api_key:
+                raise ValueError("AI_API_KEY_FILE must not be empty")
+        else:
+            ai_api_key = os.getenv("AI_API_KEY", "").strip()
         value = cls(
             database_url=os.getenv("DATABASE_URL", "sqlite:///./data/vocab.db"),
             app_timezone=os.getenv("APP_TIMEZONE", "Asia/Shanghai"),
@@ -78,7 +86,8 @@ class Settings:
                 str(Path(__file__).resolve().parents[3] / "frontend" / "dist"),
             ),
             ai_base_url=os.getenv("AI_BASE_URL", "").rstrip("/"),
-            ai_api_key=os.getenv("AI_API_KEY", ""),
+            ai_api_key_file=ai_api_key_file,
+            ai_api_key=ai_api_key,
             ai_model=os.getenv("AI_MODEL", "gpt-4o-mini"),
             web_login_required=_boolean("WEB_LOGIN_REQUIRED", False),
             web_admin_username=os.getenv("WEB_ADMIN_USERNAME", "admin"),

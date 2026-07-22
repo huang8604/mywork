@@ -1,6 +1,6 @@
 # 单词记忆辅助系统
 
-面向个人 NAS 部署的轻量级单词管理与复习系统。当前仓库已完成**阶段一至阶段六**:四态复习闭环(单词 → 复习表 → 三态记录 → 历史)、生产容器/CI/NAS 人工发布，以及在线复习、词库导入、备份与令牌管理增强。
+面向个人 NAS 部署的轻量级单词管理与复习系统。当前仓库已完成**阶段一至阶段六**：三态复习闭环（单词 → 复习表 → 三态记录 → 历史）、生产容器/CI/NAS 人工发布，以及在线复习、词库导入、备份与令牌管理增强。
 
 ## 已冻结的关键决策
 
@@ -16,20 +16,23 @@
 
 - **生产镜像**:`Dockerfile`(多阶段,Node 构建 Vue + Python 运行 FastAPI,非 root UID 10001,带 weasyprint/CJK 字体以支持背诵表 PDF)。依赖锁定在 `backend/requirements.lock`(带 hash,`pip install --require-hashes`)。
 - **CI**:`.github/workflows/ci.yml` —— push 到 `main` 与 PR 都跑门禁(ruff + 后端 pytest / 前端 typecheck+单测+构建 / OpenAPI 契约一致性 / 镜像构建+smoke+Trivy 扫描);仅 push 到 `main` 才发布 `ghcr.io/huang8604/vocab-app:latest` 与 `sha-<commit>`。
-- **NAS 发布**:`deploy/portainer-stack.yml`(模板)+ [`deploy/README.md`](./deploy/README.md)(备份/更新/回滚 runbook)。运维**人工**在 Portainer Pull latest + Recreate,**无**自动部署链路。
+- **NAS 实际部署**：本地 `deploy/portainer-stack.yml`（已忽略，不提交）固定当前域名、loopback 端口、Lucky 可信代理范围和 NAS 挂载路径；所有密钥仍通过只读文件挂载。
+- **部署模板**：[`deploy/portainer-stack.template.yml`](./deploy/portainer-stack.template.yml) 使用 `REPLACE_ME` 占位，复制后再填写域名、代理网段和镜像标签。
+- **运维手册**：[`deploy/README.md`](./deploy/README.md) 包含 secret 准备、备份、人工更新、健康检查和回滚步骤。运维**人工**在 Portainer Pull + Recreate，**无**自动部署链路。
 
 ## 文档索引
 
-1. [系统总纲](./单词记忆辅助系统.md)
-2. [阶段一：架构、数据模型与 API 契约](./单词记忆辅助系统%20-%20阶段一详细设计文档.md)
-3. [阶段二：后端与策略引擎](./单词记忆辅助系统%20-%20阶段二详细设计文档.md)
-4. [阶段三：响应式前端与复习交互](./单词记忆辅助系统%20-%20阶段三详细设计文档.md)
-5. [阶段四：单词复习表、打印与回录](./单词记忆辅助系统%20-%20阶段四详细设计文档.md)
-6. [阶段五：容器、CI 与 NAS 人工发布](./单词记忆辅助系统%20-%20阶段五详细设计文档.md)
-7. [阶段六：增强批次设计规格](./docs/superpowers/specs/2026-07-22-phase6-enhancements-design.md)
-8. [阶段六：增强批次实现计划](./docs/superpowers/plans/2026-07-22-phase6-enhancements.md)
-9. [单词背诵表示例](./单词背诵表.md)
-10. [词库增强、自定义复习与添加单词 Skill 补充设计](./单词记忆辅助系统%20-%20词库增强与自定义复习补充设计.md)
+1. [设计文档总索引](./docs/design/README.md)
+2. [系统总纲](./docs/design/overview.md)
+3. [阶段一：架构、数据模型与 API 契约](./docs/design/phases/phase-1-architecture-api.md)
+4. [阶段二：后端与策略引擎](./docs/design/phases/phase-2-backend-strategy.md)
+5. [阶段三：响应式前端与复习交互](./docs/design/phases/phase-3-responsive-frontend.md)
+6. [阶段四：单词复习表、打印与回录](./docs/design/phases/phase-4-worksheet-print-review.md)
+7. [阶段五：容器、CI 与 NAS 人工发布](./docs/design/phases/phase-5-container-ci-nas.md)
+8. [阶段六：增强批次设计规格](./docs/design/phases/phase-6-enhancements.md)
+9. [词库增强、自定义复习与添加单词 Skill 补充设计](./docs/design/supplements/dictionary-custom-review.md)
+10. [阶段六：增强批次实现计划与验收记录](./docs/superpowers/plans/2026-07-22-phase6-enhancements.md)
+11. [单词背诵表示例](./单词背诵表.md)
 
 ## 实施顺序
 
@@ -42,7 +45,8 @@
 - 单词 CRUD、软删除/恢复、CSV/JSON 原子导入和安全导出；
 - 只含英文的 TXT/文本列表导入，本地词典自动补全音标、中文释义和例句；
 - 三态复习、乐观锁纠错、统计重建和间隔规则；
-- 可复现复习表生成、复习轮次、逐项/批量原子回录；
+- 可复现复习表生成：默认新词 10、错词 5、到期词 5、自定义词 5，也可指定总单词数并按四类权重分配；
+- 复习轮次、逐项/批量原子回录；
 - 手机、平板和桌面的响应式导航、词库管理、在线卡片复习、线下结果回录与历史修改；
 - 中英两种留空回忆方向、单词与 `/音标/` 同行、例句全显示、A4 多页打印、可选答案页和人工打印确认；
 - 按明确单词集合自定义生成复习表，并保留用户选择顺序；
@@ -57,3 +61,4 @@
 
 - 生产镜像以 `latest` / `sha-<commit>` 发布,但 NAS 更新需运维人工在 Portainer 操作;`latest` 会漂移,回滚应改用具体 `sha-<commit>` 标签。
 - 镜像默认不含 `dictionary-index.json`(体积大、许可证待确认),如需词库自动补全需在 NAS 上挂载该文件并设置 `DICTIONARY_INDEX_PATH`。
+- AI 补全使用 OpenAI-compatible `/chat/completions`；生产环境应通过 `AI_API_KEY_FILE` 挂载只读 secret，不要把 `AI_API_KEY` 明文写入 Compose 或 Git。

@@ -267,7 +267,7 @@
         "properties": {
           "new_password": {
             "maxLength": 256,
-            "minLength": 8,
+            "minLength": 6,
             "title": "New Password",
             "type": "string"
           },
@@ -548,14 +548,14 @@
             "type": "integer"
           },
           "due_words_limit": {
-            "default": 20,
+            "default": 5,
             "maximum": 100.0,
             "minimum": 0.0,
             "title": "Due Words Limit",
             "type": "integer"
           },
           "error_words_limit": {
-            "default": 15,
+            "default": 5,
             "maximum": 100.0,
             "minimum": 0.0,
             "title": "Error Words Limit",
@@ -588,6 +588,18 @@
             ],
             "title": "Seed"
           },
+          "total_words": {
+            "anyOf": [
+              {
+                "minimum": 1.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Words"
+          },
           "word_ids": {
             "items": {
               "type": "integer"
@@ -605,7 +617,7 @@
         "properties": {
           "password": {
             "maxLength": 256,
-            "minLength": 8,
+            "minLength": 6,
             "title": "Password",
             "type": "string"
           },
@@ -637,7 +649,7 @@
         "properties": {
           "new_password": {
             "maxLength": 256,
-            "minLength": 8,
+            "minLength": 6,
             "title": "New Password",
             "type": "string"
           }

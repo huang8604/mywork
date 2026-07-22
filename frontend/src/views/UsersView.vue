@@ -61,12 +61,12 @@ async function toggleDisabled(user: WebUser) {
 
 async function resetPwd(user: WebUser) {
   try {
-    const result = await ElMessageBox.prompt('请输入新密码（至少 8 位）', `重置「${user.username}」的密码`, {
+    const result = await ElMessageBox.prompt('请输入新密码（至少 6 位）', `重置「${user.username}」的密码`, {
       confirmButtonText: '保存',
       cancelButtonText: '取消',
       inputType: 'password',
-      inputValidator: (value: string) => value.length >= 8,
-      inputErrorMessage: '密码至少 8 位',
+      inputValidator: (value: string) => value.length >= 6,
+      inputErrorMessage: '密码至少 6 位',
     })
     await resetUserPassword(user.id, result.value)
     ElMessage.success('密码已重置')
@@ -127,7 +127,7 @@ async function remove(user: WebUser) {
 
     <el-dialog v-model="createOpen" title="新增用户" width="min(420px, calc(100vw - 24px))">
       <label class="field">用户名<input v-model="form.username" autocomplete="off" /></label>
-      <label class="field">密码（至少 8 位）<input v-model="form.password" type="password" autocomplete="new-password" /></label>
+      <label class="field">密码（至少 6 位）<input v-model="form.password" type="password" autocomplete="new-password" /></label>
       <label class="field">角色
         <el-select v-model="form.role">
           <el-option label="管理员（全部权限）" value="admin" />
@@ -136,7 +136,7 @@ async function remove(user: WebUser) {
       </label>
       <template #footer>
         <el-button @click="createOpen = false">取消</el-button>
-        <el-button type="primary" :loading="submitting" :disabled="!form.username.trim() || form.password.length < 8" @click="submitCreate">创建</el-button>
+        <el-button type="primary" :loading="submitting" :disabled="!form.username.trim() || form.password.length < 6" @click="submitCreate">创建</el-button>
       </template>
     </el-dialog>
   </section>

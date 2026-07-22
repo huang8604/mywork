@@ -51,7 +51,7 @@ export interface StatsSummary {
 
 export interface StrategyRequest {
   new_words_limit: number; error_words_limit: number; due_words_limit: number
-  custom_words_limit: number; fallback_unreviewed_days: number; seed?: number; word_ids: number[]
+  custom_words_limit: number; total_words?: number; fallback_unreviewed_days: number; seed?: number; word_ids: number[]
 }
 export interface SessionWord { en_word: string; phonetic: string | null; cn_meaning: string; example_sentence: string | null }
 export interface PracticeItem {

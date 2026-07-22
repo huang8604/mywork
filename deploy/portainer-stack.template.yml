@@ -1,0 +1,44 @@
+# Reusable Portainer / Docker Compose template.
+# Replace every REPLACE_ME before deploying. Never place plaintext API keys in
+# this file; mount secret files read-only instead.
+
+services:
+  vocab-app:
+    image: ${VOCAB_IMAGE:-ghcr.io/huang8604/vocab-app:latest}
+    container_name: vocab-app
+    restart: unless-stopped
+    ports:
+      # Only the host reverse proxy may connect directly.
+      - "127.0.0.1:${VOCAB_HOST_PORT:-8587}:8000"
+    volumes:
+      - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/data:/app/data
+      - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/secrets/api-token-pepper:/run/secrets/api-token-pepper:ro
+      - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/secrets/ai-api-key:/run/secrets/ai-api-key:ro
+      - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/dictionary-index.json:/app/dictionary-index.json:ro
+    environment:
+      DATABASE_URL: sqlite:////app/data/vocab.db
+      APP_TIMEZONE: Asia/Shanghai
+      PUBLIC_BASE_URL: https://words.REPLACE_ME.example.com
+      CORS_ORIGINS: https://words.REPLACE_ME.example.com
+      TRUSTED_HOSTS: words.REPLACE_ME.example.com,localhost,127.0.0.1
+      API_TOKEN_PEPPER_FILE: /run/secrets/api-token-pepper
+      API_RATE_LIMIT_PER_MINUTE: "60"
+      # App auth trusts X-Forwarded-User only from these networks.
+      TRUSTED_PROXY_CIDRS: 127.0.0.0/8,::1/128,REPLACE_ME_DOCKER_PROXY_CIDR
+      # Uvicorn trusts X-Forwarded-For/Proto only from these networks.
+      FORWARDED_ALLOW_IPS: 127.0.0.1,REPLACE_ME_DOCKER_PROXY_CIDR
+      LOG_LEVEL: INFO
+      DICTIONARY_INDEX_PATH: /app/dictionary-index.json
+      AI_BASE_URL: https://api.REPLACE_ME.example.com/v1
+      AI_API_KEY_FILE: /run/secrets/ai-api-key
+      AI_MODEL: REPLACE_ME_MODEL
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/live', timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL

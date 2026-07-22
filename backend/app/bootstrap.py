@@ -35,9 +35,9 @@ def ensure_web_admin() -> None:
         if already is not None:
             return
         password = _read_password(settings)
-        if len(password) < 8:
+        if len(password) < 6:
             logger.warning(
-                "No web admin configured (need WEB_ADMIN_PASSWORD >= 8 chars, or "
+                "No web admin configured (need WEB_ADMIN_PASSWORD >= 6 chars, or "
                 "WEB_ADMIN_PASSWORD_FILE). Login disabled until "
                 "scripts/set_web_password.py provisions one."
             )

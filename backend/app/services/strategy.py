@@ -19,6 +19,36 @@ from app.services.reviews import ActorLike
 PRIORITY = ("error", "new", "due", "custom")
 
 
+def _effective_limits(payload: StrategyRequest) -> dict[str, int]:
+    """Return absolute category quotas, allocating total_words by integer weights."""
+    weights = {
+        "new": payload.new_words_limit,
+        "error": payload.error_words_limit,
+        "due": payload.due_words_limit,
+        "custom": payload.custom_words_limit,
+    }
+    if payload.total_words is None:
+        return weights
+
+    weight_total = sum(weights.values())
+    allocated: dict[str, int] = {}
+    remainders: dict[str, int] = {}
+    for category, weight in weights.items():
+        allocated[category], remainders[category] = divmod(
+            payload.total_words * weight, weight_total
+        )
+
+    remaining = payload.total_words - sum(allocated.values())
+    priority_index = {category: index for index, category in enumerate(PRIORITY)}
+    ranked = sorted(
+        weights,
+        key=lambda category: (-remainders[category], priority_index[category]),
+    )
+    for category in ranked[:remaining]:
+        allocated[category] += 1
+    return allocated
+
+
 def _error_score(stats: WordStats, recent_unknown: int, now: datetime) -> int:
     effective = stats.known_count + stats.unknown_count
     ratio = (stats.unknown_count * 10 // effective) if effective else 0
@@ -36,12 +66,8 @@ def generate_session(
     db: Session, payload: StrategyRequest, actor: ActorLike, skill: tuple[str, str] | None
 ) -> PracticeSession:
     settings = get_settings()
-    requested_total = len(payload.word_ids) if payload.word_ids else (
-        payload.new_words_limit
-        + payload.error_words_limit
-        + payload.due_words_limit
-        + payload.custom_words_limit
-    )
+    limits = _effective_limits(payload)
+    requested_total = len(payload.word_ids) if payload.word_ids else sum(limits.values())
     if requested_total > settings.max_practice_words:
         raise AppError(422, "VALIDATION_ERROR", "练习单词数量超过上限")
     seed = payload.seed if payload.seed is not None else random.SystemRandom().randint(0, 2_147_483_647)
@@ -114,12 +140,6 @@ def generate_session(
         requested = {"selected": len(selected)}
         actual = {"unique_total": len(selected), "selected": len(selected)}
     else:
-        limits = {
-            "new": payload.new_words_limit,
-            "error": payload.error_words_limit,
-            "due": payload.due_words_limit,
-            "custom": payload.custom_words_limit,
-        }
         selected = []
         selected_ids: set[int] = set()
         # 某池缺额时,把缺额顺延到下一池补足,使总数尽量达到 sum(limits)。
@@ -150,7 +170,7 @@ def generate_session(
     params["seed"] = seed
     params_json = canonical_json(params)
     session = PracticeSession(
-        strategy_version="v3",
+        strategy_version="v4",
         strategy_params_json=params_json,
         strategy_hash=hashlib.sha256(params_json.encode("utf-8")).hexdigest(),
         seed=seed,

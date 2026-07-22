@@ -122,9 +122,10 @@ class ReviewCorrection(StrictModel):
 
 class StrategyRequest(StrictModel):
     new_words_limit: int = Field(default=10, ge=0, le=100)
-    error_words_limit: int = Field(default=15, ge=0, le=100)
-    due_words_limit: int = Field(default=20, ge=0, le=100)
+    error_words_limit: int = Field(default=5, ge=0, le=100)
+    due_words_limit: int = Field(default=5, ge=0, le=100)
     custom_words_limit: int = Field(default=5, ge=0, le=100)
+    total_words: int | None = Field(default=None, ge=1)
     fallback_unreviewed_days: int = Field(default=3, ge=1, le=365)
     seed: int | None = Field(default=None, ge=0, le=2_147_483_647)
     word_ids: list[int] = Field(default_factory=list, max_length=200)
@@ -137,6 +138,21 @@ class StrategyRequest(StrictModel):
         if len(values) != len(set(values)):
             raise ValueError("word_ids must be unique")
         return values
+
+    @model_validator(mode="after")
+    def total_words_mode_is_unambiguous(self) -> "StrategyRequest":
+        if self.total_words is None:
+            return self
+        if self.word_ids:
+            raise ValueError("total_words cannot be combined with word_ids")
+        if not (
+            self.new_words_limit
+            + self.error_words_limit
+            + self.due_words_limit
+            + self.custom_words_limit
+        ):
+            raise ValueError("at least one category weight must be greater than zero")
+        return self
 
 
 class RoundCreate(StrictModel):
@@ -208,12 +224,12 @@ class LoginRequest(StrictModel):
 
 class PasswordChangeRequest(StrictModel):
     old_password: str = Field(min_length=1, max_length=256)
-    new_password: str = Field(min_length=8, max_length=256)
+    new_password: str = Field(min_length=6, max_length=256)
 
 
 class UserCreateRequest(StrictModel):
     username: str = Field(min_length=1, max_length=64)
-    password: str = Field(min_length=8, max_length=256)
+    password: str = Field(min_length=6, max_length=256)
     role: WebRole = "student"
 
     @field_validator("username")
@@ -234,7 +250,7 @@ class UserUpdateRequest(StrictModel):
 
 
 class UserPasswordResetRequest(StrictModel):
-    new_password: str = Field(min_length=8, max_length=256)
+    new_password: str = Field(min_length=6, max_length=256)
 
 
 class ApiClientCreateRequest(StrictModel):

@@ -1,5 +1,7 @@
 # 单词记忆辅助系统－阶段五详细设计
 
+> 实施状态：已完成
+
 ## 1. 阶段目标与发布边界
 
 系统采用单容器全栈部署：
@@ -72,14 +74,16 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-
 # 以下镜像名、NAS 路径和域名均为占位示例，部署前必须替换为实际值。
 services:
   vocab-app:
-    image: ghcr.io/your-github-username/vocab-app:latest
+    image: ghcr.io/your-github-username/vocab-app:sha-REPLACE_ME
     container_name: vocab-app
     restart: unless-stopped
     ports:
-      - "8080:8000"
+      - "127.0.0.1:8587:8000"
     volumes:
       - /share/Container/vocab-app/data:/app/data
       - /share/Container/vocab-app/secrets/api-token-pepper:/run/secrets/api-token-pepper:ro
+      - /share/Container/vocab-app/secrets/ai-api-key:/run/secrets/ai-api-key:ro
+      - /share/Container/vocab-app/dictionary-index.json:/app/dictionary-index.json:ro
     environment:
       DATABASE_URL: sqlite:////app/data/vocab.db
       APP_TIMEZONE: Asia/Shanghai
@@ -88,7 +92,12 @@ services:
       TRUSTED_HOSTS: words.example.com
       API_TOKEN_PEPPER_FILE: /run/secrets/api-token-pepper
       API_RATE_LIMIT_PER_MINUTE: "60"
-      FORWARDED_ALLOW_IPS: 172.18.0.0/16
+      TRUSTED_PROXY_CIDRS: 127.0.0.0/8,::1/128,172.16.0.0/12
+      FORWARDED_ALLOW_IPS: 127.0.0.1,172.16.0.0/12
+      DICTIONARY_INDEX_PATH: /app/dictionary-index.json
+      AI_BASE_URL: https://ai.example.com/v1
+      AI_API_KEY_FILE: /run/secrets/ai-api-key
+      AI_MODEL: example-model
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/live', timeout=2)"]
       interval: 30s
@@ -102,11 +111,11 @@ services:
 ```
 
 - NAS 宿主目录预先创建，并赋予 UID/GID 10001 写权限。
-- 若反向代理不在同一 Docker 网络，应由 NAS 防火墙限制 8080，仅允许可信局域网或反向代理访问。
+- 宿主发布端口应绑定 `127.0.0.1`，只允许同机反向代理访问；公网和局域网客户端统一经 HTTPS 域名进入。
 - HTTPS、访问认证、请求体限制和必要限流由反向代理负责。
 - 外部 Skill 必须通过 HTTPS 反向代理访问 API，并由应用自身验证 Bearer Token 和 scope；CORS 不适用于服务端到服务端调用，不能把 CORS 当作认证。
-- Token pepper 文件权限限制为运行 UID 可读；各 Skill 的明文 Token 只保存在对应 Skill 的 Secret 配置中，不写入 Compose、镜像、仓库或日志。
-- 仅信任实际反向代理网段传入的 `X-Forwarded-*`，代理应删除客户端伪造的同名请求头。
+- Token pepper 和 AI API Key 文件权限限制为运行 UID 可读；各 Skill 的明文 Token 只保存在对应 Skill 的 Secret 配置中，不写入 Compose、镜像、仓库或日志。
+- `TRUSTED_PROXY_CIDRS` 控制应用身份头，`FORWARDED_ALLOW_IPS` 控制 Uvicorn 代理头；两者都只信任实际反向代理网段，代理应删除客户端伪造的同名请求头。
 - 是否启用只读根文件系统在实现时验证；临时文件使用 tmpfs，SQLite 数据卷保持可写。
 
 ## 4. 数据迁移、备份与恢复
@@ -183,6 +192,6 @@ SBOM、镜像签名和构建证明作为推荐增强项。
 - CI 测试通过后才推送 `latest` 与 SHA 标签。
 - 数据卷权限、迁移、备份、恢复和按 SHA 回滚均完成演练。
 - 反向代理启用 HTTPS、访问控制和受限来源。
-- 外部 Skill Token、pepper、scope、限流和审计配置通过生产安全检查；公网无法绕过反向代理直连 8080。
+- 外部 Skill Token、pepper、AI Key、scope、限流和审计配置通过生产安全检查；公网无法绕过反向代理直连容器发布端口。
 - CI 在临时数据库中通过“Skill 生成复习表 → 创建轮次 → 批量录入三态”的端到端测试。
 - Portainer 人工 Pull latest + Recreate 流程有明确检查表，且不存在额外自动部署链路。

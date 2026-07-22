@@ -21,3 +21,4 @@ dictionary-index.json.full.json
 temp/
 # Local agent state
 .claude/
+deploy/portainer-stack.yml

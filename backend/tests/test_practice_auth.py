@@ -7,8 +7,58 @@ from sqlalchemy.orm import Session
 
 from app.core.auth import create_api_client_token
 from app.models import ApiClientToken, AuditLog, IdempotencyRecord, ReviewLog, WordStats
+from app.schemas import StrategyRequest
 from app.services.domain import utc_text
+from app.services.strategy import _effective_limits
 from conftest import create_word
+
+
+def test_strategy_defaults_and_total_word_proportions():
+    defaults = StrategyRequest()
+    assert defaults.new_words_limit == 10
+    assert defaults.error_words_limit == 5
+    assert defaults.due_words_limit == 5
+    assert defaults.custom_words_limit == 5
+    assert defaults.total_words is None
+
+    proportional = StrategyRequest(
+        new_words_limit=10,
+        error_words_limit=5,
+        due_words_limit=5,
+        custom_words_limit=5,
+        total_words=13,
+    )
+    assert _effective_limits(proportional) == {
+        "new": 5,
+        "error": 3,
+        "due": 3,
+        "custom": 2,
+    }
+
+
+def test_total_words_rejects_zero_weights_and_custom_selection(client):
+    zero_weights = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "generate-zero-weights"},
+        json={
+            "new_words_limit": 0,
+            "error_words_limit": 0,
+            "due_words_limit": 0,
+            "custom_words_limit": 0,
+            "total_words": 10,
+        },
+    )
+    assert zero_weights.status_code == 422
+
+    selection = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "generate-selection-with-total"},
+        json={
+            "word_ids": [1],
+            "total_words": 10,
+        },
+    )
+    assert selection.status_code == 422
 
 
 def test_strategy_boundaries_empty_candidates_limit_and_seed_reproducibility(client):
@@ -97,7 +147,7 @@ def test_strategy_priority_is_error_new_due_custom(client):
 
 
 def test_strategy_backfills_shortfall_from_next_pool(client):
-    # 错词池不足时,缺额顺延到新词池补足,使总数达到 sum(limits)。
+    # 总数 7 按 new:error = 1:2 分为 2:5；错词不足时缺额再顺延到新词池。
     recent = utc_text(datetime.now(UTC) - timedelta(hours=1))  # 近期、不到期、非新词
     for i in range(2):
         w = create_word(
@@ -121,10 +171,11 @@ def test_strategy_backfills_shortfall_from_next_pool(client):
         "/api/v1/daily-table/generate",
         headers={"Idempotency-Key": "gen-backfill"},
         json={
-            "new_words_limit": 2,
-            "error_words_limit": 5,
+            "new_words_limit": 1,
+            "error_words_limit": 2,
             "due_words_limit": 0,
             "custom_words_limit": 0,
+            "total_words": 7,
             "fallback_unreviewed_days": 3,
             "seed": 1,
         },
@@ -132,6 +183,7 @@ def test_strategy_backfills_shortfall_from_next_pool(client):
     assert gen.status_code == 201, gen.text
     data = gen.json()["data"]
     # 错词要 5 只有 2 → 缺 3;新词本要 2,补足缺额后挑 5 个 → 总数 7。
+    assert data["requested_counts"] == {"new": 2, "error": 5, "due": 0, "custom": 0}
     assert data["actual_counts"]["unique_total"] == 7
     assert data["actual_counts"]["error"] == 2
     assert data["actual_counts"]["new"] == 5

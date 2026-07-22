@@ -62,7 +62,7 @@ def test_change_password_rotates_credential(client, db_session, login_mode):
     )
     resp = client.post(
         "/api/v1/auth/password",
-        json={"old_password": "supersecret", "new_password": "brandnew1"},
+        json={"old_password": "supersecret", "new_password": "abc123"},
     )
     assert resp.status_code == 200
     client.post("/api/v1/auth/logout")
@@ -74,10 +74,22 @@ def test_change_password_rotates_credential(client, db_session, login_mode):
     )
     assert (
         client.post(
-            "/api/v1/auth/login", json={"username": "admin", "password": "brandnew1"}
+            "/api/v1/auth/login", json={"username": "admin", "password": "abc123"}
         ).status_code
         == 200
     )
+
+
+def test_change_password_rejects_five_characters(client, db_session, login_mode):
+    seed_credential(db_session, "admin", "supersecret")
+    client.post(
+        "/api/v1/auth/login", json={"username": "admin", "password": "supersecret"}
+    )
+    response = client.post(
+        "/api/v1/auth/password",
+        json={"old_password": "supersecret", "new_password": "abc12"},
+    )
+    assert response.status_code == 422
 
 
 def test_student_role_can_review_but_not_manage(client, db_session, login_mode):
