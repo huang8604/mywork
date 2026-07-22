@@ -16,6 +16,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy import select
 
+from app.api.api_clients import router as api_clients_router
 from app.api.auth import router as auth_router
 from app.api.health import router as health_router
 from app.api.practice import router as practice_router
@@ -242,6 +243,7 @@ app.include_router(reviews_router)
 app.include_router(practice_router)
 app.include_router(auth_router)
 app.include_router(users_router)
+app.include_router(api_clients_router)
 
 REQUIRED_SCOPES: dict[tuple[str, str], list[str]] = {
     ("POST", "/api/v1/words"): ["words:write"],
@@ -316,8 +318,12 @@ def custom_openapi() -> dict:
     for path, path_item in schema.get("paths", {}).items():
         if not path.startswith("/api/v1"):
             continue
-        # auth/users are gated by session/role, not Bearer/TrustedProxyUser scopes.
-        if path.startswith("/api/v1/auth") or path.startswith("/api/v1/users"):
+        # auth/users/api-clients are gated by session/role, not Bearer/TrustedProxyUser scopes.
+        if (
+            path.startswith("/api/v1/auth")
+            or path.startswith("/api/v1/users")
+            or path.startswith("/api/v1/api-clients")
+        ):
             continue
         for method, operation in path_item.items():
             if method.lower() not in {"get", "post", "put", "patch", "delete"}:

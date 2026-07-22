@@ -235,3 +235,24 @@ class UserUpdateRequest(StrictModel):
 
 class UserPasswordResetRequest(StrictModel):
     new_password: str = Field(min_length=8, max_length=256)
+
+
+class ApiClientCreateRequest(StrictModel):
+    name: str = Field(min_length=1, max_length=100)
+    skill_name: str = Field(min_length=1, max_length=100)
+    skill_version: str = Field(min_length=1, max_length=50)
+    scopes: list[str] = Field(min_length=1, max_length=20)
+    expires_days: int = Field(default=365, ge=1, le=3650)
+    description: str | None = Field(default=None, max_length=500)
+
+
+class ApiClientUpdateRequest(StrictModel):
+    scopes: list[str] | None = Field(default=None, min_length=1, max_length=20)
+    description: str | None = Field(default=None, max_length=500)
+    status: Literal["active", "disabled"] | None = None
+
+    @model_validator(mode="after")
+    def _at_least_one(self) -> "ApiClientUpdateRequest":
+        if self.scopes is None and self.description is None and self.status is None:
+            raise ValueError("至少需要提供 scopes / description / status 之一")
+        return self

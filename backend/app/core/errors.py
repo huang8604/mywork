@@ -28,6 +28,8 @@ _RESOURCE_ZH = {
     "round item": "本题",
     "practice session": "复习表",
     "practice review round": "复习轮次",
+    "api_client": "API 客户端",
+    "api_token": "API 令牌",
 }
 
 
