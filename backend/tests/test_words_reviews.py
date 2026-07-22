@@ -465,7 +465,7 @@ def test_recitation_md_and_pdf_export(client):
     md = client.get(f"/api/v1/practice-sessions/{session_id}/recitation?format=md")
     assert md.status_code == 200, md.text
     assert "text/markdown" in md.headers["content-type"]
-    assert "|单词|音标|中文|例句|" in md.text
+    assert "|单词 /音标/|中文|例句|" in md.text
     assert word["en_word"] in md.text
 
     pytest.importorskip("weasyprint")

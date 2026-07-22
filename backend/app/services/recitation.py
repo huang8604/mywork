@@ -1,8 +1,10 @@
 """Recitation handout: render a practice session as the 单词背诵表.md format and
 optionally convert it to PDF.
 
-The markdown mirrors the repo-root `单词背诵表.md` template — a 4-column table
-(单词 | 音标 | 中文 | 例句) with a title and a footer hint. Cell content comes
+The markdown mirrors the repo-root `单词背诵表.md` template — a 3-column table
+(单词 /音标/ | 中文 | 例句) with a title and a footer hint. The phonetic is
+folded into the first cell wrapped in slashes (omitted entirely when the
+snapshot has no phonetic, so we never emit a stray ``//``). Cell content comes
 from each ``PracticeSessionItem``'s snapshot fields so the handout stays stable
 as the word library changes.
 
@@ -25,17 +27,32 @@ def _cell(value: str | None) -> str:
     return value.replace("|", "\\|").replace("\n", " ").strip()
 
 
+def _format_phonetic(p: str | None) -> str:
+    """Wrap a phonetic in slashes, tolerating already-slashed or empty input.
+
+    Returns an empty string when there is nothing to show so the caller can
+    simply concatenate without producing a stray ``//``.
+    """
+    if not p:
+        return ""
+    t = p.strip().strip("/")
+    return f"/{t}/" if t else ""
+
+
 def build_recitation_md(items: Iterable[PracticeSessionItem]) -> str:
     lines = [
         "# 📚 单词背诵表",
         "",
-        "|单词|音标|中文|例句|",
-        "|---|---|---|---|",
+        "|单词 /音标/|中文|例句|",
+        "|---|---|---|",
     ]
     for item in items:
+        word_cell = _cell(item.snapshot_en_word)
+        phonetic = _format_phonetic(item.snapshot_phonetic)
+        first = f"{word_cell} {phonetic}".strip()
         lines.append(
-            f"|{_cell(item.snapshot_en_word)}|{_cell(item.snapshot_phonetic)}"
-            f"|{_cell(item.snapshot_cn_meaning)}|{_cell(item.snapshot_example_sentence)}|"
+            f"| {first} | {_cell(item.snapshot_cn_meaning)} "
+            f"| {_cell(item.snapshot_example_sentence)} |"
         )
     lines.extend(["", "> 💡 遮住右侧，看中文回忆英文，反复 3 遍即可牢记！", ""])
     return "\n".join(lines)
