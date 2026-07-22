@@ -5,7 +5,7 @@ import re
 import sqlite3
 import tempfile
 
-from conftest import seed_credential
+from conftest import create_word, seed_credential
 
 
 def _login(client, username: str, password: str) -> None:
@@ -18,6 +18,10 @@ def _login(client, username: str, password: str) -> None:
 def test_admin_downloads_valid_sqlite(client, db_session, login_mode):
     seed_credential(db_session, "admin", "supersecret")
     _login(client, "admin", "supersecret")
+    create_word(
+        client,
+        {"en_word": "backupword", "cn_meaning": "备份测试词", "tags": []},
+    )
 
     resp = client.get("/api/v1/system/backup")
     assert resp.status_code == 200, resp.text
@@ -32,8 +36,11 @@ def test_admin_downloads_valid_sqlite(client, db_session, login_mode):
         con = sqlite3.connect(path)
         try:
             assert con.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
-            # words table exists and is queryable post-alembic (test DB is migrated).
-            assert con.execute("SELECT count(*) FROM words").fetchone()[0] >= 0
+            # The snapshot must come from this request's injected database, not a
+            # separate database resolved from process-global settings.
+            assert con.execute(
+                "SELECT count(*) FROM words WHERE en_word = ?", ("backupword",)
+            ).fetchone()[0] == 1
         finally:
             con.close()
     finally:
