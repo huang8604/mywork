@@ -88,7 +88,7 @@ Errors use `{"code", "message", "details": [...], "request_id"}`. Raise `AppErro
 3. **Local dev** — `TRUSTED_LOCAL_WEB=true` + loopback peer → full-admin `local-admin`.
 4. **Trusted reverse proxy** — `X-Forwarded-User` accepted only from `TRUSTED_PROXY_CIDRS`, granted all scopes. **Skipped entirely when `WEB_LOGIN_REQUIRED=true`** — that flag makes the cookie login the only web path (use it to expose the app publicly behind HTTPS without relying on the proxy to vouch for identity).
 
-`Actor` carries `actor_type`, `actor_id`, `scopes`, `role` (web only), and optional `api_client_id`/`skill_name`/`skill_version`. CSRF on cookie-authenticated writes is handled by the existing Origin check in `main.py` (`Origin == PUBLIC_BASE_URL` for POST/PUT/PATCH/DELETE) — no separate CSRF token. The route→scopes mapping is `REQUIRED_SCOPES` in `main.py` (injected into OpenAPI as `x-required-scopes`); `/api/v1/auth/*` and `/api/v1/users/*` are intentionally NOT scope-gated — user management is role-gated via the `require_web_admin` dependency (`Actor.role == "admin"`), keeping `ALL_SCOPES` (the API-client scope universe) unchanged. **When adding or changing a route, update `REQUIRED_SCOPES` there** (and re-export the OpenAPI contract).
+`Actor` carries `actor_type`, `actor_id`, `scopes`, `role` (web only), and optional `api_client_id`/`skill_name`/`skill_version`. CSRF on cookie-authenticated writes is handled by the existing Origin check in `main.py` (`Origin == PUBLIC_BASE_URL` for POST/PUT/PATCH/DELETE) — no separate CSRF token. The route→scopes mapping is `REQUIRED_SCOPES` in `main.py` (injected into OpenAPI as `x-required-scopes`); `/api/v1/auth/*`, `/api/v1/users/*`, `/api/v1/api-clients/*`, and `/api/v1/system/backup` are intentionally NOT scope-gated — they are admin-only via the `require_web_admin` dependency (`Actor.role == "admin"`), keeping `ALL_SCOPES` (the API-client scope universe) unchanged. The plaintext API token is returned **only** on create/rotate responses (never on list/get). **When adding or changing a route, update `REQUIRED_SCOPES` there** (and re-export the OpenAPI contract).
 
 The initial admin is bootstrapped from `WEB_ADMIN_USERNAME`/`WEB_ADMIN_PASSWORD(_FILE)` by `app/bootstrap.py` (run from `docker-entrypoint.sh`); admin then creates students via the 用户管理 page or `scripts/set_web_password.py --role student`. Self-delete / last-admin deletion is refused (lockout guard).
 
@@ -102,11 +102,15 @@ Three overlapping safety mechanisms — know which applies where:
 
 ### Word creation & dictionary enrichment
 
-Creating/importing a word runs through `enrich_word()` (`services/dictionary.py`), which fills `phonetic` / `cn_meaning` / `example_sentence` from `dictionary-index.json` at the repo root (path overridable via `DICTIONARY_INDEX_PATH`). **`cn_meaning` is required after enrichment** — an English-only word with no dictionary entry raises `422 DICTIONARY_ENTRY_NOT_FOUND` unless a meaning is supplied. The index file is large and **intentionally git-ignored** (license not yet documented); don't commit it. If the file is missing, enrichment resolves to "not found".
+Creating/importing a word runs through `enrich_word()` (`services/dictionary.py`), which fills `phonetic` / `cn_meaning` / `example_sentence` from `dictionary-index.json` at the repo root (path overridable via `DICTIONARY_INDEX_PATH`). `cn_meaning` is then shortened to **≤16 chars** via `shorten_translations()` (multi-boundary cut on `。；，`; if still >16 and `ai_enabled`, AI re-translates; otherwise hard-capped to 16 + `…`). **`cn_meaning` is required after enrichment** — an English-only word with no dictionary entry raises `422 DICTIONARY_ENTRY_NOT_FOUND` unless a meaning is supplied. Only the enrich path is affected; existing words are not re-shortened. The index file is large and **intentionally git-ignored** (license not yet documented); don't commit it. If the file is missing, enrichment resolves to "not found".
 
 ### Worksheet generation (strategy engine)
 
 `generate_session()` in `services/strategy.py` builds four priority pools consumed in order `error → new → due → custom` (`PRIORITY`), assigns each word all its source labels, and selects up to `MAX_PRACTICE_WORDS`. When a pool can't fill its quota the shortfall cascades to the next pool, so the total still reaches `sum(limits)` whenever enough words exist (Plan-A backfill). Output is **deterministic given the seed** (`seed` persisted on the session; `strategy_hash` over canonicalized params). Each `PracticeSessionItem` snapshots the word's text at generation time so printed worksheets stay stable as the word library changes. Supports either category-quota selection or an explicit `word_ids` list (preserves user order).
+
+### Exports layout (worksheet + md + pdf)
+
+The printed worksheet and the `/recitation` md/pdf all render the word + `/phonetic/` (phonetic wrapped in `/ /`) on **one line** with no wrap; the blanked side renders **empty** (no underlines); the example is shown **in full** (the 例句填空 / cloze mode was removed). This keeps each row compact and consistent across print, markdown, and PDF.
 
 ### Stats rebuild
 
@@ -120,13 +124,17 @@ Every SQLite connection sets `PRAGMA foreign_keys=ON`, `journal_mode=WAL`, `busy
 
 In production the backend serves the built SPA from `FRONTEND_DIST` (default `frontend/dist`). `spa_fallback()` serves static assets and falls back to `index.html` for deep links, but **never** intercepts `api/`, `healthz/`, or `.well-known/` paths.
 
+### Admin tooling (`/system` page)
+
+The `/system` route (`meta.roles: ['admin']`) is the admin console: API-client/token management (create, rotate, revoke, adjust scopes — the plaintext token is shown only on create/rotate) and one-click SQLite full-backup download (`GET /api/v1/system/backup` streams a `.db` snapshot). It replaces the CLI lifecycle scripts for day-to-day admin.
+
 ## Frontend conventions
 
 - Axios `apiClient` (`src/api/client.ts`) is fixed at `/api/v1`; callers unwrap the envelope with `unwrap()` to get `.data`, and treat export endpoints as `Blob`. `ApiError` normalizes all failures (status → Chinese message map); `.isConflict` / `.isCanceled` helpers drive UI.
 - **`src/types/domain.ts` is the source of truth for response types**, not OpenAPI — the backend's success schemas are not fully described, and types are validated by API unit tests + e2e mocks instead.
 - Routing in `src/router/index.ts`; each nav route carries `meta` used for labels and document title. Responsive breakpoints in `src/styles/breakpoints.css`; print rules in `src/styles/print.css`.
-- `newEventId()` generates the `client_event_id` for each review submission.
-- **Auth**: `useAuthStore` (`stores/auth.ts`) holds the logged-in identity (`username`/`role`); the router `beforeEach` awaits `fetchMe()` once, then enforces each route's `meta.roles` (`admin` sees everything, `student` only `/review`). `apiClient` uses `withCredentials` and, on a non-`/auth/*` 401, clears the store and redirects to `/login`. Login is a server-set session cookie — no token lives in JS.
+- `newEventId()` generates the `client_event_id` for each review submission; `formatPhonetic` (`@/utils/formatPhonetic`) wraps a raw phonetic string in `/ /` for display (shared across worksheet, review, and recitation views).
+- **Auth**: `useAuthStore` (`stores/auth.ts`) holds the logged-in identity (`username`/`role`); the router `beforeEach` awaits `fetchMe()` once, then enforces each route's `meta.roles` (`admin` sees everything, `student` only `/review`; `/system` is `['admin']`). `apiClient` uses `withCredentials` and, on a non-`/auth/*` 401, clears the store and redirects to `/login`. Login is a server-set session cookie — no token lives in JS.
 
 ## External Skills
 

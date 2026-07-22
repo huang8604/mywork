@@ -48,6 +48,14 @@
 
 数据库是 `/share/Container/vocab-app/data/vocab.db`(SQLite,WAL 模式,另有 `-shm`/`-wal`)。**挂卷 ≠ 备份。**
 
+### 数据备份下载(Web,推荐)
+
+admin 登录后进入 **系统管理 → 数据备份**,点「下载整库备份(.db)」即可一键拿到当时的整库 `.db` 快照(走 `GET /api/v1/system/backup`,服务端在线备份后流式下发,与下方 `docker exec` 方式等价)。更新前备份优先用此入口,免 SSH。**恢复**:停容器 → 用下载的 `.db` 替换 `data/vocab.db`(及同名 `-wal`/`-shm`,建议一并删除让 WAL 重建)→ 起容器 → 等 `healthy`。
+
+### 命令行备份(替代)
+
+
+
 ```bash
 # 容器内用 SQLite 在线备份 API(写时安全),产出时间戳副本:
 docker exec vocab-app python - <<'PY'
