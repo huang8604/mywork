@@ -11,7 +11,7 @@ def _login(client, username: str, password: str) -> None:
     assert response.status_code == 200, response.text
 
 
-def test_today_online_reviews_are_visible_to_the_current_student_only(
+def test_today_online_reviews_are_isolated_for_students_and_visible_to_admin(
     client, db_session, login_mode
 ):
     seed_credential(db_session, "admin", "supersecret")
@@ -63,6 +63,7 @@ def test_today_online_reviews_are_visible_to_the_current_student_only(
     assert data["items"][0]["en_word"] == "todayword"
     assert data["items"][0]["session_title"] == "今天的练习"
     assert data["items"][0]["status"] == "known"
+    assert data["items"][0]["actor_id"] == "student"
 
     client.post("/api/v1/auth/logout")
     _login(client, "student2", "student2")
@@ -70,7 +71,9 @@ def test_today_online_reviews_are_visible_to_the_current_student_only(
 
     client.post("/api/v1/auth/logout")
     _login(client, "admin", "supersecret")
-    assert client.get("/api/v1/reviews/today").json()["data"]["items"] == []
+    admin_data = client.get("/api/v1/reviews/today").json()["data"]
+    assert admin_data["counts"]["total"] == 1
+    assert admin_data["items"][0]["actor_id"] == "student"
 
     operation = client.get("/openapi.json").json()["paths"]["/api/v1/reviews/today"]["get"]
     assert operation["x-required-scopes"] == ["reviews:write", "practice:read"]

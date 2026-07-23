@@ -21,19 +21,21 @@
   .worksheet-table thead { display: table-header-group; }
   .worksheet-table tbody { display: table-row-group; }
   .worksheet-table tr { break-inside: avoid; page-break-inside: avoid; }
-  .worksheet-table th, .worksheet-table td { border: .6pt solid #8197b2 !important; padding: 4pt 3.5pt !important; font-size: 8.6pt !important; line-height: 1.22; overflow-wrap: break-word; word-break: normal; }
+  .worksheet-table th, .worksheet-table td { border: .6pt solid #8197b2 !important; padding: 4pt 3.5pt !important; font-size: var(--worksheet-font-size, 10.5pt) !important; line-height: 1.22; overflow-wrap: break-word; word-break: normal; }
   .worksheet-table th { color: #fff !important; background: #245f9f !important; }
   .worksheet-table tbody tr:nth-child(even) td { background: #f1f6fc !important; }
   .worksheet-table .repeat-print-header { display: table-row !important; }
   .worksheet-table .repeat-print-header th { padding: 2.5pt 4pt !important; font-size: 7pt !important; text-align: right !important; color: #24476e !important; background: #dceafb !important; }
   .worksheet-table .number-cell { width: 5% !important; }
-  .worksheet-table .word-cell { width: 24% !important; white-space: nowrap !important; }
-  .worksheet-table .meaning-cell { width: 30% !important; }
-  .worksheet-table .example-cell { width: 41% !important; min-width: 0 !important; }
+  .worksheet-table .word-cell { width: 18% !important; white-space: normal !important; overflow-wrap: anywhere !important; }
+  .worksheet-table .phonetic-cell { width: 18% !important; white-space: normal !important; overflow-wrap: anywhere !important; }
+  .worksheet-table .meaning-cell { width: 25% !important; }
+  .worksheet-table .example-cell { width: 34% !important; min-width: 0 !important; }
   .worksheet-table .number-col { width: 5% !important; }
-  .worksheet-table .word-col { width: 24% !important; }
-  .worksheet-table .meaning-col { width: 30% !important; }
-  .worksheet-table .example-col { width: 41% !important; }
+  .worksheet-table .word-col { width: 18% !important; }
+  .worksheet-table .phonetic-col { width: 18% !important; }
+  .worksheet-table .meaning-col { width: 25% !important; }
+  .worksheet-table .example-col { width: 34% !important; }
   .blank-warning { color: #333 !important; font-size: 7.5pt !important; }
   .worksheet-footer { display: flex !important; padding-top: 2mm !important; border-top: .5pt solid #b9c9dc; }
 }

@@ -31,11 +31,10 @@ const session: any = {
 }
 
 describe('PracticeWorksheet', () => {
-  it('shows word + /phonetic/ in the same cell', () => {
+  it('shows the word and phonetic in separate columns', () => {
     const w = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn' } })
-    const cell = w.get('.word-cell')
-    expect(cell.text()).toContain('camera')
-    expect(cell.text()).toContain('/ˈkæmərə/')
+    expect(w.get('.word-cell').text()).toBe('camera')
+    expect(w.get('.phonetic-cell').text()).toBe('/ˈkæmərə/')
   })
 
   it('does NOT draw underlines for the blanked side (cn-to-en blanks English)', () => {
@@ -65,19 +64,25 @@ describe('PracticeWorksheet', () => {
     expect(w.get('.example-cell').text()).toContain('—')
   })
 
-  it('answer mode shows word+phonetic, chinese, and full example together', () => {
+  it('answer mode shows word, phonetic, chinese, and full example together', () => {
     const w = mount(PracticeWorksheet, { props: { session, answer: true, mode: 'cn-to-en' } })
     expect(w.get('.word-cell').text()).toContain('camera')
-    expect(w.get('.word-cell').text()).toContain('/ˈkæmərə/')
+    expect(w.get('.phonetic-cell').text()).toContain('/ˈkæmərə/')
     expect(w.get('.meaning-cell').text()).toContain('相机')
     expect(w.get('.example-cell').text()).toContain('I have a camera.')
   })
 
-  it('uses 4-column header (merged word/phonetic) with matching colspan', () => {
+  it('uses separate word and phonetic columns with matching colspan', () => {
     const w = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn' } })
     const headerRow = w.findAll('thead tr')[1]
-    expect(headerRow.findAll('th').map(h => h.text())).toEqual(['序号', '单词 / 音标', '中文释义', '例句'])
-    expect(w.findAll('thead tr')[0].find('th').attributes('colspan')).toBe('4')
+    expect(headerRow.findAll('th').map(h => h.text())).toEqual(['序号', '单词', '音标', '中文释义', '例句'])
+    expect(w.findAll('thead tr')[0].find('th').attributes('colspan')).toBe('5')
+  })
+
+  it('applies the selected worksheet font size to screen and print content', () => {
+    const w = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn', fontSize: 'large' } })
+    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-font-size: 12pt')
+    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-word-font-size: 16pt')
   })
 
   it('labels the paper without exposing an internal session id', () => {

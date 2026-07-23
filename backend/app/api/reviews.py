@@ -41,18 +41,24 @@ def today_online_reviews(
     end_local = start_local + timedelta(days=1)
     start = utc_text(start_local)
     end = utc_text(end_local)
+    filters = [
+        ReviewLog.source == "online_practice",
+        ReviewLog.reviewed_at >= start,
+        ReviewLog.reviewed_at < end,
+    ]
+    if actor.role != "admin":
+        filters.extend(
+            (
+                ReviewLog.actor_type == actor.actor_type,
+                ReviewLog.actor_id == actor.actor_id,
+            )
+        )
     rows = db.execute(
         select(ReviewLog, PracticeSessionItem, PracticeReviewRound, PracticeSession)
         .join(PracticeSessionItem, PracticeSessionItem.id == ReviewLog.session_item_id)
         .join(PracticeReviewRound, PracticeReviewRound.id == ReviewLog.review_round_id)
         .join(PracticeSession, PracticeSession.id == PracticeReviewRound.session_id)
-        .where(
-            ReviewLog.actor_type == actor.actor_type,
-            ReviewLog.actor_id == actor.actor_id,
-            ReviewLog.source == "online_practice",
-            ReviewLog.reviewed_at >= start,
-            ReviewLog.reviewed_at < end,
-        )
+        .where(*filters)
         .order_by(ReviewLog.reviewed_at.desc(), ReviewLog.id.desc())
     ).all()
     counts = {"known": 0, "unknown": 0, "skipped": 0}
@@ -66,6 +72,7 @@ def today_online_reviews(
                 "session_id": session.id,
                 "session_title": session.title,
                 "word_id": log.word_id,
+                "actor_id": log.actor_id,
                 "en_word": item.snapshot_en_word,
                 "phonetic": item.snapshot_phonetic,
                 "cn_meaning": item.snapshot_cn_meaning,

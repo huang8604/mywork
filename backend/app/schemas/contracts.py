@@ -198,6 +198,7 @@ class TodayReviewItem(StrictModel):
     session_id: int
     session_title: str | None
     word_id: int
+    actor_id: str | None
     en_word: str
     phonetic: str | None
     cn_meaning: str

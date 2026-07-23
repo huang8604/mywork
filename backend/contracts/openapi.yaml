@@ -675,6 +675,17 @@
       "TodayReviewItem": {
         "additionalProperties": false,
         "properties": {
+          "actor_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Actor Id"
+          },
           "cn_meaning": {
             "title": "Cn Meaning",
             "type": "string"
@@ -741,6 +752,7 @@
           "session_id",
           "session_title",
           "word_id",
+          "actor_id",
           "en_word",
           "phonetic",
           "cn_meaning",

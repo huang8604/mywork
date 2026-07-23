@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { nextButtonLabel, nextButtonDisabled, summarize } from '@/views/reviewLogic'
+import { allItemsAnswered, nextButtonLabel, nextButtonDisabled, summarize } from '@/views/reviewLogic'
 
 describe('nextButtonLabel / nextButtonDisabled', () => {
   it('shows 下一题 when more cards remain', () => {
@@ -29,5 +29,19 @@ describe('summarize', () => {
       [1, { status: 'known' }], [2, { status: 'weird' }],
     ])
     expect(summarize(results)).toEqual({ known: 1, unknown: 0, skipped: 0, total: 1 })
+  })
+})
+
+describe('allItemsAnswered', () => {
+  it('stays false until every session item has a valid result', () => {
+    const results = new Map<number, { status: string }>([[11, { status: 'known' }]])
+    expect(allItemsAnswered([11, 12], results)).toBe(false)
+    results.set(12, { status: 'skipped' })
+    expect(allItemsAnswered([11, 12], results)).toBe(true)
+  })
+
+  it('rejects empty sessions and invalid statuses', () => {
+    expect(allItemsAnswered([], new Map())).toBe(false)
+    expect(allItemsAnswered([11], new Map([[11, { status: 'invalid' }]]))).toBe(false)
   })
 })

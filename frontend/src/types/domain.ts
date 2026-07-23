@@ -51,7 +51,7 @@ export interface StatsSummary {
 
 export interface TodayReviewItem {
   review_id: number; round_id: number; session_id: number; session_title: string | null
-  word_id: number; en_word: string; phonetic: string | null; cn_meaning: string
+  word_id: number; actor_id: string | null; en_word: string; phonetic: string | null; cn_meaning: string
   status: ReviewStatus; reviewed_at: string
 }
 export interface TodayReviewSummary {

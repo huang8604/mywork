@@ -36,6 +36,12 @@ export function summarize<R extends { status: string }>(results: Map<number, R>)
   return { known, unknown, skipped, total: known + unknown + skipped }
 }
 
+export function allItemsAnswered<R extends { status: string }>(itemIds: number[], results: Map<number, R>): boolean {
+  if (itemIds.length === 0) return false
+  const valid = new Set(['known', 'unknown', 'skipped'])
+  return itemIds.every((itemId) => valid.has(results.get(itemId)?.status ?? ''))
+}
+
 function isLast(s: { index: number; total: number }): boolean {
   return s.total <= 0 || s.index >= s.total - 1
 }
