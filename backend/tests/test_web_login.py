@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from app.schemas import WordCreate
+from app.services.words import create_word as create_word_record
 from conftest import create_word, seed_credential
 
 
@@ -94,6 +96,11 @@ def test_change_password_rejects_five_characters(client, db_session, login_mode)
 
 def test_student_role_can_review_but_not_manage(client, db_session, login_mode):
     seed_credential(db_session, "stu", "studentpw1", role="student")
+    seeded_word = create_word_record(
+        db_session,
+        WordCreate(en_word="reviewable", cn_meaning="可复习的", tags=[]),
+    )
+    db_session.commit()
     client.post(
         "/api/v1/auth/login", json={"username": "stu", "password": "studentpw1"}
     )
@@ -106,7 +113,7 @@ def test_student_role_can_review_but_not_manage(client, db_session, login_mode):
     assert resp.status_code == 403
     # words:export not in student scopes -> 403
     assert client.get("/api/v1/words/export").status_code == 403
-    # practice:generate IS in student scopes -> 201 (empty session, no words yet)
+    # practice:generate IS in student scopes -> a non-empty session can be created.
     gen = client.post(
         "/api/v1/daily-table/generate",
         headers={"Idempotency-Key": "stu-generate"},
@@ -117,9 +124,28 @@ def test_student_role_can_review_but_not_manage(client, db_session, login_mode):
             "custom_words_limit": 0,
             "fallback_unreviewed_days": 3,
             "seed": 1,
+            "word_ids": [seeded_word.id],
         },
     )
     assert gen.status_code == 201
+    assert [item["word_id"] for item in gen.json()["data"]["items"]] == [seeded_word.id]
+
+    # Reaching the same authorized endpoint with no candidates is a domain 409,
+    # not an empty persisted session.
+    empty = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "stu-generate-empty"},
+        json={
+            "new_words_limit": 0,
+            "error_words_limit": 0,
+            "due_words_limit": 0,
+            "custom_words_limit": 0,
+            "fallback_unreviewed_days": 3,
+            "seed": 1,
+        },
+    )
+    assert empty.status_code == 409
+    assert empty.json()["code"] == "NO_PRACTICE_CANDIDATES"
 
 
 def test_unauthenticated_blocked_when_login_required(client, login_mode):

@@ -241,13 +241,24 @@ def test_import_unresolved_policy_skip_avoids_zero_write(client, monkeypatch, tm
         assert summary["unresolved_words"] == ["flibbertigibbet"]
         assert client.get("/api/v1/words?keyword=warm").json()["data"]
 
+        rejected_rows = [
+            {"en_word": "cool", "cn_meaning": "凉", "is_custom": False, "tags": []},
+            {"en_word": "flibbertigibbet", "is_custom": False, "tags": []},
+        ]
         rejected = client.post(
             "/api/v1/words/import",
-            files={"file": ("words.json", json.dumps(rows).encode(), "application/json")},
+            files={
+                "file": (
+                    "words.json",
+                    json.dumps(rejected_rows).encode(),
+                    "application/json",
+                )
+            },
             data={"conflict_policy": "reject", "unresolved_policy": "reject"},
         )
         assert rejected.status_code == 422
         assert rejected.json()["code"] == "DICTIONARY_ENTRY_NOT_FOUND"
+        assert client.get("/api/v1/words?keyword=cool").json()["data"] == []
     finally:
         get_settings.cache_clear()
         clear_dictionary_cache()
