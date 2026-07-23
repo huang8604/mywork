@@ -2,8 +2,8 @@ import { apiClient, newEventId, unwrap } from './client'
 import type { ApiEnvelope, BatchRoundResponse, BatchRoundResult, PracticeRound, PracticeSession, ReviewLog, ReviewStatus, StrategyRequest } from '@/types/domain'
 
 export async function generateSession(payload: StrategyRequest, signal?: AbortSignal, idempotencyKey = newEventId()) { return unwrap((await apiClient.post<ApiEnvelope<PracticeSession>>('/daily-table/generate', payload, { signal, headers: { 'Idempotency-Key': idempotencyKey } })).data) }
-export async function listSessions(page = 1, size = 20, signal?: AbortSignal) {
-  const response = await apiClient.get<ApiEnvelope<PracticeSession[]>>('/practice-sessions', { params: { page, size }, signal })
+export async function listSessions(page = 1, size = 20, signal?: AbortSignal, status?: 'active' | 'archived') {
+  const response = await apiClient.get<ApiEnvelope<PracticeSession[]>>('/practice-sessions', { params: { page, size, status }, signal })
   return { data: response.data.data, meta: response.data.meta }
 }
 export async function getSession(id: number, signal?: AbortSignal) { return unwrap((await apiClient.get<ApiEnvelope<PracticeSession>>(`/practice-sessions/${id}`, { signal })).data) }

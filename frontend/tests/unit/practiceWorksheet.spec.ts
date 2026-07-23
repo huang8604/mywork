@@ -77,7 +77,15 @@ describe('PracticeWorksheet', () => {
   it('uses 4-column header (merged word/phonetic) with matching colspan', () => {
     const w = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn' } })
     const headerRow = w.findAll('thead tr')[1]
-    expect(headerRow.findAll('th').map(h => h.text())).toEqual(['序号', '单词', '中文', '例句'])
+    expect(headerRow.findAll('th').map(h => h.text())).toEqual(['序号', '单词 / 音标', '中文释义', '例句'])
     expect(w.findAll('thead tr')[0].find('th').attributes('colspan')).toBe('4')
+  })
+
+  it('labels the paper without exposing an internal session id', () => {
+    const w = mount(PracticeWorksheet, { props: { session, answer: true, mode: 'cn-to-en' } })
+    expect(w.text()).toContain('参考答案')
+    expect(w.text()).toContain('看中文写英文')
+    expect(w.text()).not.toContain('会话')
+    expect(w.text()).not.toContain('#1')
   })
 })

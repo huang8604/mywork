@@ -38,6 +38,16 @@ test('responsive dashboard and deep links never overflow the page', async ({ pag
   if (page.viewportSize()!.width < 640) {
     const navRows = await page.locator('.bottom-nav-item').evaluateAll(items => new Set(items.map(item => Math.round(item.getBoundingClientRect().top))).size)
     expect(navRows).toBe(1)
+    const navFitsViewport = await page.locator('.bottom-nav').evaluate(element => element.scrollWidth <= element.clientWidth)
+    expect(navFitsViewport).toBe(true)
+    for (let cycle = 0; cycle < 3; cycle++) {
+      for (const [label, path] of [['概览', '/dashboard'], ['词库', '/words'], ['复习', '/review'], ['复习表', '/daily/generate'], ['系统', '/system']] as const) {
+        const target = page.getByRole('link', { name: label, exact: true })
+        await target.click()
+        await expect(page).toHaveURL(new RegExp(`${path.replace('/', '\\/')}$`))
+        await expect(target).toBeVisible()
+      }
+    }
   }
   await page.goto('/does-not-exist'); await expect(page.getByRole('heading', { name: '这一页没有收录' })).toBeVisible()
 })

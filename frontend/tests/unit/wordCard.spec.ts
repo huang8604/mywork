@@ -12,7 +12,7 @@ const word: any = {
   is_custom: false,
   tags: [],
   version: 1,
-  stats: { total_attempts: 0, accuracy: null },
+  stats: { total_attempts: 5, accuracy: .6, known_count: 3, unknown_count: 2, last_reviewed_at: '2026-07-20T08:00:00Z' },
 }
 
 describe('WordCard', () => {
@@ -20,5 +20,8 @@ describe('WordCard', () => {
     const wrapper = mount(WordCard, { props: { word } })
     expect(wrapper.text()).toContain('/ˈkæmərə/')
     expect(wrapper.text()).not.toContain('//ˈkæmərə//')
+    expect(wrapper.text()).toContain('成功 3')
+    expect(wrapper.text()).toContain('失败 2')
+    expect(wrapper.text()).toContain('上次背诵')
   })
 })

@@ -224,12 +224,19 @@ async function downloadBackup() {
     <div class="page-heading">
       <div>
         <p class="eyebrow">SYSTEM</p>
-        <p>管理员可在此管理外部 Skill 接入令牌,并下载整库备份。</p>
+        <p>用户、复习历史、外部 Skill 接入与数据备份统一在这里管理。</p>
       </div>
     </div>
 
+    <nav class="system-sections panel" aria-label="系统管理分类">
+      <RouterLink to="/history"><span aria-hidden="true">↺</span><div><strong>复习历史</strong><small>查看流水并纠正复习结果</small></div></RouterLink>
+      <RouterLink to="/users"><span aria-hidden="true">◐</span><div><strong>用户管理</strong><small>创建用户并维护访问角色</small></div></RouterLink>
+      <a href="#api-clients"><span aria-hidden="true">⌁</span><div><strong>API 客户端</strong><small>管理外部 Skill 令牌</small></div></a>
+      <a href="#backup"><span aria-hidden="true">↓</span><div><strong>数据备份</strong><small>下载可恢复的 SQLite 整库</small></div></a>
+    </nav>
+
     <!-- Section A: API tokens -->
-    <div class="panel">
+    <div id="api-clients" class="panel">
       <div class="section-head">
         <div>
           <h2>API 令牌(外部 Skill 接入)</h2>
@@ -297,7 +304,7 @@ async function downloadBackup() {
     </div>
 
     <!-- Section B: Backup -->
-    <div class="panel">
+    <div id="backup" class="panel">
       <div class="section-head">
         <div>
           <h2>数据备份</h2>
@@ -382,6 +389,11 @@ async function downloadBackup() {
 
 <style scoped>
 .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
+.system-sections { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.system-sections a { min-height: 76px; display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); text-decoration: none; background: #fff; }
+.system-sections a:hover { border-color: var(--green-800); background: var(--green-100); }
+.system-sections a > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--green-800); background: var(--green-100); font-weight: 800; }
+.system-sections a div { display: grid; gap: 3px; }.system-sections a small { color: var(--muted); }
 .section-head h2 { margin: 0 0 4px; }
 .section-head .muted { margin: 0; }
 .field { display: grid; gap: 6px; font-size: .85rem; color: var(--muted); margin-bottom: 14px; }
@@ -406,4 +418,6 @@ async function downloadBackup() {
 @media (min-width: 480px) {
   .scope-grid { grid-template-columns: 1fr 1fr; }
 }
+@media (max-width: 900px) { .system-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 479px) { .system-sections { grid-template-columns: 1fr; } }
 </style>

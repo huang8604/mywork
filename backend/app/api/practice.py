@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request
@@ -18,12 +19,13 @@ from app.schemas import BatchResults, RoundCreate, RoundResult, SessionUpdate, S
 from app.services.domain import utc_text
 from app.services.idempotency import claim, complete
 from app.services.recitation import build_recitation_md, render_recitation_pdf
-from app.services.sessions import delete_session, update_session
+from app.services.sessions import auto_archive_expired_sessions, delete_session, update_session
 from app.services.reviews import batch_round_results, put_round_result
 from app.services.serializers import review_data, round_data, session_data
 from app.services.strategy import generate_session
 
 router = APIRouter(prefix="/api/v1", tags=["practice"])
+logger = logging.getLogger("word_memory.practice")
 
 
 def _commit(db: Session) -> None:
@@ -103,9 +105,14 @@ def list_sessions(
         raise AppError(422, "VALIDATION_ERROR", "无效的复习表状态")
     if created_by_actor_type and created_by_actor_type not in {"web_user", "api_client"}:
         raise AppError(422, "VALIDATION_ERROR", "无效的来源类型")
+    archived_count = auto_archive_expired_sessions(db)
+    if archived_count:
+        _commit(db)
+        logger.info("auto_archived_practice_sessions count=%s age_days=15", archived_count)
+
     filters = []
     for column, value in (
-        (PracticeSession.status, status),
+        (PracticeSession.status, status or "active"),
         (PracticeSession.created_by_actor_type, created_by_actor_type),
     ):
         if value is not None:

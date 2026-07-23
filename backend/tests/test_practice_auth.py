@@ -312,6 +312,10 @@ def test_generate_round_batch_correction_and_replay(client, db_session):
     )
     assert batch.status_code == 200, batch.text
     assert batch.json()["data"]["round"]["status"] == "completed"
+    completed_session = client.get(
+        f"/api/v1/practice-sessions/{session['session_id']}"
+    ).json()["data"]
+    assert completed_session["completed_at"] is not None
     assert db_session.scalar(select(func.count()).select_from(ReviewLog)) == 2
     assert db_session.get(WordStats, items[0]["word_id"]).known_count == 1
     assert db_session.get(WordStats, items[1]["word_id"]).skipped_count == 1

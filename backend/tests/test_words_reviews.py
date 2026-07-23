@@ -6,7 +6,7 @@ from sqlalchemy import select, text
 
 from app.api.words import _decode_safe_csv, _safe_csv
 from app.core.config import get_settings
-from app.models import ReviewLog, WordStats
+from app.models import PracticeSession, ReviewLog, WordStats
 from app.services.dictionary import clear_dictionary_cache
 from conftest import create_word
 
@@ -516,7 +516,7 @@ def test_update_session_title_and_note_with_version_check(client):
     assert stale.json()["code"] == "VERSION_CONFLICT"
 
 
-def test_delete_session_removes_reviews_and_rebuilds_stats(client, db_session):
+def test_delete_session_archives_and_preserves_reviews_and_stats(client, db_session):
     session = _session_with_word(client, key="gen-delete-session")
     sid = session["session_id"]
     item_id = session["items"][0]["item_id"]
@@ -543,6 +543,34 @@ def test_delete_session_removes_reviews_and_rebuilds_stats(client, db_session):
     assert deleted.status_code == 204
 
     db_session.expire_all()
-    assert client.get(f"/api/v1/practice-sessions/{sid}").status_code == 404
-    assert db_session.scalar(select(ReviewLog).where(ReviewLog.word_id == word_id)) is None
-    assert db_session.get(WordStats, word_id).known_count == 0
+    archived = client.get(f"/api/v1/practice-sessions/{sid}")
+    assert archived.status_code == 200
+    assert archived.json()["data"]["status"] == "archived"
+    assert archived.json()["data"]["archived_at"] is not None
+    assert db_session.scalar(select(ReviewLog).where(ReviewLog.word_id == word_id)) is not None
+    assert db_session.get(WordStats, word_id).known_count == 1
+
+    default_list = client.get("/api/v1/practice-sessions").json()["data"]
+    assert all(item["session_id"] != sid for item in default_list)
+    archived_list = client.get("/api/v1/practice-sessions?status=archived").json()["data"]
+    assert [item["session_id"] for item in archived_list] == [sid]
+
+
+def test_sessions_older_than_15_days_are_auto_archived_and_hidden_by_default(
+    client, db_session
+):
+    session = _session_with_word(client, key="gen-auto-archive-session")
+    stored = db_session.get(PracticeSession, session["session_id"])
+    stored.generated_at = "2000-01-01T00:00:00.000000Z"
+    db_session.commit()
+
+    default_list = client.get("/api/v1/practice-sessions")
+    assert default_list.status_code == 200
+    assert default_list.json()["data"] == []
+
+    db_session.expire_all()
+    archived = db_session.get(PracticeSession, session["session_id"])
+    assert archived.status == "archived"
+    assert archived.archived_at is not None
+    archived_list = client.get("/api/v1/practice-sessions?status=archived").json()["data"]
+    assert [item["session_id"] for item in archived_list] == [session["session_id"]]
