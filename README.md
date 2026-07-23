@@ -1,66 +1,86 @@
 # 单词记忆辅助系统
 
-面向个人 NAS 部署的轻量级单词管理与复习系统。当前仓库已完成**阶段一至阶段六**：三态复习闭环（单词 → 复习表 → 三态记录 → 历史）、生产容器/CI/NAS 人工发布，以及在线复习、词库导入、备份与令牌管理增强。
+面向个人 NAS 部署的轻量级单词记忆系统。核心理念是 **「纸面为主，网页辅助」**：生成可打印的单词复习表，线下在纸上复习，再回到网页记录每个单词的认识状态，由系统按间隔算法安排后续复习。在线卡片复习作为偶尔使用的辅助入口，与纸面路径共用同一套数据。
 
-## 已冻结的关键决策
+同一套响应式网页同时支持手机、平板和电脑。
 
-- 后端：Python、FastAPI、SQLAlchemy、SQLite。
-- 前端：Vue 3、TypeScript、Vite、Vue Router、Pinia。
-- 终端：同一套响应式网页同时支持手机、平板和电脑。
-- 复习结果：`known`（认识）、`unknown`（不认识）、`skipped`（跳过），提交后允许手动修改。
-- 复习闭环：主要生成并打印单词复习表，用户在线下复习后回到网页记录每个单词的结果；线上卡片复习作为偶尔使用的辅助方式。
-- 外部 Skill：通过带权限的版本化 REST API 生成单词复习表、创建复习轮次并批量录入“认识 / 不认识 / 跳过”，不允许直接访问数据库。
-- 部署：GitHub Actions 自动测试、构建并推送 GHCR 的 `latest` 与 `sha-*` 镜像；NAS 运维人员手动进入 Portainer 执行 Pull latest 和 Recreate。此人工步骤是明确要求，不计划继续自动化。
+---
 
-## 部署
+## 它能做什么
 
-- **生产镜像**:`Dockerfile`(多阶段,Node 构建 Vue + Python 运行 FastAPI,非 root UID 10001,带 weasyprint/CJK 字体以支持背诵表 PDF)。依赖锁定在 `backend/requirements.lock`(带 hash,`pip install --require-hashes`)。
-- **CI**:`.github/workflows/ci.yml` —— push 到 `main` 与 PR 都跑门禁(ruff + 后端 pytest / 前端 typecheck+单测+构建 / OpenAPI 契约一致性 / 镜像构建+smoke+Trivy 扫描);仅 push 到 `main` 才发布 `ghcr.io/huang8604/vocab-app:latest` 与 `sha-<commit>`。
-- **NAS 实际部署**：本地 `deploy/portainer-stack.yml`（已忽略，不提交）固定当前域名、loopback 端口、Lucky 可信代理范围和 NAS 挂载路径；所有密钥仍通过只读文件挂载。
-- **部署模板**：[`deploy/portainer-stack.template.yml`](./deploy/portainer-stack.template.yml) 使用 `REPLACE_ME` 占位，复制后再填写域名、代理网段和镜像标签。
-- **运维手册**：[`deploy/README.md`](./deploy/README.md) 包含 secret 准备、备份、人工更新、健康检查和回滚步骤。运维**人工**在 Portainer Pull + Recreate，**无**自动部署链路。
+系统的主闭环：**词库 → 生成复习表 → 打印纸面复习 → 回网页记录三态 → 历史与统计**。
 
-## 文档索引
+### 词库管理
 
-1. [设计文档总索引](./docs/design/README.md)
-2. [系统总纲](./docs/design/overview.md)
-3. [阶段一：架构、数据模型与 API 契约](./docs/design/phases/phase-1-architecture-api.md)
-4. [阶段二：后端与策略引擎](./docs/design/phases/phase-2-backend-strategy.md)
-5. [阶段三：响应式前端与复习交互](./docs/design/phases/phase-3-responsive-frontend.md)
-6. [阶段四：单词复习表、打印与回录](./docs/design/phases/phase-4-worksheet-print-review.md)
-7. [阶段五：容器、CI 与 NAS 人工发布](./docs/design/phases/phase-5-container-ci-nas.md)
-8. [阶段六：增强批次设计规格](./docs/design/phases/phase-6-enhancements.md)
-9. [词库增强、自定义复习与添加单词 Skill 补充设计](./docs/design/supplements/dictionary-custom-review.md)
-10. [阶段六：增强批次实现计划与验收记录](./docs/superpowers/plans/2026-07-22-phase6-enhancements.md)
-11. [单词背诵表示例](./单词背诵表.md)
+- 单词增删改、软删除与恢复；CSV / JSON / 纯英文 TXT 导入；按当前筛选范围导出 CSV / JSON。
+- 只输入英文时，自动用本地词典补全音标、中文释义（≤16 字）与例句；词典未命中可由 AI 补全。
+- 词库列表直接展示每个词的成功 / 失败次数与上次背诵时间。
+- **设为新词**：把已复习过的单词清空复习记录，让它重新作为新词出现、间隔从 1 天重计。
 
-## 实施顺序
+### 复习表生成
 
-每个阶段必须满足对应文档末尾的 Definition of Done 后才能进入下一阶段。优先完成“录入单词 → 生成练习 → 三态记录/修改 → 历史查询”的纵向闭环，再补齐打印、运维和体验优化。
+- **按策略选词**：默认新词 10、错词 5、到期词 5、自定义词 5；也可指定「总单词数」并按四类权重比例分配。某类不足时自动按 `错词→新词→到期词→自定义词` 顺序补足。
+- **自定义选词**：直接挑选一组单词生成，保留选择顺序。
+- **从 TXT 导入并生成**：粘贴或选择一份单词文本，导入后直接生成复习表。
+- 每张复习表保存策略、随机种子、题目快照与入选原因，**可复现**。
 
-## 当前实现
+### 复习表会话（纸面主路径）
 
-- [后端工程](./backend/README.md)：FastAPI、SQLAlchemy 2、SQLite 和 Alembic；
-- [前端工程](./frontend/README.md)：Vue 3、TypeScript、Vite、Vue Router、Pinia、Axios 与 Element Plus；
-- 单词 CRUD、软删除/恢复、CSV/JSON 原子导入和安全导出；导入默认更新重复项并用 AI 补充词典未命中项，页面提供 JSON 字段模板；
-- 只含英文的 TXT/文本列表导入，本地词典自动补全音标、中文释义和例句；选择跳过重复时会在词典/AI 查询前完成去重；
-- 三态复习、乐观锁纠错、统计重建和间隔规则；
-- 可复现复习表生成：默认新词 10、错词 5、到期词 5、自定义词 5，也可指定总单词数并按四类权重分配；
-- 复习轮次、逐项/批量原子回录；
-- 手机、平板和桌面的响应式导航、词库管理、在线卡片复习、线下结果回录与历史修改；在线复习可从最近 3 张复习表中选择，并查看当前账号今日结果；
-- 中英两种留空回忆方向、单词与 `/音标/` 同行、例句全显示；“复习表/答案”当前标签独立打印，使用紧凑蓝色 A4 多页排版并人工确认；
-- 复习表移除后保留复习流水与单词统计，超过 15 天自动归档且默认隐藏；
-- 单词库直接展示背诵成功次数、失败次数和上次背诵时间；
-- 按明确单词集合自定义生成复习表，并保留用户选择顺序；
-- 刷新恢复最新线下轮次、三态批量原子回录、失败保留选择和并发冲突处理；
-- 统一异步/错误/冲突状态、URL 筛选恢复、键盘快捷键、可访问性和 SPA 深链回退；
-- 外部 Skill Bearer Token、scope、幂等、限流和审计；
-- 仓库内 `add-words` Skill，通过 `words:write` API 安全添加单词；
-- 健康检查、管理员 SQLite 整库下载备份、API Token 创建/轮换/禁用/撤销/永久删除和 OpenAPI 契约；
-- 前后端类型检查、组件测试、API 集成测试和 Playwright 多视口端到端测试。
+- 「复习表 / 答案 / 结果回录」三个标签：复习表用于纸面默写，答案用于核对，结果回录用于录入三态。
+- **打印**：中英两种留空回忆方向，单词与 `/音标/` 同行、例句全显示、留空侧不画线；标准字号按「约 20 词 / 一页 A4」校准。
+- 一键导出 **Markdown / PDF 背诵表**（单词 + 音标 + 中文 + 例句）。
+- 每次线下复习创建新轮次，逐项或批量原子保存 `认识 / 不认识 / 跳过`，支持并发冲突处理与失败保留选择。
+- 复习表移除后保留复习流水与单词统计；超过 15 天自动归档。
 
-## 当前限制
+### 在线卡片复习（辅助路径）
 
-- 生产镜像以 `latest` / `sha-<commit>` 发布,但 NAS 更新需运维人工在 Portainer 操作;`latest` 会漂移,回滚应改用具体 `sha-<commit>` 标签。
-- 镜像默认不含 `dictionary-index.json`(体积大、许可证待确认),如需词库自动补全需在 NAS 上挂载该文件并设置 `DICTIONARY_INDEX_PATH`。
-- AI 补全使用 OpenAI-compatible `/chat/completions`；生产环境应通过 `AI_API_KEY_FILE` 挂载只读 secret，不要把 `AI_API_KEY` 明文写入 Compose 或 Git。
+- 从最近 3 张复习表中选一张，逐张卡片复习并记录三态，最后一题给出本轮汇总。
+- 可查看当前账号今日的复习结果。
+
+### 历史与统计
+
+- 完整复习流水，支持按单词 / 结果 / 来源 / 操作者 / 复习表 / 日期筛选与分页。
+- 任意一条记录都可事后纠正，系统在同一事务内重建该词统计。间隔规则 `(1,3,7,14,30)` 天，按连续认识次数推进。
+
+### 系统管理（管理员）
+
+- **数据备份与还原**：一键下载 SQLite 整库快照（词库 + 复习历史 + 会话）；需要时上传 `.db` 备份**还原整库**——还原前系统会先把当前库自动备份为 `pre-restore.db` 并可下载。
+- **API 令牌**：为外部 Skill 创建 / 轮换 / 改授权 / 禁用 / 撤销 / 删除令牌；明文 token 仅在创建或轮换时显示一次。
+- **用户管理**：创建用户、分配角色、重置口令、启用 / 禁用（带防自锁守卫）。
+
+---
+
+## 角色与权限
+
+- **admin**：全部功能，并可管理用户与系统。
+- **student**：只能使用「在线复习」，看不到词库、复习表生成、历史与系统管理。
+
+部署在公网域名时，建议开启登录页（`WEB_LOGIN_REQUIRED=true`），用账号密码登录取代对反向代理的信任。
+
+---
+
+## 备份与还原
+
+在「系统」页：下载整库 `.db` 备份；还原时上传一个 `.db`，系统校验它是本系统的库（关键表与数据库版本一致）后，先自动备份当前库，再原子替换。还原是管理员操作，会覆盖当前全部数据，请谨慎。
+
+---
+
+## 外部 Skill 接入
+
+系统提供带权限的版本化 REST API：外部 Skill 用 Bearer token（按 scope 授权、幂等、限流、审计）生成复习表、创建复习轮次、批量录入三态结果，**不能直接访问数据库**。仓库内置 `add-words` Skill，通过 `words:write` 权限安全添加单词。API 发现在 `/.well-known/word-review-api` 与 `/api/v1/capabilities`。
+
+---
+
+## 数据与隐私
+
+- 镜像默认**不含** `dictionary-index.json`（体积大、许可证待确认）；需要词库自动补全时，在 NAS 上挂载该文件并设置 `DICTIONARY_INDEX_PATH`。
+- AI 补全使用 OpenAI 兼容的 `/chat/completions`；生产环境通过 `AI_API_KEY_FILE` 挂载只读密钥，**不要**把 `AI_API_KEY` 明文写入 Compose 或 Git。
+
+---
+
+## 更多
+
+- **部署 / CI / 镜像发布**：[`deploy/README.md`](./deploy/README.md)（secret 准备、备份、人工更新、健康检查、回滚）。
+- **开发约定与架构**：[`CLAUDE.md`](./CLAUDE.md)、[`backend/README.md`](./backend/README.md)、[`frontend/README.md`](./frontend/README.md)。
+- **设计文档**：[`docs/design/README.md`](./docs/design/README.md)（架构、数据模型、各阶段设计）。
+- **复习表示例**：[`单词背诵表.md`](./单词背诵表.md)。
