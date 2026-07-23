@@ -234,6 +234,63 @@ async function downloadBackup() {
     backupLoading.value = false
   }
 }
+
+// ---- Restore ----
+const restoreFile = ref<File | null>(null)
+const restoring = ref(false)
+const restoreResult = ref<{ backup_file: string; backup_bytes: number } | null>(null)
+const restoreError = ref('')
+
+function onRestoreFile(event: Event) {
+  const files = (event.target as HTMLInputElement).files
+  restoreFile.value = files?.[0] || null
+  restoreResult.value = null
+  restoreError.value = ''
+}
+
+async function doRestore() {
+  const file = restoreFile.value
+  if (!file) {
+    restoreError.value = '请先选择一个 .db 备份文件'
+    return
+  }
+  try {
+    await ElMessageBox.confirm(
+      '还原会用上传的备份覆盖当前全部数据(词库、复习历史、用户、令牌)。系统会先把当前数据自动备份为 pre-restore.db,可在还原后下载。建议另行下载一份整库备份再继续。',
+      '确认还原整库',
+      { confirmButtonText: '覆盖并还原', cancelButtonText: '取消', type: 'error' },
+    )
+  } catch {
+    return
+  }
+  restoring.value = true
+  restoreError.value = ''
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await apiClient.post('/system/restore', form, { timeout: 120_000 })
+    restoreResult.value = res.data.data
+    ElMessage.success('已还原,即将刷新页面以加载新数据')
+    setTimeout(() => location.reload(), 1200)
+  } catch (error) {
+    restoreError.value = normalizeApiError(error).message
+  } finally {
+    restoring.value = false
+  }
+}
+
+async function downloadPreRestore() {
+  try {
+    const res = await apiClient.get('/system/pre-restore-backup', { responseType: 'blob' })
+    const url = URL.createObjectURL(res.data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'pre-restore.db'
+    document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(url)
+  } catch (error) {
+    ElMessage.error(normalizeApiError(error).message)
+  }
+}
 </script>
 
 <template>
@@ -325,14 +382,28 @@ async function downloadBackup() {
     <div id="backup" class="panel">
       <div class="section-head">
         <div>
-          <h2>数据备份</h2>
+          <h2>数据备份与还原</h2>
           <p class="muted">
-            下载整库快照(词库 + 复习历史 + 会话)。还原:停容器 → 替换 <code>data/vocab.db</code> → 起容器。
+            下载整库快照(词库 + 复习历史 + 会话);需要时用备份还原整库(还原前会自动再备份一份)。
           </p>
         </div>
         <div class="button-row">
           <el-button type="primary" :loading="backupLoading" @click="downloadBackup">下载整库备份(.db)</el-button>
         </div>
+      </div>
+
+      <el-divider />
+
+      <div class="restore-block">
+        <h3>还原整库</h3>
+        <p class="muted">选择之前下载的 .db 备份,覆盖当前数据。还原前系统会先把当前库自动备份为 pre-restore.db。</p>
+        <input class="file-input" type="file" accept=".db,application/octet-stream" @change="onRestoreFile" />
+        <div class="button-row">
+          <el-button type="danger" :loading="restoring" :disabled="!restoreFile" @click="doRestore">还原并覆盖</el-button>
+          <el-button :disabled="!restoreResult" @click="downloadPreRestore">下载还原前自动备份</el-button>
+        </div>
+        <div v-if="restoreResult" class="restore-result" role="status">已自动备份 {{ restoreResult.backup_bytes }} 字节(pre-restore.db),整库还原成功。</div>
+        <div v-if="restoreError" class="error-box" role="alert">{{ restoreError }}</div>
       </div>
     </div>
 
@@ -433,6 +504,9 @@ async function downloadBackup() {
 .token-warning { color: #c0392b; font-weight: 600; margin-bottom: 10px; }
 .token-box { display: flex; align-items: center; gap: 8px; background: #f5f7fa; border: 1px dashed #dcdfe6; border-radius: 6px; padding: 10px; }
 .token-text { flex: 1; word-break: break-all; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .85rem; }
+.file-input { display: block; width: 100%; min-height: 48px; margin: 10px 0; }
+.restore-block h3 { margin: 0 0 4px; }
+.restore-result { margin-top: 10px; padding: 10px 12px; background: var(--green-100); border-radius: 8px; font-size: .88rem; color: #2f855a; }
 @media (min-width: 480px) {
   .scope-grid { grid-template-columns: 1fr 1fr; }
 }
