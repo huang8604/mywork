@@ -8,6 +8,7 @@ import { deleteSession, generateSession, listSessions, updateSession } from '@/a
 import { newEventId, normalizeApiError } from '@/api/client'
 import { importWords, listWords } from '@/api/words'
 import { parseWordText } from './dailyGenerateLogic'
+import { sessionWordCount } from './sessionCounts'
 import { useAsyncState } from '@/composables/useAsyncState'
 import type { PracticeSession, StrategyRequest, Word } from '@/types/domain'
 
@@ -26,7 +27,7 @@ async function searchWords(keyword:string){wordsLoading.value=true;try{const res
 function applyPreset(values:number[]){[form.new_words_limit,form.error_words_limit,form.due_words_limit,form.custom_words_limit]=values}
 async function generate(){phase.value='validating';generateError.value='';if(invalidReason.value){generateError.value=invalidReason.value;phase.value='error';return}phase.value='generating';generationKey.value ||= newEventId();const payload:StrategyRequest={...form,total_words:mode.value==='strategy'&&totalMode.value?totalWords.value:undefined,word_ids:mode.value==='selection'?[...form.word_ids]:[]};if(mode.value==='selection')Object.assign(payload,{new_words_limit:0,error_words_limit:0,due_words_limit:0,custom_words_limit:0,total_words:undefined});try{const session=await generateSession(payload,undefined,generationKey.value);const actual=session.items?.length||0;if(actual===0){phase.value='empty';generateError.value='当前策略没有找到候选单词。可增加词库、降低限制或稍后再试。';generationKey.value=null;await load();return}phase.value='ready';generationKey.value=null;ElMessage.success(`已生成 ${actual} 个词的复习表`);await router.push(`/daily/sessions/${session.session_id}`)}catch(e){const error=normalizeApiError(e);if(error.code==='NO_PRACTICE_CANDIDATES'){generationKey.value=null;phase.value='empty';generateError.value=error.message;return}phase.value='error';generateError.value=error.message+(error.requestId?`（请求编号 ${error.requestId}）`:'')}}
 async function onImportAndGenerate(){if(!parsedWords.value.length)return;importing.value=true;try{const file=new File([parsedWords.value.join('\n')],'words.txt',{type:'text/plain'});const res=await importWords(file,'skip',false,'ai');const ids=(res.resolved??[]).filter(r=>r.word_id!=null).map(r=>r.word_id as number);ElMessage.success(`导入完成：新增 ${res.created}，已存在 ${res.skipped}，未命中 ${res.unresolved??0}`);if(!ids.length){ElMessage.warning('没有可生成复习表的单词，请检查导入内容。');return}mode.value='selection';form.word_ids=ids;await generate()}catch(e){ElMessage.error(normalizeApiError(e).message)}finally{importing.value=false}}
-const count=(session:PracticeSession)=>Object.values(session.actual_counts).reduce((sum,value)=>sum+Number(value||0),0)
+const count=sessionWordCount
 const sessionStatus=(session:PracticeSession)=>session.status==='archived'?'已归档':session.completed_at?'已完成':'进行中'
 const editOpen=ref(false);const editing=ref<PracticeSession|null>(null);const editForm=reactive({title:'',note:''});const editSaving=ref(false);const editError=ref('');const removing=ref<number|null>(null)
 function openEdit(s:PracticeSession){editing.value=s;editForm.title=s.title||'';editForm.note=s.note||'';editError.value='';editOpen.value=true}
