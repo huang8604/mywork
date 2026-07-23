@@ -256,8 +256,8 @@ async def import_words(
     db: Annotated[Session, Depends(get_db)],
     actor: Annotated[Actor, Depends(require_scopes("words:write"))],
     file: Annotated[UploadFile, File()],
-    conflict_policy: Annotated[str, Form()] = "reject",
-    unresolved_policy: Annotated[str, Form()] = "reject",
+    conflict_policy: Annotated[str, Form()] = "update",
+    unresolved_policy: Annotated[str, Form()] = "ai",
     dry_run: Annotated[bool, Form()] = False,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
@@ -272,49 +272,12 @@ async def import_words(
     if len(payloads) > get_settings().max_import_rows:
         raise AppError(413, "PAYLOAD_TOO_LARGE", "导入行数过多")
     input_total = len(payloads)
-    enriched_payloads: list[WordCreate] = []
-    dictionary_matches = 0
-    unresolved_details: list[dict[str, object]] = []
-    unresolved_words: list[str] = []
-    allow_ai = unresolved_policy == "ai"
-    for row_number, payload in enumerate(payloads, 1):
-        try:
-            enriched, found = enrich_word(payload, allow_ai=allow_ai)
-            enriched_payloads.append(enriched)
-            dictionary_matches += int(found)
-        except AppError as exc:
-            if exc.code != "DICTIONARY_ENTRY_NOT_FOUND":
-                raise
-            # "reject" (default) collects every unresolved word and aborts the
-            # whole batch atomically. "skip" drops just that word. "ai" already
-            # tried the AI fallback inside enrich_word; whatever still raises
-            # here is unresolved (AI disabled/failed) and is dropped like skip.
-            if unresolved_policy in {"skip", "ai"}:
-                unresolved_words.append(payload.en_word)
-                continue
-            unresolved_details.append(
-                {
-                    "path": ["file", row_number, "en_word"],
-                    "reason": "词典未收录该词，请手动填写中文释义",
-                    "value": payload.en_word,
-                }
-            )
-    if unresolved_details:
-        raise AppError(
-            422,
-            "DICTIONARY_ENTRY_NOT_FOUND",
-            "部分单词无法获取释义",
-            unresolved_details,
-        )
-    payloads = enriched_payloads
     _begin_import_transaction(db)
     idem_payload = {
         "sha256": __import__("hashlib").sha256(raw).hexdigest(),
         "conflict_policy": conflict_policy,
         "unresolved_policy": unresolved_policy,
         "dry_run": dry_run,
-        "dictionary_matches": dictionary_matches,
-        "unresolved": len(unresolved_words),
     }
     idem = claim(
         db,
@@ -332,8 +295,10 @@ async def import_words(
             status_code=idem.replay_status or 200,
             headers={"Idempotency-Replayed": "true"},
         )
-    created = updated = skipped = 0
+    created = updated = skipped = dictionary_matches = 0
     resolved: list[dict] = []
+    unresolved_details: list[dict[str, object]] = []
+    unresolved_words: list[str] = []
     seen: set[str] = set()
     # normalized → word_id of the first in-file occurrence, so a later duplicate
     # (under conflict_policy=skip) can report the same word_id rather than null.
@@ -364,6 +329,47 @@ async def import_words(
             )
         seen.add(normalized)
         existing = db.scalar(select(Word).where(Word.normalized_en_word == normalized))
+        # A skipped duplicate is resolved before any dictionary or AI lookup.
+        # This avoids spending remote calls on a row that cannot change data.
+        if existing is not None and existing.deleted_at is None:
+            if conflict_policy == "reject":
+                raise AppError(409, "DUPLICATE_WORD", "导入内容包含已存在的单词")
+            if conflict_policy == "skip":
+                skipped += 1
+                seen_ids[normalized] = existing.id
+                resolved.append(
+                    {
+                        "en_word": payload.en_word,
+                        "word_id": existing.id,
+                        "action": "skipped",
+                    }
+                )
+                continue
+        try:
+            payload, found = enrich_word(payload, allow_ai=unresolved_policy == "ai")
+            dictionary_matches += int(found)
+        except AppError as exc:
+            if exc.code != "DICTIONARY_ENTRY_NOT_FOUND":
+                raise
+            if unresolved_policy in {"skip", "ai"}:
+                unresolved_words.append(payload.en_word)
+                seen_ids[normalized] = None
+                resolved.append(
+                    {
+                        "en_word": payload.en_word,
+                        "word_id": None,
+                        "action": "unresolved",
+                    }
+                )
+                continue
+            unresolved_details.append(
+                {
+                    "path": ["file", row_number, "en_word"],
+                    "reason": "词典未收录该词，请手动填写中文释义",
+                    "value": payload.en_word,
+                }
+            )
+            continue
         if existing is None:
             new_id: int | None = None
             if not dry_run:
@@ -383,13 +389,6 @@ async def import_words(
             seen_ids[normalized] = existing.id
             resolved.append({"en_word": payload.en_word, "word_id": existing.id, "action": "updated"})
             continue
-        if conflict_policy == "reject":
-            raise AppError(409, "DUPLICATE_WORD", "导入内容包含已存在的单词")
-        if conflict_policy == "skip":
-            skipped += 1
-            seen_ids[normalized] = existing.id
-            resolved.append({"en_word": payload.en_word, "word_id": existing.id, "action": "skipped"})
-            continue
         if not dry_run:
             update_word(
                 db,
@@ -399,9 +398,13 @@ async def import_words(
         updated += 1
         seen_ids[normalized] = existing.id
         resolved.append({"en_word": payload.en_word, "word_id": existing.id, "action": "updated"})
-    # Words dropped before the main loop (dictionary miss under skip/ai policy).
-    for en_word in unresolved_words:
-        resolved.append({"en_word": en_word, "word_id": None, "action": "unresolved"})
+    if unresolved_details:
+        raise AppError(
+            422,
+            "DICTIONARY_ENTRY_NOT_FOUND",
+            "部分单词无法获取释义",
+            unresolved_details,
+        )
     data = {
         "created": created,
         "updated": updated,

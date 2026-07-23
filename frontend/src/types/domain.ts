@@ -49,6 +49,17 @@ export interface StatsSummary {
   accuracy: number | null; reviewed_words: number; due_words: number
 }
 
+export interface TodayReviewItem {
+  review_id: number; round_id: number; session_id: number; session_title: string | null
+  word_id: number; en_word: string; phonetic: string | null; cn_meaning: string
+  status: ReviewStatus; reviewed_at: string
+}
+export interface TodayReviewSummary {
+  date: string; timezone: string
+  counts: { known: number; unknown: number; skipped: number; total: number }
+  items: TodayReviewItem[]
+}
+
 export interface StrategyRequest {
   new_words_limit: number; error_words_limit: number; due_words_limit: number
   custom_words_limit: number; total_words?: number; fallback_unreviewed_days: number; seed?: number; word_ids: number[]

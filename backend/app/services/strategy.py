@@ -166,6 +166,13 @@ def generate_session(
         for category in ("new", "error", "due", "custom"):
             actual[category] = sum(1 for word in selected if category in categories[word.id])
 
+    if not selected:
+        raise AppError(
+            409,
+            "NO_PRACTICE_CANDIDATES",
+            "当前策略没有找到候选单词，请增加词库、调整数量或更换筛选条件",
+        )
+
     params = payload.model_dump()
     params["seed"] = seed
     params_json = canonical_json(params)

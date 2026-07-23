@@ -200,7 +200,7 @@
       "Body_import_words_api_v1_words_import_post": {
         "properties": {
           "conflict_policy": {
-            "default": "reject",
+            "default": "update",
             "title": "Conflict Policy",
             "type": "string"
           },
@@ -215,7 +215,7 @@
             "type": "string"
           },
           "unresolved_policy": {
-            "default": "reject",
+            "default": "ai",
             "title": "Unresolved Policy",
             "type": "string"
           }
@@ -610,6 +610,179 @@
           }
         },
         "title": "StrategyRequest",
+        "type": "object"
+      },
+      "TodayReviewCounts": {
+        "additionalProperties": false,
+        "properties": {
+          "known": {
+            "title": "Known",
+            "type": "integer"
+          },
+          "skipped": {
+            "title": "Skipped",
+            "type": "integer"
+          },
+          "total": {
+            "title": "Total",
+            "type": "integer"
+          },
+          "unknown": {
+            "title": "Unknown",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "known",
+          "unknown",
+          "skipped",
+          "total"
+        ],
+        "title": "TodayReviewCounts",
+        "type": "object"
+      },
+      "TodayReviewData": {
+        "additionalProperties": false,
+        "properties": {
+          "counts": {
+            "$ref": "#/components/schemas/TodayReviewCounts"
+          },
+          "date": {
+            "title": "Date",
+            "type": "string"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/TodayReviewItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "timezone": {
+            "title": "Timezone",
+            "type": "string"
+          }
+        },
+        "required": [
+          "date",
+          "timezone",
+          "counts",
+          "items"
+        ],
+        "title": "TodayReviewData",
+        "type": "object"
+      },
+      "TodayReviewItem": {
+        "additionalProperties": false,
+        "properties": {
+          "cn_meaning": {
+            "title": "Cn Meaning",
+            "type": "string"
+          },
+          "en_word": {
+            "title": "En Word",
+            "type": "string"
+          },
+          "phonetic": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Phonetic"
+          },
+          "review_id": {
+            "title": "Review Id",
+            "type": "integer"
+          },
+          "reviewed_at": {
+            "title": "Reviewed At",
+            "type": "string"
+          },
+          "round_id": {
+            "title": "Round Id",
+            "type": "integer"
+          },
+          "session_id": {
+            "title": "Session Id",
+            "type": "integer"
+          },
+          "session_title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Session Title"
+          },
+          "status": {
+            "enum": [
+              "known",
+              "unknown",
+              "skipped"
+            ],
+            "title": "Status",
+            "type": "string"
+          },
+          "word_id": {
+            "title": "Word Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "review_id",
+          "round_id",
+          "session_id",
+          "session_title",
+          "word_id",
+          "en_word",
+          "phonetic",
+          "cn_meaning",
+          "status",
+          "reviewed_at"
+        ],
+        "title": "TodayReviewItem",
+        "type": "object"
+      },
+      "TodayReviewResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "const": "OK",
+            "title": "Code",
+            "type": "string"
+          },
+          "data": {
+            "$ref": "#/components/schemas/TodayReviewData"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "title": "Meta",
+            "type": "object"
+          },
+          "request_id": {
+            "title": "Request Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "data",
+          "meta",
+          "request_id"
+        ],
+        "title": "TodayReviewResponse",
         "type": "object"
       },
       "UserCreateRequest": {
@@ -1100,6 +1273,46 @@
           }
         ],
         "summary": "Update Client",
+        "tags": [
+          "api-clients"
+        ]
+      }
+    },
+    "/api/v1/api-clients/{client_id}/permanent": {
+      "delete": {
+        "operationId": "delete_client_permanently_api_v1_api_clients__client_id__permanent_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "client_id",
+            "required": true,
+            "schema": {
+              "title": "Client Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Delete Client Permanently",
         "tags": [
           "api-clients"
         ]
@@ -2517,6 +2730,45 @@
         "x-required-scopes": [
           "reviews:write",
           "words:read"
+        ]
+      }
+    },
+    "/api/v1/reviews/today": {
+      "get": {
+        "operationId": "today_online_reviews_api_v1_reviews_today_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TodayReviewResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Today Online Reviews",
+        "tags": [
+          "reviews"
+        ],
+        "x-required-scopes": [
+          "reviews:write",
+          "practice:read"
         ]
       }
     },

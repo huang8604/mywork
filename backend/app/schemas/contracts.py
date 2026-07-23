@@ -187,9 +187,44 @@ class BatchResults(StrictModel):
 
 
 class ImportOptions(StrictModel):
-    conflict_policy: Literal["skip", "update", "reject"] = "reject"
-    unresolved_policy: Literal["skip", "reject", "ai"] = "reject"
+    conflict_policy: Literal["skip", "update", "reject"] = "update"
+    unresolved_policy: Literal["skip", "reject", "ai"] = "ai"
     dry_run: bool = False
+
+
+class TodayReviewItem(StrictModel):
+    review_id: int
+    round_id: int
+    session_id: int
+    session_title: str | None
+    word_id: int
+    en_word: str
+    phonetic: str | None
+    cn_meaning: str
+    status: ReviewStatus
+    reviewed_at: str
+
+
+class TodayReviewCounts(StrictModel):
+    known: int
+    unknown: int
+    skipped: int
+    total: int
+
+
+class TodayReviewData(StrictModel):
+    date: str
+    timezone: str
+    counts: TodayReviewCounts
+    items: list[TodayReviewItem]
+
+
+class TodayReviewResponse(StrictModel):
+    code: Literal["OK"]
+    message: str
+    data: TodayReviewData
+    meta: dict[str, object]
+    request_id: str
 
 
 class VersionRequest(StrictModel):

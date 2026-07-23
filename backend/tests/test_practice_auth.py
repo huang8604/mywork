@@ -6,7 +6,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.core.auth import create_api_client_token
-from app.models import ApiClientToken, AuditLog, IdempotencyRecord, ReviewLog, WordStats
+from app.models import ApiClientToken, AuditLog, IdempotencyRecord, PracticeSession, ReviewLog, WordStats
 from app.schemas import StrategyRequest
 from app.services.domain import utc_text
 from app.services.strategy import _effective_limits
@@ -61,7 +61,7 @@ def test_total_words_rejects_zero_weights_and_custom_selection(client):
     assert selection.status_code == 422
 
 
-def test_strategy_boundaries_empty_candidates_limit_and_seed_reproducibility(client):
+def test_strategy_boundaries_empty_candidates_limit_and_seed_reproducibility(client, db_session):
     empty = client.post(
         "/api/v1/daily-table/generate",
         headers={"Idempotency-Key": "generate-empty"},
@@ -74,9 +74,25 @@ def test_strategy_boundaries_empty_candidates_limit_and_seed_reproducibility(cli
             "seed": 7,
         },
     )
-    assert empty.status_code == 201
-    assert empty.json()["data"]["items"] == []
-    assert empty.json()["data"]["actual_counts"]["unique_total"] == 0
+    assert empty.status_code == 409
+    assert empty.json()["code"] == "NO_PRACTICE_CANDIDATES"
+    assert client.get("/api/v1/practice-sessions").json()["data"] == []
+
+    # Older releases could persist an empty shell. It remains available for
+    # diagnostics by id, but must not create a blank card in session history.
+    db_session.add(
+        PracticeSession(
+            strategy_params_json="{}",
+            strategy_hash="0" * 64,
+            seed=7,
+            requested_counts_json="{}",
+            actual_counts_json="{}",
+            created_by_actor_type="web_user",
+            created_by_actor_id="admin",
+        )
+    )
+    db_session.commit()
+    assert client.get("/api/v1/practice-sessions").json()["data"] == []
 
     over_limit = client.post(
         "/api/v1/daily-table/generate",

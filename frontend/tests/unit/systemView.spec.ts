@@ -7,6 +7,7 @@ import { ALL_API_SCOPES } from '@/types/domain'
 vi.mock('@/api/apiClients', () => ({
   listApiClients: vi.fn().mockResolvedValue([]),
   createApiClient: vi.fn(),
+  deleteApiClient: vi.fn(),
   rotateApiToken: vi.fn(),
   updateApiClient: vi.fn(),
   disableApiClient: vi.fn(),

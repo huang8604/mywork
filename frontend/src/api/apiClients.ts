@@ -27,6 +27,10 @@ export async function disableApiClient(id: number) {
   await apiClient.delete(`/api-clients/${id}`)
 }
 
+export async function deleteApiClient(id: number) {
+  await apiClient.delete(`/api-clients/${id}/permanent`)
+}
+
 export async function revokeApiToken(id: number, tokenId: number) {
   await apiClient.delete(`/api-clients/${id}/tokens/${tokenId}`)
 }

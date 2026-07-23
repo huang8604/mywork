@@ -17,6 +17,14 @@
 | #6 token UI | 完整管理(镜像 CLI:创建/列表/轮换/改 scope/禁用/撤销) |
 | #7 备份格式 | SQLite 整库下载(可还原) |
 
+## 2026-07-23 后续增强
+
+1. API 客户端保留“禁用”软停用，并增加管理员永久删除；永久删除级联清理其 token 与 scope，审计记录保留。
+2. 单词导入默认采用“更新重复 + AI 补充”；选择“跳过重复”时，在词典和 AI 查询前先检查文件内及数据库重复项，避免无效远程调用。导入窗口可直接查看完整 JSON 字段模板。
+3. 复习策略没有任何候选词时返回 `NO_PRACTICE_CANDIDATES`，不创建空会话；列表同时过滤旧版本遗留的零题目会话。
+4. 在线复习从按生成时间倒序的最近 3 张有效复习表中选择，自定义标题优先显示；新增 `/api/v1/reviews/today`，仅返回当前登录身份当天已提交的在线复习结果。
+5. 打印页改为紧凑蓝色 A4 主题，列宽固定为序号 5%、单词/音标 24%、中文释义 30%、例句 41%，并用 `colgroup` 保证浏览器打印布局一致。
+
 ## 默认决定(实现时若需偏离须回头确认)
 
 1. **音标 `/ /` 统一加到所有展示位**:在线复习卡片、复习表、md、pdf 一致(不只用户点名的三处)。
@@ -154,7 +162,7 @@
 #### 前端 `views/SystemView.vue`(令牌分区)
 - 客户端表格 + 创建对话框(name/skill_name/skill_version/scopes 多选自 `ALL_SCOPES`/expires_days/description)。
 - 创建/轮换后:**明文 token 只弹一次**的对话框——「复制」按钮 + 警示「请立即保存,关闭后不再显示」。
-- 行操作:轮换 token / 改 scope / 启用-禁用 / 撤销 token。
+- 行操作:轮换 token / 改 scope / 启用-禁用 / 永久删除客户端 / 撤销 token。
 - 新 `frontend/src/api/apiClients.ts`、`types/domain.ts` 加 `ApiClient`/`ApiClientTokenInfo`/payload 类型。
 
 ### #7 全量备份(SQLite 整库下载)

@@ -47,8 +47,7 @@ describe('PracticeWorksheet', () => {
 
   it('blanks the Chinese side in en-to-cn recall (no underline)', () => {
     const w = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn' } })
-    const chineseCells = w.findAll('tbody td').filter(td => td.classes().length === 0)
-    const cnCell = chineseCells[0]
+    const cnCell = w.get('.meaning-cell')
     expect(cnCell.text()).toBe('')
     expect(cnCell.text()).not.toContain('___')
   })
@@ -70,7 +69,7 @@ describe('PracticeWorksheet', () => {
     const w = mount(PracticeWorksheet, { props: { session, answer: true, mode: 'cn-to-en' } })
     expect(w.get('.word-cell').text()).toContain('camera')
     expect(w.get('.word-cell').text()).toContain('/ˈkæmərə/')
-    expect(w.findAll('tbody td')[2].text()).toContain('相机')
+    expect(w.get('.meaning-cell').text()).toContain('相机')
     expect(w.get('.example-cell').text()).toContain('I have a camera.')
   })
 

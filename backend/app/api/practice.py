@@ -110,7 +110,11 @@ def list_sessions(
         _commit(db)
         logger.info("auto_archived_practice_sessions count=%s age_days=15", archived_count)
 
-    filters = []
+    # Legacy versions could persist a zero-item session. Keep those records out
+    # of every list while preserving direct access for diagnostics.
+    filters = [
+        PracticeSession.id.in_(select(PracticeSessionItem.session_id).distinct())
+    ]
     for column, value in (
         (PracticeSession.status, status or "active"),
         (PracticeSession.created_by_actor_type, created_by_actor_type),

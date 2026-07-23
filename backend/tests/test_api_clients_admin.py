@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from sqlalchemy import func, select
+
+from app.models import ApiClientScope, ApiClientToken, AuditLog
 from conftest import seed_credential
 
 
@@ -50,9 +53,13 @@ def test_admin_creates_client_and_gets_plaintext_token_once(client, db_session, 
 def test_student_is_forbidden_from_api_client_management(client, db_session, login_mode):
     seed_credential(db_session, "admin", "supersecret")
     seed_credential(db_session, "stu", "stupass1", role="student")
+    _login(client, "admin", "supersecret")
+    cid = _create_client(client)["id"]
+    client.post("/api/v1/auth/logout")
     _login(client, "stu", "stupass1")
 
     assert client.get("/api/v1/api-clients").status_code == 403
+    assert client.delete(f"/api/v1/api-clients/{cid}/permanent").status_code == 403
     assert (
         client.post(
             "/api/v1/api-clients",
@@ -167,6 +174,38 @@ def test_delete_disables_client(client, db_session, login_mode):
     assert item["status"] == "disabled"
 
 
+def test_permanent_delete_removes_client_and_invalidates_tokens(
+    client, db_session, login_mode
+):
+    seed_credential(db_session, "admin", "supersecret")
+    _login(client, "admin", "supersecret")
+
+    created = _create_client(client, name="delete-me", scopes=["words:read"])
+    cid = created["id"]
+    raw_token = created["token"]
+    deleted = client.delete(f"/api/v1/api-clients/{cid}/permanent")
+    assert deleted.status_code == 204
+
+    assert db_session.scalar(
+        select(func.count()).select_from(ApiClientToken).where(ApiClientToken.api_client_id == cid)
+    ) == 0
+    assert db_session.scalar(
+        select(func.count()).select_from(ApiClientScope).where(ApiClientScope.api_client_id == cid)
+    ) == 0
+    audit = db_session.scalar(
+        select(AuditLog).where(AuditLog.action == "api_client.delete").order_by(AuditLog.id.desc())
+    )
+    assert audit is not None
+    assert audit.target_id == str(cid)
+
+    listing = client.get("/api/v1/api-clients").json()["data"]
+    assert all(item["id"] != cid for item in listing)
+    denied = client.get(
+        "/api/v1/words", headers={"Authorization": f"Bearer {raw_token}"}
+    )
+    assert denied.status_code == 401
+
+
 def test_revoke_token_marks_state_revoked(client, db_session, login_mode):
     seed_credential(db_session, "admin", "supersecret")
     _login(client, "admin", "supersecret")
@@ -236,6 +275,7 @@ def test_unknown_client_404(client, db_session, login_mode):
     _login(client, "admin", "supersecret")
     assert client.patch("/api/v1/api-clients/9999", json={"status": "disabled"}).status_code == 404
     assert client.delete("/api/v1/api-clients/9999").status_code == 404
+    assert client.delete("/api/v1/api-clients/9999/permanent").status_code == 404
     assert client.post("/api/v1/api-clients/9999/tokens").status_code == 404
 
 

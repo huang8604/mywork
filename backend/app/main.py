@@ -260,6 +260,7 @@ REQUIRED_SCOPES: dict[tuple[str, str], list[str]] = {
     ("POST", "/api/v1/reviews"): ["reviews:write", "words:read"],
     ("PATCH", "/api/v1/reviews/{review_id}"): ["reviews:write"],
     ("GET", "/api/v1/reviews"): ["reviews:read"],
+    ("GET", "/api/v1/reviews/today"): ["reviews:write", "practice:read"],
     ("GET", "/api/v1/stats/summary"): ["reviews:read"],
     ("GET", "/api/v1/words/{word_id}/stats"): ["words:read", "reviews:read"],
     ("POST", "/api/v1/daily-table/generate"): ["practice:generate"],

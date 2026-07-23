@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, time, timedelta
 from typing import Annotated
+from zoneinfo import ZoneInfo
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import and_, asc, desc, func, select
@@ -8,16 +10,78 @@ from sqlalchemy.orm import Session
 
 from app.core.audit import add_audit
 from app.core.auth import Actor, require_scopes
+from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.responses import envelope
-from app.models import ReviewLog, WordStats
-from app.schemas import ReviewCorrection, ReviewCreate
+from app.models import (
+    PracticeReviewRound,
+    PracticeSession,
+    PracticeSessionItem,
+    ReviewLog,
+    WordStats,
+)
+from app.schemas import ReviewCorrection, ReviewCreate, TodayReviewResponse
 from app.services.reviews import correct_review, create_quick_review
 from app.services.domain import utc_text
 from app.services.serializers import review_data, stats_data
 
 router = APIRouter(prefix="/api/v1", tags=["reviews"])
+
+
+@router.get("/reviews/today", response_model=TodayReviewResponse)
+def today_online_reviews(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("reviews:write", "practice:read"))],
+):
+    zone = ZoneInfo(get_settings().app_timezone)
+    local_now = datetime.now(UTC).astimezone(zone)
+    start_local = datetime.combine(local_now.date(), time.min, tzinfo=zone)
+    end_local = start_local + timedelta(days=1)
+    start = utc_text(start_local)
+    end = utc_text(end_local)
+    rows = db.execute(
+        select(ReviewLog, PracticeSessionItem, PracticeReviewRound, PracticeSession)
+        .join(PracticeSessionItem, PracticeSessionItem.id == ReviewLog.session_item_id)
+        .join(PracticeReviewRound, PracticeReviewRound.id == ReviewLog.review_round_id)
+        .join(PracticeSession, PracticeSession.id == PracticeReviewRound.session_id)
+        .where(
+            ReviewLog.actor_type == actor.actor_type,
+            ReviewLog.actor_id == actor.actor_id,
+            ReviewLog.source == "online_practice",
+            ReviewLog.reviewed_at >= start,
+            ReviewLog.reviewed_at < end,
+        )
+        .order_by(ReviewLog.reviewed_at.desc(), ReviewLog.id.desc())
+    ).all()
+    counts = {"known": 0, "unknown": 0, "skipped": 0}
+    items = []
+    for log, item, round_, session in rows:
+        counts[log.status] += 1
+        items.append(
+            {
+                "review_id": log.id,
+                "round_id": round_.id,
+                "session_id": session.id,
+                "session_title": session.title,
+                "word_id": log.word_id,
+                "en_word": item.snapshot_en_word,
+                "phonetic": item.snapshot_phonetic,
+                "cn_meaning": item.snapshot_cn_meaning,
+                "status": log.status,
+                "reviewed_at": log.reviewed_at,
+            }
+        )
+    return envelope(
+        request,
+        {
+            "date": local_now.date().isoformat(),
+            "timezone": str(zone),
+            "counts": {**counts, "total": len(items)},
+            "items": items,
+        },
+    )
 
 
 @router.post("/reviews")

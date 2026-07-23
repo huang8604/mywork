@@ -4,6 +4,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { normalizeApiError } from '@/api/client'
 import {
   createApiClient,
+  deleteApiClient,
   disableApiClient,
   listApiClients,
   revokeApiToken,
@@ -188,6 +189,22 @@ async function disable(client: ApiClient) {
   await toggleStatus(client)
 }
 
+async function removeClient(client: ApiClient) {
+  try {
+    await ElMessageBox.confirm(
+      `确定永久删除客户端「${client.name}」？其全部 token 和授权范围会立即删除且无法恢复，相关审计记录仍会保留。`,
+      '永久删除 API 客户端',
+      { confirmButtonText: '永久删除', cancelButtonText: '取消', type: 'error' },
+    )
+    await deleteApiClient(client.id)
+    ElMessage.success('API 客户端已永久删除')
+    await load()
+  } catch (error) {
+    if (error === 'cancel' || error === 'close') return
+    ElMessage.error(normalizeApiError(error).message)
+  }
+}
+
 async function revokeToken(client: ApiClient, tokenId: number) {
   try {
     await ElMessageBox.confirm('确定撤销该 token?此操作不可撤销。', '确认撤销', {
@@ -291,13 +308,14 @@ async function downloadBackup() {
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="220" />
-        <el-table-column label="操作" width="280">
+        <el-table-column label="操作" width="360">
           <template #default="{ row }">
             <el-button size="small" @click="rotate(row)">轮换 token</el-button>
             <el-button size="small" @click="openEditScopes(row)">改 scope</el-button>
             <el-button size="small" :type="row.status === 'disabled' ? 'success' : 'warning'" @click="disable(row)">
               {{ row.status === 'disabled' ? '启用' : '禁用' }}
             </el-button>
+            <el-button size="small" type="danger" plain @click="removeClient(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>

@@ -237,6 +237,30 @@ def disable_client(
     return Response(status_code=204)
 
 
+@router.delete("/{client_id}/permanent", status_code=204)
+def delete_client_permanently(
+    request: Request,
+    client_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_web_admin)],
+):
+    client = _get(db, client_id)
+    add_audit(
+        db,
+        request_id=_request_id(request),
+        actor=actor,
+        action="api_client.delete",
+        outcome="success",
+        http_status=204,
+        target_type="api_client",
+        target_id=client_id,
+        metadata={"name": client.name, "skill_name": client.skill_name},
+    )
+    db.delete(client)
+    _commit(db)
+    return Response(status_code=204)
+
+
 @router.delete("/{client_id}/tokens/{token_id}", status_code=204)
 def revoke_token(
     request: Request,

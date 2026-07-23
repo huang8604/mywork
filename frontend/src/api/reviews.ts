@@ -1,5 +1,9 @@
 import { apiClient, unwrap } from './client'
-import type { ApiEnvelope, ReviewFilters, ReviewLog, ReviewStatus } from '@/types/domain'
+import type { ApiEnvelope, ReviewFilters, ReviewLog, ReviewStatus, TodayReviewSummary } from '@/types/domain'
+
+export async function getTodayOnlineReviews(signal?: AbortSignal) {
+  return unwrap((await apiClient.get<ApiEnvelope<TodayReviewSummary>>('/reviews/today', { signal })).data)
+}
 
 export async function listReviews(filters: ReviewFilters = {}, signal?: AbortSignal) {
   const response = await apiClient.get<ApiEnvelope<ReviewLog[]>>('/reviews', { params: filters, signal })

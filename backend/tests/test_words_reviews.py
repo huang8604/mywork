@@ -187,10 +187,41 @@ def test_import_skip_policy_dedupes_in_file_duplicates(client):
     assert rejected.json()["message"] == "导入文件内存在重复单词"
 
 
+def test_import_skip_checks_existing_words_before_ai(client, monkeypatch, tmp_path):
+    monkeypatch.setenv("DICTIONARY_INDEX_PATH", str(tmp_path / "missing.json"))
+    monkeypatch.setenv("AI_BASE_URL", "https://example.com/v1")
+    monkeypatch.setenv("AI_API_KEY", "test-key")
+    get_settings.cache_clear()
+    clear_dictionary_cache()
+    calls: list[str] = []
+
+    def fake_ai(word: str):
+        calls.append(word)
+        return {"cn_meaning": "不应调用", "phonetic": None, "example_sentence": None}
+
+    monkeypatch.setattr("app.services.dictionary.ai_enrich_word", fake_ai)
+    try:
+        create_word(
+            client,
+            {"en_word": "alreadythere", "cn_meaning": "已经存在", "tags": []},
+        )
+        response = client.post(
+            "/api/v1/words/import",
+            files={"file": ("words.txt", b"alreadythere\nalreadythere\n", "text/plain")},
+            data={"conflict_policy": "skip", "unresolved_policy": "ai"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json()["data"]["skipped"] == 2
+        assert calls == []
+    finally:
+        get_settings.cache_clear()
+        clear_dictionary_cache()
+
+
 def test_import_unresolved_policy_skip_avoids_zero_write(client, monkeypatch, tmp_path):
     # No dictionary configured: a word with cn_meaning still imports; a word
     # without one is "unresolved". Under skip the rest imports (no zero-write);
-    # under reject (default) the whole batch still aborts.
+    # under reject the whole batch still aborts.
     monkeypatch.setenv("DICTIONARY_INDEX_PATH", str(tmp_path / "missing.json"))
     get_settings.cache_clear()
     clear_dictionary_cache()
@@ -213,7 +244,7 @@ def test_import_unresolved_policy_skip_avoids_zero_write(client, monkeypatch, tm
         rejected = client.post(
             "/api/v1/words/import",
             files={"file": ("words.json", json.dumps(rows).encode(), "application/json")},
-            data={"conflict_policy": "reject"},
+            data={"conflict_policy": "reject", "unresolved_policy": "reject"},
         )
         assert rejected.status_code == 422
         assert rejected.json()["code"] == "DICTIONARY_ENTRY_NOT_FOUND"
