@@ -257,6 +257,7 @@ REQUIRED_SCOPES: dict[tuple[str, str], list[str]] = {
     ("PUT", "/api/v1/words/{word_id}"): ["words:write"],
     ("DELETE", "/api/v1/words/{word_id}"): ["words:write"],
     ("POST", "/api/v1/words/{word_id}/restore"): ["words:write"],
+    ("POST", "/api/v1/words/{word_id}/reset-progress"): ["words:write"],
     ("POST", "/api/v1/reviews"): ["reviews:write", "words:read"],
     ("PATCH", "/api/v1/reviews/{review_id}"): ["reviews:write"],
     ("GET", "/api/v1/reviews"): ["reviews:read"],

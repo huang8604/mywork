@@ -15,6 +15,7 @@ export async function createWord(payload: WordPayload) { return unwrap((await ap
 export async function updateWord(id: number, payload: WordUpdatePayload) { return unwrap((await apiClient.put<ApiEnvelope<Word>>(`/words/${id}`, payload)).data) }
 export async function deleteWord(word: Word) { await apiClient.delete(`/words/${word.id}`, { headers: { 'If-Match': String(word.version) } }) }
 export async function restoreWord(word: Word) { return unwrap((await apiClient.post<ApiEnvelope<Word>>(`/words/${word.id}/restore`, { expected_version: word.version })).data) }
+export async function resetWordProgress(id: number) { return unwrap((await apiClient.post<ApiEnvelope<Word>>(`/words/${id}/reset-progress`)).data) }
 export async function importWords(file: File, conflictPolicy: 'skip' | 'update' | 'reject' = 'update', dryRun = false, unresolvedPolicy: 'skip' | 'reject' | 'ai' = 'ai') {
   const form = new FormData(); form.append('file', file); form.append('conflict_policy', conflictPolicy); form.append('unresolved_policy', unresolvedPolicy); form.append('dry_run', String(dryRun))
   return unwrap((await apiClient.post<ApiEnvelope<ImportSummary>>('/words/import', form, { timeout: 60_000, headers: { 'Idempotency-Key': newEventId() } })).data)

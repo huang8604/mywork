@@ -31,6 +31,7 @@ from app.services.words import (
     iter_words,
     list_words,
     reimport_word,
+    reset_word_progress,
     restore_word,
     update_word,
 )
@@ -595,6 +596,29 @@ def restore(
         request_id=_request_id(request),
         actor=actor,
         action="word.restore",
+        outcome="success",
+        http_status=200,
+        target_type="word",
+        target_id=word_id,
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
+@router.post("/{word_id}/reset-progress")
+def reset_progress(
+    request: Request,
+    word_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("words:write"))],
+):
+    word = reset_word_progress(db, word_id)
+    data = word_data(db, word)
+    add_audit(
+        db,
+        request_id=_request_id(request),
+        actor=actor,
+        action="word.reset_progress",
         outcome="success",
         http_status=200,
         target_type="word",

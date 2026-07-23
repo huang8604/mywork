@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-from sqlalchemy import and_, asc, desc, func, or_, select
+from sqlalchemy import and_, asc, delete, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.errors import AppError, not_found
-from app.models import Tag, Word, WordTag
+from app.models import ReviewLog, Tag, Word, WordTag
 from app.schemas import WordCreate, WordUpdate
 from app.services.domain import normalize_tag, normalize_word, utc_text
 
@@ -133,6 +133,23 @@ def restore_word(db: Session, word_id: int, expected_version: int) -> Word:
         word.version += 1
         word.updated_at = utc_text()
         db.flush()
+    return word
+
+
+def reset_word_progress(db: Session, word_id: int) -> Word:
+    """Clear a word's review history so it re-enters the 新词 pool.
+
+    Deletes every `ReviewLog` row for the word and rebuilds `WordStats` from the
+    now-empty log stream (all counters back to zero, no due date). Idempotent:
+    a word with no history is left untouched and still returned. The word row
+    itself (spelling, tags, version) is not mutated.
+    """
+    from app.services.reviews import rebuild_word_stats
+
+    word = get_word(db, word_id)
+    db.execute(delete(ReviewLog).where(ReviewLog.word_id == word_id))
+    rebuild_word_stats(db, word_id)
+    db.flush()
     return word
 
 
