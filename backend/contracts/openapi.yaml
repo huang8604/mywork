@@ -226,6 +226,20 @@
         "title": "Body_import_words_api_v1_words_import_post",
         "type": "object"
       },
+      "Body_restore_database_api_v1_system_restore_post": {
+        "properties": {
+          "file": {
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "type": "string"
+          }
+        },
+        "required": [
+          "file"
+        ],
+        "title": "Body_restore_database_api_v1_system_restore_post",
+        "type": "object"
+      },
       "HTTPValidationError": {
         "properties": {
           "detail": {
@@ -2911,6 +2925,76 @@
         ]
       }
     },
+    "/api/v1/system/pre-restore-backup": {
+      "get": {
+        "description": "Download the single auto-backup captured right before the last restore.",
+        "operationId": "download_pre_restore_backup_api_v1_system_pre_restore_backup_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Download Pre Restore Backup",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/system/restore": {
+      "post": {
+        "description": "Restore the whole library from an uploaded SQLite snapshot.\n\nPipeline: read+size-check -> validate schema & alembic revision -> auto-backup\nthe live DB to ``pre-restore.db`` (consistent snapshot via the live\nconnection) -> audit -> dispose the engine pool so nothing pins the old file\n-> drop stale -wal/-shm -> atomically replace the live file. Any failure\nbefore the swap leaves the live DB untouched.",
+        "operationId": "restore_database_api_v1_system_restore_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_restore_database_api_v1_system_restore_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Restore Database",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/api/v1/users": {
       "get": {
         "operationId": "list_users_api_v1_users_get",
@@ -3822,6 +3906,63 @@
           }
         ],
         "summary": "Update",
+        "tags": [
+          "words"
+        ],
+        "x-required-scopes": [
+          "words:write"
+        ]
+      }
+    },
+    "/api/v1/words/{word_id}/reset-progress": {
+      "post": {
+        "operationId": "reset_progress_api_v1_words__word_id__reset_progress_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "word_id",
+            "required": true,
+            "schema": {
+              "title": "Word Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Reset Progress",
         "tags": [
           "words"
         ],
