@@ -43,6 +43,13 @@ class Settings:
     ai_api_key_file: str | None
     ai_api_key: str
     ai_model: str
+    tts_base_url: str
+    tts_api_key_file: str | None
+    tts_api_key: str
+    tts_model: str
+    tts_voice: str
+    tts_audio_dir: str
+    tts_timeout_seconds: float
     web_login_required: bool
     web_admin_username: str
     web_admin_password: str
@@ -60,6 +67,13 @@ class Settings:
                 raise ValueError("AI_API_KEY_FILE must not be empty")
         else:
             ai_api_key = os.getenv("AI_API_KEY", "").strip()
+        tts_api_key_file = os.getenv("TTS_API_KEY_FILE")
+        if tts_api_key_file:
+            tts_api_key = Path(tts_api_key_file).read_text(encoding="utf-8").strip()
+            if not tts_api_key:
+                raise ValueError("TTS_API_KEY_FILE must not be empty")
+        else:
+            tts_api_key = os.getenv("TTS_API_KEY", "").strip()
         value = cls(
             database_url=os.getenv("DATABASE_URL", "sqlite:///./data/vocab.db"),
             app_timezone=os.getenv("APP_TIMEZONE", "Asia/Shanghai"),
@@ -89,6 +103,13 @@ class Settings:
             ai_api_key_file=ai_api_key_file,
             ai_api_key=ai_api_key,
             ai_model=os.getenv("AI_MODEL", "gpt-4o-mini"),
+            tts_base_url=os.getenv("TTS_BASE_URL", "https://api.xiaomimimo.com/v1").rstrip("/"),
+            tts_api_key_file=tts_api_key_file,
+            tts_api_key=tts_api_key,
+            tts_model=os.getenv("TTS_MODEL", "mimo-v2.5-tts"),
+            tts_voice=os.getenv("TTS_VOICE", "Chloe"),
+            tts_audio_dir=os.getenv("TTS_AUDIO_DIR", "").strip(),
+            tts_timeout_seconds=float(os.getenv("TTS_TIMEOUT_SECONDS", "60")),
             web_login_required=_boolean("WEB_LOGIN_REQUIRED", False),
             web_admin_username=os.getenv("WEB_ADMIN_USERNAME", "admin"),
             web_admin_password=os.getenv("WEB_ADMIN_PASSWORD", ""),
@@ -106,6 +127,8 @@ class Settings:
             raise ValueError("IDEMPOTENCY_RETENTION_DAYS must be at least 30")
         if self.session_max_age <= 0:
             raise ValueError("SESSION_MAX_AGE must be positive")
+        if self.tts_timeout_seconds <= 0:
+            raise ValueError("TTS_TIMEOUT_SECONDS must be positive")
         if min(
             self.api_rate_limit_per_minute,
             self.max_import_bytes,
@@ -148,6 +171,10 @@ class Settings:
     @property
     def ai_enabled(self) -> bool:
         return bool(self.ai_base_url and self.ai_api_key)
+
+    @property
+    def tts_enabled(self) -> bool:
+        return bool(self.tts_base_url and self.tts_api_key)
 
 
 @lru_cache
