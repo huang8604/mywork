@@ -4,7 +4,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from sqlalchemy import and_, desc, func, select
 from sqlalchemy.orm import Session
 
@@ -14,7 +14,7 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.errors import AppError, not_found
 from app.core.responses import envelope
-from app.models import PracticeReviewRound, PracticeSession, PracticeSessionItem
+from app.models import PracticeReviewRound, PracticeSession, PracticeSessionItem, Word
 from app.schemas import BatchResults, RoundCreate, RoundResult, SessionUpdate, StrategyRequest, VersionRequest
 from app.services.domain import utc_text
 from app.services.idempotency import claim, complete
@@ -23,6 +23,7 @@ from app.services.sessions import auto_archive_expired_sessions, delete_session,
 from app.services.reviews import batch_round_results, put_round_result
 from app.services.serializers import review_data, round_data, session_data
 from app.services.strategy import generate_session
+from app.services.words import word_audio_file
 
 router = APIRouter(prefix="/api/v1", tags=["practice"])
 logger = logging.getLogger("word_memory.practice")
@@ -157,6 +158,35 @@ def get_session(
     _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
 ):
     return envelope(request, session_data(db, _session(db, session_id), include_items=True))
+
+
+@router.get("/practice-sessions/{session_id}/items/{item_id}/audio")
+def get_session_item_audio(
+    session_id: int,
+    item_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+):
+    _session(db, session_id)
+    item = db.scalar(
+        select(PracticeSessionItem).where(
+            PracticeSessionItem.session_id == session_id,
+            PracticeSessionItem.id == item_id,
+        )
+    )
+    if item is None:
+        raise not_found("practice session item")
+    word = db.get(Word, item.word_id)
+    if word is None or word.deleted_at:
+        raise not_found("word")
+    audio = word_audio_file(word)
+    if audio is None:
+        raise AppError(404, "AUDIO_NOT_FOUND", "音频尚未生成")
+    return FileResponse(
+        audio,
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": "inline"},
+    )
 
 
 @router.post("/practice-sessions/{session_id}/printed")

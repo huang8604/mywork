@@ -75,6 +75,7 @@ def capabilities(
                 "batch_results",
                 "review_correction",
                 "web_login",
+                "cloud_tts",
             ],
         },
     )

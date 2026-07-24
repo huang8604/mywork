@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useDictationPlayer } from '@/composables/useDictationPlayer'
+import { practiceItemAudioUrl } from '@/api/practiceSessions'
 import type { DictationAccent, DictationSettings, PracticeSession } from '@/types/domain'
 
 const props = defineProps<{ session: PracticeSession; sessions: PracticeSession[] }>()
@@ -15,7 +16,8 @@ const settings = ref<DictationSettings>({
 })
 
 const texts = () => props.session.items?.map(i => i.word.en_word) ?? []
-const player = useDictationPlayer({ texts })
+const audioUrls = () => props.session.items?.map(i => practiceItemAudioUrl(props.session.session_id, i.item_id)) ?? []
+const player = useDictationPlayer({ texts, audioUrls })
 
 const draft = ref('')
 const startedAt = ref<number | null>(null)
@@ -78,7 +80,7 @@ const speakingHint = computed(() => {
 
     <!-- 不支持 speechSynthesis -->
     <div v-if="!player.supported" class="unsupported">
-      当前浏览器不支持语音合成（speechSynthesis），无法使用在线默写。请换用 Chrome / Edge / Safari。
+      当前浏览器既不支持音频播放，也不支持语音合成（speechSynthesis），无法使用在线默写。请换用 Chrome / Edge / Safari。
     </div>
 
     <!-- 设置态 -->

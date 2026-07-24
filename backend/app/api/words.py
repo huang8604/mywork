@@ -7,7 +7,7 @@ import logging
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Form, Header, Query, Request, UploadFile
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import FileResponse, Response, StreamingResponse
 from pydantic import TypeAdapter, ValidationError
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -19,7 +19,14 @@ from app.core.database import get_db
 from app.core.errors import AppError
 from app.core.responses import envelope
 from app.models import Word
-from app.schemas import VersionRequest, WordCreate, WordEnrichRequest, WordUpdate
+from app.schemas import (
+    VersionRequest,
+    WordAudioBatchGenerateRequest,
+    WordAudioGenerateRequest,
+    WordCreate,
+    WordEnrichRequest,
+    WordUpdate,
+)
 from app.services.dictionary import enrich_preview, enrich_word
 from app.services.idempotency import claim, complete
 from app.services.serializers import word_data
@@ -27,6 +34,8 @@ from app.services.words import (
     SORTS,
     create_word,
     delete_word,
+    generate_missing_word_audio,
+    generate_word_audio,
     get_word,
     iter_words,
     list_words,
@@ -34,6 +43,7 @@ from app.services.words import (
     reset_word_progress,
     restore_word,
     update_word,
+    word_audio_file,
 )
 
 router = APIRouter(prefix="/api/v1/words", tags=["words"])
@@ -520,6 +530,108 @@ def _parse_import(filename: str, content_type: str, raw: bytes) -> list[WordCrea
                 }
             )
         raise AppError(422, "VALIDATION_ERROR", "导入数据无效", details) from exc
+
+
+@router.post("/audio/generate-missing")
+def generate_missing_audio(
+    request: Request,
+    payload: WordAudioBatchGenerateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("words:write"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/words/audio/generate-missing",
+        key=idempotency_key,
+        payload=payload.model_dump(mode="json"),
+        required=actor.actor_type == "api_client",
+    )
+    if idem and idem.replayed:
+        return envelope(
+            request,
+            idem.replay_data,
+            status_code=idem.replay_status or 200,
+            headers={"Idempotency-Replayed": "true"},
+        )
+    data = generate_missing_word_audio(db, limit=payload.limit)
+    complete(idem, data=data, status_code=200, resource_type="word_audio_batch")
+    add_audit(
+        db,
+        request_id=_request_id(request),
+        actor=actor,
+        action="word_audio.generate_missing",
+        outcome="success",
+        http_status=200,
+        metadata={
+            key: data[key]
+            for key in ("requested", "generated", "failed", "has_more")
+        },
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
+@router.get("/{word_id}/audio")
+def get_audio(
+    word_id: int,
+    db: Annotated[Session, Depends(get_db)],
+    _actor: Annotated[Actor, Depends(require_scopes("words:read"))],
+):
+    word = get_word(db, word_id)
+    audio = word_audio_file(word)
+    if audio is None:
+        raise AppError(404, "AUDIO_NOT_FOUND", "音频尚未生成")
+    return FileResponse(
+        audio,
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": "inline"},
+    )
+
+
+@router.post("/{word_id}/audio")
+def generate_audio(
+    request: Request,
+    word_id: int,
+    payload: WordAudioGenerateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("words:write"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/words/{word_id}/audio",
+        key=idempotency_key,
+        payload={"word_id": word_id, **payload.model_dump(mode="json")},
+        required=actor.actor_type == "api_client",
+    )
+    if idem and idem.replayed:
+        return envelope(
+            request,
+            idem.replay_data,
+            status_code=idem.replay_status or 200,
+            headers={"Idempotency-Replayed": "true"},
+        )
+    word = generate_word_audio(db, word_id, force=payload.force)
+    data = word_data(db, word)
+    complete(idem, data=data, status_code=200, resource_type="word", resource_id=word.id)
+    add_audit(
+        db,
+        request_id=_request_id(request),
+        actor=actor,
+        action="word_audio.generate",
+        outcome="success",
+        http_status=200,
+        target_type="word",
+        target_id=word.id,
+        metadata={"force": payload.force},
+    )
+    _commit(db)
+    return envelope(request, data)
 
 
 @router.get("/{word_id}")

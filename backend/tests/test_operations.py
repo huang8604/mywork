@@ -27,7 +27,7 @@ def test_real_alembic_upgrade_creates_current_consistent_schema(tmp_path):
     )
     assert result.returncode == 0, result.stderr
     with sqlite3.connect(database) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0003"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0004"
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
         tables = {
@@ -44,7 +44,7 @@ def test_health_readiness_requires_current_migration(client, db_session):
     unavailable = client.get("/healthz/ready")
     assert unavailable.status_code == 503
     db_session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
-    db_session.execute(text("INSERT INTO alembic_version VALUES ('0003')"))
+    db_session.execute(text("INSERT INTO alembic_version VALUES ('0004')"))
     db_session.commit()
     ready = client.get("/healthz/ready")
     assert ready.status_code == 200

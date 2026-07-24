@@ -1,11 +1,18 @@
 from __future__ import annotations
 
+import hashlib
+import os
+import tempfile
+from pathlib import Path
+
 from sqlalchemy import and_, asc, delete, desc, func, or_, select
 from sqlalchemy.orm import Session
 
+from app.core.config import Settings, get_settings
 from app.core.errors import AppError, not_found
 from app.models import ReviewLog, Tag, Word, WordTag
 from app.schemas import WordCreate, WordUpdate
+from app.services import tts as tts_service
 from app.services.domain import normalize_tag, normalize_word, utc_text
 
 
@@ -177,6 +184,114 @@ def reimport_word(db: Session, word_id: int, payload: WordCreate) -> Word:
     db.flush()
     return word
 
+
+
+def audio_dir(settings: Settings | None = None) -> Path:
+    settings = settings or get_settings()
+    if settings.tts_audio_dir:
+        return Path(settings.tts_audio_dir).resolve()
+    db_url = settings.database_url
+    if db_url.startswith("sqlite:///"):
+        return Path(db_url.removeprefix("sqlite:///")).resolve().parent / "audio"
+    return Path("data/audio").resolve()
+
+
+def _audio_filename(word: Word, settings: Settings) -> str:
+    digest = hashlib.sha256(
+        f"{word.en_word}|{settings.tts_model}|{settings.tts_voice}".encode("utf-8")
+    ).hexdigest()[:12]
+    return f"word-{word.id}-{digest}.mp3"
+
+
+def word_audio_file(word: Word, settings: Settings | None = None) -> Path | None:
+    if not word.audio_path:
+        return None
+    root = audio_dir(settings).resolve()
+    candidate = (root / word.audio_path).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate if candidate.is_file() else None
+
+
+def generate_word_audio(db: Session, word_id: int, *, force: bool = False) -> Word:
+    word = get_word(db, word_id, include_deleted=False)
+    if word.audio_path and not force and word_audio_file(word):
+        return word
+    settings = get_settings()
+    audio = tts_service.synthesize_word_mp3(word.en_word, settings=settings)
+    root = audio_dir(settings)
+    try:
+        root.mkdir(parents=True, exist_ok=True)
+        filename = _audio_filename(word, settings)
+        final = root / filename
+        fd, tmp_name = tempfile.mkstemp(prefix=f".{filename}.", suffix=".tmp", dir=root)
+        try:
+            with os.fdopen(fd, "wb") as handle:
+                handle.write(audio)
+                handle.flush()
+                os.fsync(handle.fileno())
+            os.replace(tmp_name, final)
+        except OSError:
+            try:
+                os.unlink(tmp_name)
+            except OSError:
+                pass
+            raise
+    except OSError as exc:
+        raise AppError(503, "AUDIO_STORAGE_ERROR", "音频文件写入失败") from exc
+    old_path = word.audio_path
+    word.audio_path = filename
+    word.audio_format = "mp3"
+    word.audio_voice = settings.tts_voice
+    word.audio_generated_at = utc_text()
+    word.audio_bytes = len(audio)
+    word.version += 1
+    word.updated_at = utc_text()
+    if old_path and old_path != filename:
+        try:
+            old_file = (root / old_path).resolve()
+            old_file.relative_to(root.resolve())
+            if old_file.exists():
+                old_file.unlink()
+        except (OSError, ValueError):
+            pass
+    db.flush()
+    return word
+
+
+def generate_missing_word_audio(db: Session, *, limit: int) -> dict[str, object]:
+    settings = get_settings()
+    if not settings.tts_enabled:
+        raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
+    candidates = list(
+        db.scalars(
+            select(Word)
+            .where(Word.deleted_at.is_(None), Word.audio_path.is_(None))
+            .order_by(asc(Word.id))
+            .limit(limit + 1)
+        )
+    )
+    has_more = len(candidates) > limit
+    failures: list[dict[str, object]] = []
+    generated = 0
+    for word in candidates[:limit]:
+        try:
+            generate_word_audio(db, word.id, force=False)
+            generated += 1
+        except AppError as exc:
+            failures.append({"word_id": word.id, "en_word": word.en_word, "message": exc.message})
+        except Exception:  # defensive: one bad provider response must not stop a whole batch
+            failures.append({"word_id": word.id, "en_word": word.en_word, "message": "TTS 供应商调用失败"})
+    return {
+        "requested": limit,
+        "generated": generated,
+        "skipped": 0,
+        "failed": len(failures),
+        "failures": failures,
+        "has_more": has_more,
+    }
 
 SORTS = {
     "created_at_desc": (desc(Word.created_at), desc(Word.id)),

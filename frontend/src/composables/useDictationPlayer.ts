@@ -1,9 +1,9 @@
 /**
- * useDictationPlayer — 把 dictationEngine 接到浏览器 speechSynthesis 与 Vue 生命周期上。
+ * useDictationPlayer — 把 dictationEngine 接到云音频 / 浏览器 speechSynthesis 与 Vue 生命周期上。
  *
  * - 引擎负责时序（见 dictationEngine.ts）；本 composable 负责「念」的实际实现、音色选择、
  *   生命周期清理（标签页进后台 / 失焦 / 组件卸载 → 暂停或停止）。
- * - Phase 2 接云音频时，只需替换 makePlay：按 wordId 取音频 URL，有则 <audio> 播放，无则回退到此处。
+ * - Phase 2：优先播放服务端 MP3；404/播放失败时自动降级到浏览器 speechSynthesis。
  */
 import { onScopeDispose, ref, type Ref } from 'vue'
 import { createDictationEngine, type DictationEngineState, type DictationPhase } from './dictationEngine'
@@ -34,6 +34,10 @@ function speechSupported(): boolean {
     && typeof window.SpeechSynthesisUtterance !== 'undefined'
 }
 
+function audioSupported(): boolean {
+  return typeof window !== 'undefined' && typeof Audio !== 'undefined'
+}
+
 /** 按口音挑音色；返回 [voice, exact]。exact=false 表示没找到目标口音、用了兜底。 */
 function pickVoice(voices: SpeechSynthesisVoice[], accent: DictationAccent): [SpeechSynthesisVoice | null, boolean] {
   if (!voices.length) return [null, false]
@@ -49,8 +53,10 @@ function pickVoice(voices: SpeechSynthesisVoice[], accent: DictationAccent): [Sp
   return [samePrefix ?? anyEn ?? voices[0] ?? null, false]
 }
 
-export function useDictationPlayer(opts: { texts: () => string[] }): DictationPlayer {
-  const supported = speechSupported()
+export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: () => string[] }): DictationPlayer {
+  const hasSpeech = speechSupported()
+  const hasAudio = audioSupported()
+  const supported = hasSpeech || hasAudio
   const phase = ref<DictationPhase>('idle')
   const index = ref(0)
   const total = ref(0)
@@ -62,12 +68,12 @@ export function useDictationPlayer(opts: { texts: () => string[] }): DictationPl
   const voices = ref<SpeechSynthesisVoice[]>([])
 
   function loadVoices() {
-    if (!supported) return
+    if (!hasSpeech) return
     const list = window.speechSynthesis.getVoices()
     if (list.length) voices.value = list
   }
 
-  if (supported) {
+  if (hasSpeech) {
     loadVoices()
     // getVoices() 首次常返回空数组，需等 voiceschanged。
     const onVoicesChanged = () => loadVoices()
@@ -83,8 +89,12 @@ export function useDictationPlayer(opts: { texts: () => string[] }): DictationPl
     counts.value = state.counts
   }
 
-  function makePlay(): DictationPlayFn {
+  function makeSpeechPlay(): DictationPlayFn {
     return (text, hooks) => {
+      if (!hasSpeech) {
+        hooks.onError()
+        return () => {}
+      }
       const synth = window.speechSynthesis
       const settings = current.value
       const accent: DictationAccent = settings?.accent ?? 'us'
@@ -102,6 +112,50 @@ export function useDictationPlayer(opts: { texts: () => string[] }): DictationPl
       u.onerror = hooks.onError
       synth.speak(u)
       return () => { try { synth.cancel() } catch { /* 忽略 */ } }
+    }
+  }
+
+  function makePlay(): DictationPlayFn {
+    const speechPlay = makeSpeechPlay()
+    return (text, hooks, wordIndex) => {
+      const url = opts.audioUrls?.()[wordIndex]
+      if (!url || !hasAudio) return speechPlay(text, hooks, wordIndex)
+
+      const audio = new Audio(url)
+      let cancelled = false
+      let fallbackCancel: (() => void) | null = null
+      let usingFallback = false
+
+      const abandonAudio = () => {
+        audio.onended = null
+        audio.onerror = null
+        audio.pause()
+        audio.removeAttribute('src')
+        try { audio.load() } catch { /* 忽略 */ }
+      }
+      const fallback = () => {
+        if (cancelled || usingFallback) return
+        usingFallback = true
+        abandonAudio()
+        voiceWarning.value = '云音频不可用，已使用浏览器语音兜底'
+        fallbackCancel = speechPlay(text, hooks, wordIndex)
+      }
+
+      audio.preload = 'auto'
+      audio.playbackRate = current.value?.rate ?? 1
+      audio.onended = () => {
+        if (cancelled) return
+        abandonAudio()
+        hooks.onEnd()
+      }
+      audio.onerror = fallback
+      audio.play().catch(fallback)
+
+      return () => {
+        cancelled = true
+        abandonAudio()
+        if (fallbackCancel) fallbackCancel()
+      }
     }
   }
 

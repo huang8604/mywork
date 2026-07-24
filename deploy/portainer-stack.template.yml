@@ -14,6 +14,7 @@ services:
       - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/data:/app/data
       - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/secrets/api-token-pepper:/run/secrets/api-token-pepper:ro
       - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/secrets/ai-api-key:/run/secrets/ai-api-key:ro
+      - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/secrets/tts-api-key:/run/secrets/tts-api-key:ro
       - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/dictionary-index.json:/app/dictionary-index.json:ro
     environment:
       DATABASE_URL: sqlite:////app/data/vocab.db
@@ -32,6 +33,10 @@ services:
       AI_BASE_URL: https://api.REPLACE_ME.example.com/v1
       AI_API_KEY_FILE: /run/secrets/ai-api-key
       AI_MODEL: REPLACE_ME_MODEL
+      TTS_BASE_URL: https://api.xiaomimimo.com/v1
+      TTS_API_KEY_FILE: /run/secrets/tts-api-key
+      TTS_MODEL: mimo-v2.5-tts
+      TTS_VOICE: Chloe
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/live', timeout=2)"]
       interval: 30s

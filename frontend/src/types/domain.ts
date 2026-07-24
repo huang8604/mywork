@@ -18,7 +18,10 @@ export interface WordStats {
 
 export interface Word {
   id: number; en_word: string; normalized_en_word: string; phonetic: string | null
-  cn_meaning: string; example_sentence: string | null; is_custom: boolean; tags: string[]
+  cn_meaning: string; example_sentence: string | null
+  audio_path?: string | null; audio_format?: string | null; audio_voice?: string | null
+  audio_generated_at?: string | null; audio_bytes?: number | null
+  is_custom: boolean; tags: string[]
   version: number; created_at: string; updated_at: string; deleted_at: string | null; stats: WordStats
 }
 
@@ -81,6 +84,10 @@ export interface PracticeSession {
   completed_at: string | null; archived_at: string | null; items?: PracticeItem[]; rounds?: PracticeRound[]
   title: string | null; note: string | null
   web_url?: string; print_url?: string
+}
+export interface WordAudioBatchResult {
+  requested: number; generated: number; skipped: number; failed: number; has_more: boolean
+  failures: Array<{ word_id: number; en_word: string; message: string }>
 }
 export interface ImportResolved { en_word: string; word_id: number | null; action: 'created' | 'updated' | 'skipped' | 'unresolved' }
 export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; unresolved?: number; unresolved_words?: string[]; total: number; dry_run: boolean; dictionary_matches?: number; resolved?: ImportResolved[] }

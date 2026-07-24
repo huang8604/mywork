@@ -143,7 +143,7 @@ export function createDictationEngine(opts: DictationEngineOptions): DictationEn
     }
     fallback = setTimeout(settle, fallbackMs)
     timers.add(fallback)
-    const stop = opts.play(text, { onEnd: settle, onError: settle })
+    const stop = opts.play(text, { onEnd: settle, onError: settle }, index)
     cancelCurrent = typeof stop === 'function' ? stop : null
   }
 

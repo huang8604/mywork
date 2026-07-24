@@ -15,6 +15,10 @@ os.environ.setdefault("API_TOKEN_PEPPER", "test-pepper-at-least-16-bytes")
 os.environ["AI_BASE_URL"] = ""
 os.environ["AI_API_KEY"] = ""
 os.environ.pop("AI_API_KEY_FILE", None)
+# Force cloud TTS OFF by default so tests never hit the real provider/key.
+os.environ["TTS_BASE_URL"] = ""
+os.environ["TTS_API_KEY"] = ""
+os.environ.pop("TTS_API_KEY_FILE", None)
 
 from app.core.database import Base, build_engine, get_db
 from app.main import app

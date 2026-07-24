@@ -18,4 +18,4 @@ export interface DictationPlayHooks {
  * 结束时必须调 hooks.onEnd（正常结束）或 hooks.onError（底层失败）之一；
  * 返回一个「取消本次播放」的函数（引擎在重播/跳过/停止时会调用）。
  */
-export type DictationPlayFn = (text: string, hooks: DictationPlayHooks) => () => void
+export type DictationPlayFn = (text: string, hooks: DictationPlayHooks, index: number) => () => void

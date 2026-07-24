@@ -1,9 +1,12 @@
 import type { AxiosRequestConfig } from 'axios'
 import { apiClient, newEventId, unwrap } from './client'
-import type { ApiEnvelope, EnrichedWord, ImportResolved, ImportSummary, Word, WordFilters, WordPayload, WordUpdatePayload } from '@/types/domain'
+import type { ApiEnvelope, EnrichedWord, ImportResolved, ImportSummary, Word, WordAudioBatchResult, WordFilters, WordPayload, WordUpdatePayload } from '@/types/domain'
 
 export type { ImportResolved, ImportSummary }
 export type ImportResult = ImportSummary
+export function wordAudioUrl(id: number) { return `/api/v1/words/${id}/audio` }
+export async function generateWordAudio(id: number, force = false) { return unwrap((await apiClient.post<ApiEnvelope<Word>>(`/words/${id}/audio`, { force }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
+export async function generateMissingWordAudio(limit = 50) { return unwrap((await apiClient.post<ApiEnvelope<WordAudioBatchResult>>('/words/audio/generate-missing', { limit }, { headers: { 'Idempotency-Key': newEventId() }, timeout: 120_000 })).data) }
 
 export async function listWords(filters: WordFilters = {}, signal?: AbortSignal) {
   const response = await apiClient.get<ApiEnvelope<Word[]>>('/words', { params: filters, signal, paramsSerializer: { indexes: null } })
