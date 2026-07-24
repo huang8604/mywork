@@ -92,6 +92,16 @@ export interface BatchRoundResult {
   expected_version?: number; duration_ms?: number; reviewed_at?: string
 }
 export interface BatchRoundResponse { round: PracticeRound; items: ReviewLog[] }
+
+// 在线默写（dictation）— Phase 1: 浏览器 speechSynthesis,不计入结果。
+export type DictationAccent = 'us' | 'uk' | 'system'
+export interface DictationSettings {
+  intervalSec: number      // 自动模式下「上一词播放结束 → 下一词」的间隔,2..30,默认 5
+  autoAdvance: boolean     // 自动播放下一词,默认 true
+  accent: DictationAccent  // 英音/美音/系统默认,默认 'us'
+  rate: number             // 语速 0.7..1.2,默认 1.0
+  repeat: number           // 每词播放次数 1..3,默认 1
+}
 export interface Capabilities {
   api_version: string; server_time: string; server_timezone: string
   review_statuses: ReviewStatus[]; review_modes: Array<'offline' | 'online'>
