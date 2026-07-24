@@ -26,7 +26,7 @@ def ready(db: Annotated[Session, Depends(get_db)]):
     try:
         db.execute(text("SELECT 1"))
         revision = db.execute(text("SELECT version_num FROM alembic_version")).scalar_one()
-        if revision != "0003":
+        if revision != "0004":
             raise RuntimeError("migration is not current")
     except (SQLAlchemyError, RuntimeError):
         from fastapi.responses import JSONResponse

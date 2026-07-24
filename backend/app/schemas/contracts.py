@@ -103,6 +103,14 @@ class WordEnrichRequest(StrictModel):
         return values
 
 
+class WordAudioGenerateRequest(StrictModel):
+    force: bool = False
+
+
+class WordAudioBatchGenerateRequest(StrictModel):
+    limit: int = Field(default=50, ge=1, le=100)
+
+
 class ReviewCreate(StrictModel):
     word_id: int = Field(gt=0)
     status: ReviewStatus
