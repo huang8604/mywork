@@ -373,6 +373,56 @@ def test_generate_round_batch_correction_and_replay(client, db_session):
     assert next_round.json()["data"]["round_id"] != round_id
 
 
+def test_new_round_reopens_completed_session(client, db_session):
+    create_word(client, {"en_word": "alpha", "cn_meaning": "阿尔法", "tags": []})
+    create_word(client, {"en_word": "beta", "cn_meaning": "贝塔", "tags": []})
+    session = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "g-reopen"},
+        json={
+            "new_words_limit": 2,
+            "error_words_limit": 0,
+            "due_words_limit": 0,
+            "custom_words_limit": 0,
+            "fallback_unreviewed_days": 3,
+            "seed": 7,
+        },
+    ).json()["data"]
+    sid = session["session_id"]
+    items = session["items"]
+
+    # Round 1: record every item -> session completes.
+    round_id = client.post(
+        f"/api/v1/practice-sessions/{sid}/review-rounds",
+        headers={"Idempotency-Key": "r-reopen-1"},
+        json={"mode": "offline"},
+    ).json()["data"]["round_id"]
+    batch = client.put(
+        f"/api/v1/practice-review-rounds/{round_id}/results",
+        headers={"Idempotency-Key": "b-reopen-1"},
+        json={
+            "items": [
+                {"item_id": it["item_id"], "status": "known", "client_event_id": f"ev-reopen-{i}"}
+                for i, it in enumerate(items)
+            ]
+        },
+    )
+    assert batch.status_code == 200, batch.text
+    completed = client.get(f"/api/v1/practice-sessions/{sid}").json()["data"]
+    assert completed["completed_at"] is not None
+
+    # Round 2: opening a new round clears completed_at -> back to 进行中.
+    next_round = client.post(
+        f"/api/v1/practice-sessions/{sid}/review-rounds",
+        headers={"Idempotency-Key": "r-reopen-2"},
+        json={"mode": "offline"},
+    )
+    assert next_round.status_code == 201, next_round.text
+    reopened = client.get(f"/api/v1/practice-sessions/{sid}").json()["data"]
+    assert reopened["completed_at"] is None
+    assert reopened["version"] == completed["version"] + 1
+
+
 def test_batch_validation_is_atomic(client, db_session):
     create_word(client, {"en_word": "one", "cn_meaning": "一", "tags": []})
     session = client.post(

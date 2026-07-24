@@ -289,8 +289,8 @@ def recitation(
     format: str = "pdf",
 ):
     # Export a session as the 单词背诵表 handout: markdown (the canonical
-    # template) or PDF rendered from it via markdown+weasyprint ([pdf] extra).
-    _session(db, session_id)
+    # template) or PDF rendered from a themed HTML template via weasyprint.
+    session = _session(db, session_id)
     if format not in {"pdf", "md"}:
         raise AppError(422, "VALIDATION_ERROR", "format 必须是 pdf 或 md")
     items = list(
@@ -300,14 +300,14 @@ def recitation(
             .order_by(PracticeSessionItem.position)
         )
     )
-    md_text = build_recitation_md(items)
     if format == "md":
+        md_text = build_recitation_md(session, items)
         return Response(
             content=md_text.encode("utf-8"),
             media_type="text/markdown; charset=utf-8",
             headers={"Content-Disposition": 'attachment; filename="recitation.md"'},
         )
-    pdf = render_recitation_pdf(md_text)
+    pdf = render_recitation_pdf(session, items)
     return Response(
         content=pdf,
         media_type="application/pdf",
@@ -360,6 +360,11 @@ def create_round(
     )
     db.add(round_)
     db.flush()
+    # Starting a new round re-opens a finished session: clear the completion
+    # marker so the worksheet status flips 已完成 -> 进行中.
+    if session.completed_at is not None:
+        session.completed_at = None
+        session.version += 1
     data = round_data(db, round_)
     complete(idem, data=data, status_code=201, resource_type="practice_review_round", resource_id=round_.id)
     add_audit(
