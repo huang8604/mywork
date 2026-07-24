@@ -10,8 +10,8 @@ const emit = defineEmits<{ select: [sessionId: number]; back: [] }>()
 const settings = ref<DictationSettings>({
   intervalSec: 5,
   autoAdvance: true,
-  accent: 'us',
-  rate: 1,
+  accent: 'uk',
+  rate: 0.8,
   repeat: 1,
 })
 

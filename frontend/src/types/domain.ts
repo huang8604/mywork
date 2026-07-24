@@ -89,8 +89,15 @@ export interface WordAudioBatchResult {
   requested: number; generated: number; skipped: number; failed: number; has_more: boolean
   failures: Array<{ word_id: number; en_word: string; message: string }>
 }
+export type AudioProvider = 'mimo' | 'volc'
+export interface AudioProviderInfo {
+  id: AudioProvider; label: string; enabled: boolean; voice: string; model: string
+}
+export interface AudioProvidersInfo {
+  default: AudioProvider; current: AudioProvider; providers: AudioProviderInfo[]
+}
 export interface ImportResolved { en_word: string; word_id: number | null; action: 'created' | 'updated' | 'skipped' | 'unresolved' }
-export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; unresolved?: number; unresolved_words?: string[]; total: number; dry_run: boolean; dictionary_matches?: number; resolved?: ImportResolved[] }
+export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; unresolved?: number; unresolved_words?: string[]; total: number; dry_run: boolean; dictionary_matches?: number; resolved?: ImportResolved[]; audio_generation?: { queued: number } }
 export interface EnrichedWord extends WordPayload {
   dictionary_found: boolean; source: 'dictionary-index' | 'ai' | null; missing_fields: string[]
 }

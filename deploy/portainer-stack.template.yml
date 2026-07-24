@@ -15,6 +15,7 @@ services:
       - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/secrets/api-token-pepper:/run/secrets/api-token-pepper:ro
       - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/secrets/ai-api-key:/run/secrets/ai-api-key:ro
       - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/secrets/tts-api-key:/run/secrets/tts-api-key:ro
+      - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/secrets/volc-tts-api-key:/run/secrets/volc-tts-api-key:ro
       - ${VOCAB_NAS_ROOT:-/share/Container/vocab-app}/dictionary-index.json:/app/dictionary-index.json:ro
     environment:
       DATABASE_URL: sqlite:////app/data/vocab.db
@@ -33,10 +34,18 @@ services:
       AI_BASE_URL: https://api.REPLACE_ME.example.com/v1
       AI_API_KEY_FILE: /run/secrets/ai-api-key
       AI_MODEL: REPLACE_ME_MODEL
+      TTS_PROVIDER: mimo            # mimo | volc (default; picker lets admin override per action)
+      TTS_AUTO_GENERATE_ON_IMPORT: "true"
       TTS_BASE_URL: https://api.xiaomimimo.com/v1
       TTS_API_KEY_FILE: /run/secrets/tts-api-key
       TTS_MODEL: mimo-v2.5-tts
       TTS_VOICE: Chloe
+      # 豆包 seed-tts-2.0 (optional second model; needs 配置模型 + 开启超额后付费 in Ark console)
+      VOLC_TTS_BASE_URL: https://openspeech.bytedance.com
+      VOLC_TTS_API_KEY_FILE: /run/secrets/volc-tts-api-key
+      VOLC_TTS_MODEL: doubao-seed-tts-2.0
+      VOLC_TTS_RESOURCE_ID: seed-tts-2.0
+      VOLC_TTS_VOICE: BV700_V2_streaming
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz/live', timeout=2)"]
       interval: 30s

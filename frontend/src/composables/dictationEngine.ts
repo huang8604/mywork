@@ -104,8 +104,9 @@ export function createDictationEngine(opts: DictationEngineOptions): DictationEn
     repeatIndex += 1
     const { repeat } = opts.settings()
     if (repeatIndex < repeat) {
-      // 还有剩余次数：gap 后再念一次。
-      scheduleAfter(gapMs, () => {
+      // 还有剩余次数：gap 后再念一次。重复播放时把间隔拉长 1 秒,让学习者听清。
+      const repeatGap = gapMs + (repeat > 1 ? 1000 : 0)
+      scheduleAfter(repeatGap, () => {
         if (e !== epoch) return
         speakOnce()
       })

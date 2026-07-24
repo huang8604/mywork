@@ -36,12 +36,12 @@ describe('dictationEngine — 每词 N 次 + 间隙', () => {
     expect(m.calls).toEqual(['a'])
     m.fireEnd()                       // 第 1 次结束
     expect(m.calls).toEqual(['a'])
-    vi.advanceTimersByTime(499)
+    vi.advanceTimersByTime(1499)      // repeat>1 时 gap = 500+1000 = 1500
     expect(m.calls).toEqual(['a'])
     vi.advanceTimersByTime(1)         // gap 到 → 第 2 次
     expect(m.calls).toEqual(['a', 'a'])
     m.fireEnd()
-    vi.advanceTimersByTime(500)       // 第 3 次
+    vi.advanceTimersByTime(1500)      // 第 3 次
     expect(m.calls).toEqual(['a', 'a', 'a'])
     m.fireEnd()                       // 第 3 次结束 → onWordFinished（手动模式不推进）
     expect(m.calls).toEqual(['a', 'a', 'a'])
@@ -58,8 +58,8 @@ describe('dictationEngine — 自动模式间隔从最后一次 end 起算', () 
       play: m.play, gapMs: 500, fallbackMs: 1e9,
     })
     eng.start()
-    m.fireEnd(); vi.advanceTimersByTime(500)  // → 第 2 次
-    m.fireEnd(); vi.advanceTimersByTime(500)  // → 第 3 次
+    m.fireEnd(); vi.advanceTimersByTime(1500)  // → 第 2 次 (repeat gap 1500)
+    m.fireEnd(); vi.advanceTimersByTime(1500)  // → 第 3 次
     expect(m.calls).toEqual(['a', 'a', 'a'])
     // 此时还没触发第 3 次 end：即使等够 intervalSec，也不能播 'b'
     vi.advanceTimersByTime(5000)
