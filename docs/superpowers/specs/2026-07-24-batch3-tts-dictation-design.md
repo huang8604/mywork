@@ -36,8 +36,10 @@
 ### D. 第二 TTS 模型(项 5)— config + tts.py
 - `Settings` 新增:`volc_base_url`(默认 `https://openspeech.bytedance.com`)、`volc_api_key(_file)`、`volc_model`(默认 `doubao-seed-tts-2.0`)、`volc_resource_id`(默认 `seed-tts-2.0`)、`volc_voice`(默认英音候选,待开通后定,先 `BV700_V2_streaming`)、`volc_timeout_seconds`(默认 60);属性 `volc_enabled`。
 - `Settings` 新增 `tts_provider`(默认 `mimo`)、`tts_auto_generate_on_import`(默认 true)。
-- `tts.py` 重构:`synthesize_word_mp3(text, *, provider=None, settings=None)` 分派到 `_synthesize_mimo` / `_synthesize_volc`。`provider` 默认 `settings.tts_provider`;若该 provider 未配置则回退到任一已配置者,都未配置则 `409 TTS_NOT_CONFIGURED`。
-- `_synthesize_volc`:`urllib.request.Request(volc_base_url+"/api/v3/plan/tts/unidirectional?api_key="+key, method=POST, headers={Content-Type, X-Api-Resource-Id: volc_resource_id})`,body `{"req_params":{text,model,voice_type:volc_voice,encoding:"mp3",speed:0.9}}`。响应防御式解析:二进制(以 `\xff\xf3`/`\xff\xfb`/`ID3` 开头)直接用;否则 JSON 取 `data`/`audio` base64;失败 `502 TTS_PROVIDER_ERROR`。代码注释标注「契约已实测至 acquire 步骤;模型待账号开通后验证音频字段」。
+- `tts.py` 重构:`synthesize_word_mp3(text, *, provider=None, settings=None)` 分派到 `_synthesize_mimo` / `_synthesize_volc`。`provider` 默认 `settings.tts_provider`。
+- **跨模型兜底**:先尝试选中(或默认)provider;若该 provider **未配置**(`volc_enabled`/`tts_enabled` 为 false)或**调用失败**(`AppError` 502/超时类),自动尝试**另一个已配置**的 provider;两者都失败才抛最后一个错;两者都未配置 → `409 TTS_NOT_CONFIGURED`。成功时 `generate_word_audio` 把实际生效的音色(`audio_voice`)写回,UI 可据此看到实际用了哪个模型。`AUDIO_STORAGE_ERROR`(磁盘类)不在兜底范围(发生在合成之后)。
+- `_synthesize_mimo` / `_synthesize_volc`:各自返回 mp3 `bytes`;未配置抛 `AppError(409,"TTS_NOT_CONFIGURED")`,远端失败抛 `AppError(502,"TTS_PROVIDER_ERROR")`。`synthesize_word_mp3` 负责兜底分派(见上)。
+- `_synthesize_volc` 契约(实测):`urllib.request.Request(volc_base_url+"/api/v3/plan/tts/unidirectional?api_key="+key, POST, headers={Content-Type, X-Api-Resource-Id: volc_resource_id})`,body `{"req_params":{text,model,voice_type:volc_voice,encoding:"mp3",speed:0.9}}`;响应防御式解析(二进制头 `\xff\xf3`/`\xff\xfb`/`ID3` 直接用,否则 JSON 取 base64 `data`/`audio`);注释标注「实测至 acquire 步骤,音频字段待账号开通后验证」。
 - `generate_word_audio(db, word_id, *, force, provider=None)` 透传 provider;`audio_voice` 记录实际音色。
 
 ### E. Provider 元数据 + 生成端点(项 5)— 路由 + scopes
