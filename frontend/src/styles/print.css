@@ -10,12 +10,12 @@
   .print-section { display: none !important; border: 0 !important; box-shadow: none !important; }
   .print-section.print-target { display: block !important; }
   .worksheet { width: 100% !important; color: #000 !important; background: #fff !important; }
-  .worksheet-header { grid-template-columns: minmax(0, 1fr) auto auto !important; gap: 2mm 4mm !important; padding: 2.2mm 3mm !important; border-top: 3pt solid #174f8f !important; border-bottom: .7pt solid #a9bfd8 !important; background: #edf5fd !important; }
-  .worksheet-header h2 { margin: 1pt 0 !important; font-size: 15pt !important; }
-  .worksheet-header dl { grid-column: auto !important; gap: 3mm !important; padding: 0 !important; }
-  .worksheet-header dl div { min-width: 16mm !important; }
-  .worksheet-brand > span, .worksheet-header dt, .worksheet-header dd { font-size: 7.5pt !important; }
-  .sheet-mark { border-width: 1pt !important; }
+  .ws-hero { gap: 2mm 4mm !important; padding: 2.4mm 3mm !important; min-height: 0 !important; background: var(--ws-deep) !important; background: linear-gradient(120deg, var(--ws-deep), var(--ws-primary)) !important; border-bottom: 2mm solid var(--ws-accent) !important; border-radius: 0 !important; }
+  .ws-hero h2 { margin: 1pt 0 !important; font-size: 15pt !important; color: #fff !important; }
+  .ws-hero .ws-eyebrow, .ws-hero .ws-subtitle { color: #fff !important; }
+  .ws-date-card { min-width: 36mm !important; padding: 1.6mm 2.4mm !important; }
+  .ws-date-card .ws-date-value { font-size: 9pt !important; color: var(--ws-deep) !important; }
+  .ws-date-card .ws-date-label, .ws-date-card .ws-weekday { font-size: 7pt !important; }
   .worksheet-mobile { display: none !important; }
   .worksheet-table { display: table !important; width: 100% !important; table-layout: fixed; border-collapse: collapse; }
   .worksheet-table thead { display: table-header-group; }
@@ -24,7 +24,7 @@
   .worksheet-table th, .worksheet-table td { border: .6pt solid #8197b2 !important; padding: 3pt 3.5pt !important; font-size: var(--worksheet-font-size, 11pt) !important; line-height: 1.2; overflow-wrap: break-word; word-break: normal; }
   .worksheet-table .meaning-cell { font-weight: 600 !important; }
   .worksheet-table .example-cell { font-size: .9em !important; line-height: 1.15 !important; color: #44546a !important; }
-  .worksheet-table th { color: #fff !important; background: #245f9f !important; }
+  .worksheet-table th { color: #fff !important; background: var(--ws-primary) !important; }
   .worksheet-table tbody tr:nth-child(even) td { background: #f1f6fc !important; }
   .worksheet-table .repeat-print-header { display: table-row !important; }
   .worksheet-table .repeat-print-header th { padding: 2.5pt 4pt !important; font-size: 7pt !important; text-align: right !important; color: #24476e !important; background: #dceafb !important; }
