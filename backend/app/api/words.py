@@ -23,13 +23,16 @@ from app.schemas import (
     VersionRequest,
     WordAudioBatchGenerateRequest,
     WordAudioGenerateRequest,
+    WordAudioRegenerateAllRequest,
     WordCreate,
     WordEnrichRequest,
     WordUpdate,
 )
+from app.services.audio_worker import enqueue_audio_generation
 from app.services.dictionary import enrich_preview, enrich_word
 from app.services.idempotency import claim, complete
 from app.services.serializers import word_data
+from app.services.tts import audio_providers_info
 from app.services.words import (
     SORTS,
     create_word,
@@ -39,6 +42,7 @@ from app.services.words import (
     get_word,
     iter_words,
     list_words,
+    non_deleted_word_ids,
     reimport_word,
     reset_word_progress,
     restore_word,
@@ -461,6 +465,19 @@ async def import_words(
         data["dry_run"],
     )
     _commit(db)
+    settings = get_settings()
+    if (
+        not dry_run
+        and settings.tts_auto_generate_on_import
+        and (settings.tts_enabled or settings.volc_enabled)
+    ):
+        created_ids = [
+            r["word_id"]
+            for r in resolved
+            if r.get("action") == "created" and r.get("word_id")
+        ]
+        queued = enqueue_audio_generation(created_ids, force=False)
+        data["audio_generation"] = {"queued": queued}
     return envelope(request, data)
 
 
@@ -532,6 +549,14 @@ def _parse_import(filename: str, content_type: str, raw: bytes) -> list[WordCrea
         raise AppError(422, "VALIDATION_ERROR", "导入数据无效", details) from exc
 
 
+@router.get("/audio/providers")
+def audio_providers(
+    request: Request,
+    _actor: Annotated[Actor, Depends(require_scopes("words:read"))],
+):
+    return envelope(request, audio_providers_info())
+
+
 @router.post("/audio/generate-missing")
 def generate_missing_audio(
     request: Request,
@@ -556,7 +581,7 @@ def generate_missing_audio(
             status_code=idem.replay_status or 200,
             headers={"Idempotency-Replayed": "true"},
         )
-    data = generate_missing_word_audio(db, limit=payload.limit)
+    data = generate_missing_word_audio(db, limit=payload.limit, provider=payload.provider)
     complete(idem, data=data, status_code=200, resource_type="word_audio_batch")
     add_audit(
         db,
@@ -569,6 +594,47 @@ def generate_missing_audio(
             key: data[key]
             for key in ("requested", "generated", "failed", "has_more")
         },
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
+@router.post("/audio/regenerate-all")
+def regenerate_all_audio(
+    request: Request,
+    payload: WordAudioRegenerateAllRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("words:write"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/words/audio/regenerate-all",
+        key=idempotency_key,
+        payload=payload.model_dump(mode="json"),
+        required=True,
+    )
+    if idem and idem.replayed:
+        return envelope(
+            request,
+            idem.replay_data,
+            status_code=idem.replay_status or 200,
+            headers={"Idempotency-Replayed": "true"},
+        )
+    word_ids = non_deleted_word_ids(db)
+    queued = enqueue_audio_generation(word_ids, force=True, provider=payload.provider)
+    data = {"queued": queued, "total": len(word_ids), "provider": payload.provider}
+    complete(idem, data=data, status_code=200, resource_type="word_audio_batch")
+    add_audit(
+        db,
+        request_id=_request_id(request),
+        actor=actor,
+        action="word_audio.regenerate_all",
+        outcome="success",
+        http_status=200,
+        metadata={"queued": queued, "total": len(word_ids)},
     )
     _commit(db)
     return envelope(request, data)
@@ -616,7 +682,7 @@ def generate_audio(
             status_code=idem.replay_status or 200,
             headers={"Idempotency-Replayed": "true"},
         )
-    word = generate_word_audio(db, word_id, force=payload.force)
+    word = generate_word_audio(db, word_id, force=payload.force, provider=payload.provider)
     data = word_data(db, word)
     complete(idem, data=data, status_code=200, resource_type="word", resource_id=word.id)
     add_audit(
@@ -628,7 +694,7 @@ def generate_audio(
         http_status=200,
         target_type="word",
         target_id=word.id,
-        metadata={"force": payload.force},
+        metadata={"force": payload.force, "provider": payload.provider},
     )
     _commit(db)
     return envelope(request, data)

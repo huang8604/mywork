@@ -103,12 +103,21 @@ class WordEnrichRequest(StrictModel):
         return values
 
 
+AudioProvider = Literal["mimo", "volc"]
+
+
 class WordAudioGenerateRequest(StrictModel):
     force: bool = False
+    provider: AudioProvider | None = None
 
 
 class WordAudioBatchGenerateRequest(StrictModel):
     limit: int = Field(default=50, ge=1, le=100)
+    provider: AudioProvider | None = None
+
+
+class WordAudioRegenerateAllRequest(StrictModel):
+    provider: AudioProvider | None = None
 
 
 class ReviewCreate(StrictModel):

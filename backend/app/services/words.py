@@ -215,12 +215,16 @@ def word_audio_file(word: Word, settings: Settings | None = None) -> Path | None
     return candidate if candidate.is_file() else None
 
 
-def generate_word_audio(db: Session, word_id: int, *, force: bool = False) -> Word:
+def generate_word_audio(
+    db: Session, word_id: int, *, force: bool = False, provider: str | None = None
+) -> Word:
     word = get_word(db, word_id, include_deleted=False)
     if word.audio_path and not force and word_audio_file(word):
         return word
     settings = get_settings()
-    audio = tts_service.synthesize_word_mp3(word.en_word, settings=settings)
+    audio, voice = tts_service.synthesize_word_mp3(
+        word.en_word, provider=provider, settings=settings
+    )
     root = audio_dir(settings)
     try:
         root.mkdir(parents=True, exist_ok=True)
@@ -244,7 +248,7 @@ def generate_word_audio(db: Session, word_id: int, *, force: bool = False) -> Wo
     old_path = word.audio_path
     word.audio_path = filename
     word.audio_format = "mp3"
-    word.audio_voice = settings.tts_voice
+    word.audio_voice = voice
     word.audio_generated_at = utc_text()
     word.audio_bytes = len(audio)
     word.version += 1
@@ -261,9 +265,11 @@ def generate_word_audio(db: Session, word_id: int, *, force: bool = False) -> Wo
     return word
 
 
-def generate_missing_word_audio(db: Session, *, limit: int) -> dict[str, object]:
+def generate_missing_word_audio(
+    db: Session, *, limit: int, provider: str | None = None
+) -> dict[str, object]:
     settings = get_settings()
-    if not settings.tts_enabled:
+    if not (settings.tts_enabled or settings.volc_enabled):
         raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
     candidates = list(
         db.scalars(
@@ -278,7 +284,7 @@ def generate_missing_word_audio(db: Session, *, limit: int) -> dict[str, object]
     generated = 0
     for word in candidates[:limit]:
         try:
-            generate_word_audio(db, word.id, force=False)
+            generate_word_audio(db, word.id, force=False, provider=provider)
             generated += 1
         except AppError as exc:
             failures.append({"word_id": word.id, "en_word": word.en_word, "message": exc.message})
@@ -292,6 +298,14 @@ def generate_missing_word_audio(db: Session, *, limit: int) -> dict[str, object]
         "failures": failures,
         "has_more": has_more,
     }
+
+
+def non_deleted_word_ids(db: Session) -> list[int]:
+    return list(
+        db.scalars(
+            select(Word.id).where(Word.deleted_at.is_(None)).order_by(asc(Word.id))
+        )
+    )
 
 SORTS = {
     "created_at_desc": (desc(Word.created_at), desc(Word.id)),

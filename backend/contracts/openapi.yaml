@@ -956,6 +956,21 @@
             "minimum": 1.0,
             "title": "Limit",
             "type": "integer"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "mimo",
+                  "volc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
           }
         },
         "title": "WordAudioBatchGenerateRequest",
@@ -968,9 +983,46 @@
             "default": false,
             "title": "Force",
             "type": "boolean"
+          },
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "mimo",
+                  "volc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
           }
         },
         "title": "WordAudioGenerateRequest",
+        "type": "object"
+      },
+      "WordAudioRegenerateAllRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "mimo",
+                  "volc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "title": "WordAudioRegenerateAllRequest",
         "type": "object"
       },
       "WordCreate": {
@@ -3603,6 +3655,116 @@
           }
         ],
         "summary": "Generate Missing Audio",
+        "tags": [
+          "words"
+        ],
+        "x-required-scopes": [
+          "words:write"
+        ]
+      }
+    },
+    "/api/v1/words/audio/providers": {
+      "get": {
+        "operationId": "audio_providers_api_v1_words_audio_providers_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Audio Providers",
+        "tags": [
+          "words"
+        ],
+        "x-required-scopes": [
+          "words:read"
+        ]
+      }
+    },
+    "/api/v1/words/audio/regenerate-all": {
+      "post": {
+        "operationId": "regenerate_all_audio_api_v1_words_audio_regenerate_all_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WordAudioRegenerateAllRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Regenerate All Audio",
         "tags": [
           "words"
         ],

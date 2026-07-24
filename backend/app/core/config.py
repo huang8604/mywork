@@ -50,6 +50,15 @@ class Settings:
     tts_voice: str
     tts_audio_dir: str
     tts_timeout_seconds: float
+    tts_provider: str
+    tts_auto_generate_on_import: bool
+    volc_base_url: str
+    volc_api_key_file: str | None
+    volc_api_key: str
+    volc_model: str
+    volc_resource_id: str
+    volc_voice: str
+    volc_timeout_seconds: float
     web_login_required: bool
     web_admin_username: str
     web_admin_password: str
@@ -74,6 +83,13 @@ class Settings:
                 raise ValueError("TTS_API_KEY_FILE must not be empty")
         else:
             tts_api_key = os.getenv("TTS_API_KEY", "").strip()
+        volc_api_key_file = os.getenv("VOLC_TTS_API_KEY_FILE")
+        if volc_api_key_file:
+            volc_api_key = Path(volc_api_key_file).read_text(encoding="utf-8").strip()
+            if not volc_api_key:
+                raise ValueError("VOLC_TTS_API_KEY_FILE must not be empty")
+        else:
+            volc_api_key = os.getenv("VOLC_TTS_API_KEY", "").strip()
         value = cls(
             database_url=os.getenv("DATABASE_URL", "sqlite:///./data/vocab.db"),
             app_timezone=os.getenv("APP_TIMEZONE", "Asia/Shanghai"),
@@ -110,6 +126,15 @@ class Settings:
             tts_voice=os.getenv("TTS_VOICE", "Chloe"),
             tts_audio_dir=os.getenv("TTS_AUDIO_DIR", "").strip(),
             tts_timeout_seconds=float(os.getenv("TTS_TIMEOUT_SECONDS", "60")),
+            tts_provider=os.getenv("TTS_PROVIDER", "mimo").strip().lower() or "mimo",
+            tts_auto_generate_on_import=_boolean("TTS_AUTO_GENERATE_ON_IMPORT", True),
+            volc_base_url=os.getenv("VOLC_TTS_BASE_URL", "https://openspeech.bytedance.com").rstrip("/"),
+            volc_api_key_file=volc_api_key_file,
+            volc_api_key=volc_api_key,
+            volc_model=os.getenv("VOLC_TTS_MODEL", "doubao-seed-tts-2.0"),
+            volc_resource_id=os.getenv("VOLC_TTS_RESOURCE_ID", "seed-tts-2.0"),
+            volc_voice=os.getenv("VOLC_TTS_VOICE", "BV700_V2_streaming"),
+            volc_timeout_seconds=float(os.getenv("VOLC_TTS_TIMEOUT_SECONDS", "60")),
             web_login_required=_boolean("WEB_LOGIN_REQUIRED", False),
             web_admin_username=os.getenv("WEB_ADMIN_USERNAME", "admin"),
             web_admin_password=os.getenv("WEB_ADMIN_PASSWORD", ""),
@@ -129,6 +154,10 @@ class Settings:
             raise ValueError("SESSION_MAX_AGE must be positive")
         if self.tts_timeout_seconds <= 0:
             raise ValueError("TTS_TIMEOUT_SECONDS must be positive")
+        if self.volc_timeout_seconds <= 0:
+            raise ValueError("VOLC_TTS_TIMEOUT_SECONDS must be positive")
+        if self.tts_provider not in {"mimo", "volc"}:
+            raise ValueError("TTS_PROVIDER must be 'mimo' or 'volc'")
         if min(
             self.api_rate_limit_per_minute,
             self.max_import_bytes,
@@ -175,6 +204,13 @@ class Settings:
     @property
     def tts_enabled(self) -> bool:
         return bool(self.tts_base_url and self.tts_api_key)
+
+    @property
+    def volc_enabled(self) -> bool:
+        return bool(self.volc_base_url and self.volc_api_key)
+
+    def provider_enabled(self, provider: str) -> bool:
+        return self.tts_enabled if provider == "mimo" else self.volc_enabled
 
 
 @lru_cache

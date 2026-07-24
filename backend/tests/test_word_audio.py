@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 
 from app.core.config import get_settings
+from app.core.errors import AppError
 from conftest import create_word, seed_credential
 
 MP3 = b"\xff\xf3\x84\xc4" + b"audio" * 20
@@ -17,19 +18,34 @@ def _enable_tts(monkeypatch, tmp_path) -> None:
     get_settings.cache_clear()
 
 
+def _enable_volc(monkeypatch) -> None:
+    monkeypatch.setenv("VOLC_TTS_BASE_URL", "https://openspeech.example.invalid")
+    monkeypatch.setenv("VOLC_TTS_API_KEY", "volc-key")
+    monkeypatch.setenv("VOLC_TTS_MODEL", "doubao-seed-tts-2.0")
+    monkeypatch.setenv("VOLC_TTS_RESOURCE_ID", "seed-tts-2.0")
+    monkeypatch.setenv("VOLC_TTS_VOICE", "BV700_V2_streaming")
+    get_settings.cache_clear()
+
+
 def _mock_tts(monkeypatch, impl: Callable[..., bytes] | None = None) -> list[str]:
     import app.services.tts as tts
 
     calls: list[str] = []
 
-    def fake(text: str, *, settings=None) -> bytes:
+    def fake(text: str, *, provider=None, settings=None) -> tuple[bytes, str]:
         calls.append(text)
         if impl is not None:
-            return impl(text, settings=settings)
-        return MP3
+            return impl(text, settings=settings), "Chloe"
+        return MP3, "Chloe"
 
     monkeypatch.setattr(tts, "synthesize_word_mp3", fake)
     return calls
+
+
+def _mock_providers(monkeypatch, mimo_fn, volc_fn):
+    import app.services.tts as tts
+
+    monkeypatch.setattr(tts, "_PROVIDERS", {"mimo": mimo_fn, "volc": volc_fn})
 
 
 def test_audio_generation_requires_tts_config(client):
@@ -207,3 +223,225 @@ def test_practice_item_audio_missing_falls_back_with_404(client):
     )
     assert response.status_code == 404
     assert response.json()["code"] == "AUDIO_NOT_FOUND"
+
+
+def test_synthesize_dispatches_to_selected_provider(monkeypatch, tmp_path):
+    _enable_tts(monkeypatch, tmp_path)
+    _enable_volc(monkeypatch)
+    import app.services.tts as tts
+
+    mimo_calls: list[str] = []
+    volc_calls: list[str] = []
+
+    def fake_mimo(text, settings):
+        mimo_calls.append(text)
+        return MP3
+
+    def fake_volc(text, settings):
+        volc_calls.append(text)
+        return MP3
+
+    _mock_providers(monkeypatch, fake_mimo, fake_volc)
+    audio, voice = tts.synthesize_word_mp3("camera", provider="volc")
+    assert audio == MP3
+    assert voice == "BV700_V2_streaming"
+    assert volc_calls == ["camera"]
+    assert mimo_calls == []
+
+
+def test_synthesize_falls_back_to_other_provider_on_failure(monkeypatch, tmp_path):
+    _enable_tts(monkeypatch, tmp_path)
+    _enable_volc(monkeypatch)
+    import app.services.tts as tts
+
+    def fake_mimo(text, settings):
+        raise AppError(502, "TTS_PROVIDER_ERROR", "mimo down")
+
+    def fake_volc(text, settings):
+        return MP3 + b"volc"
+
+    _mock_providers(monkeypatch, fake_mimo, fake_volc)
+    audio, voice = tts.synthesize_word_mp3("camera", provider="mimo")
+    assert audio == MP3 + b"volc"
+    assert voice == "BV700_V2_streaming"
+
+
+def test_synthesize_skips_unconfigured_provider(monkeypatch, tmp_path):
+    # mimo configured, volc not; ask for volc → falls back to mimo.
+    _enable_tts(monkeypatch, tmp_path)
+    import app.services.tts as tts
+
+    def fake_mimo(text, settings):
+        return MP3
+
+    def fake_volc(text, settings):
+        raise AssertionError("volc should not be called when unconfigured")
+
+    _mock_providers(monkeypatch, fake_mimo, fake_volc)
+    audio, voice = tts.synthesize_word_mp3("camera", provider="volc")
+    assert audio == MP3
+    assert voice == "Chloe"
+
+
+def test_synthesize_raises_when_neither_configured(monkeypatch):
+    monkeypatch.delenv("TTS_BASE_URL", raising=False)
+    monkeypatch.delenv("TTS_API_KEY", raising=False)
+    monkeypatch.delenv("VOLC_TTS_API_KEY", raising=False)
+    get_settings.cache_clear()
+    import app.services.tts as tts
+
+    _mock_providers(monkeypatch, lambda t, s: MP3, lambda t, s: MP3)
+    try:
+        tts.synthesize_word_mp3("camera")
+    except AppError as exc:
+        assert exc.code == "TTS_NOT_CONFIGURED"
+    else:
+        raise AssertionError("expected TTS_NOT_CONFIGURED")
+
+
+def test_audio_providers_endpoint(client, monkeypatch, tmp_path):
+    _enable_tts(monkeypatch, tmp_path)  # mimo on, volc off
+    response = client.get("/api/v1/words/audio/providers")
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["current"] == "mimo"
+    by_id = {p["id"]: p for p in data["providers"]}
+    assert by_id["mimo"]["enabled"] is True
+    assert by_id["volc"]["enabled"] is False
+    assert by_id["mimo"]["model"] == "mimo-v2.5-tts"
+    assert by_id["volc"]["model"] == "doubao-seed-tts-2.0"
+
+
+def test_regenerate_all_enqueues_all_non_deleted_force(client, monkeypatch, tmp_path):
+    _enable_tts(monkeypatch, tmp_path)
+    _mock_tts(monkeypatch)
+    a = create_word(client, {"en_word": "alpha", "cn_meaning": "阿尔法", "tags": []})
+    b = create_word(client, {"en_word": "beta", "cn_meaning": "贝塔", "tags": []})
+
+    recorded: dict = {}
+
+    def fake_enqueue(word_ids, *, force, provider=None):
+        recorded["ids"] = list(word_ids)
+        recorded["force"] = force
+        recorded["provider"] = provider
+        return len(word_ids)
+
+    import app.api.words as words_api
+
+    monkeypatch.setattr(words_api, "enqueue_audio_generation", fake_enqueue)
+
+    response = client.post(
+        "/api/v1/words/audio/regenerate-all",
+        headers={"Idempotency-Key": "regen-all-1"},
+        json={"provider": "volc"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["queued"] == 2
+    assert data["total"] == 2
+    assert sorted(recorded["ids"]) == sorted([a["id"], b["id"]])
+    assert recorded["force"] is True
+    assert recorded["provider"] == "volc"
+
+
+def test_audio_worker_run_job_generates_and_skips_deleted(db_session, monkeypatch, tmp_path):
+    _enable_tts(monkeypatch, tmp_path)
+    _mock_tts(monkeypatch)
+    from app.services import audio_worker
+    from app.models import Word
+
+    word = Word(
+        en_word="ghost",
+        normalized_en_word="ghost",
+        cn_meaning="幽灵",
+        is_custom=0,
+        version=1,
+    )
+    db_session.add(word)
+    db_session.flush()
+    deleted = Word(
+        en_word="gone",
+        normalized_en_word="gone",
+        cn_meaning="消失",
+        is_custom=0,
+        version=1,
+        deleted_at="2026-01-01T00:00:00Z",
+    )
+    db_session.add(deleted)
+    db_session.flush()
+
+    assert audio_worker.run_audio_job(db_session, word.id, force=False) is True
+    assert db_session.get(Word, word.id).audio_path is not None
+    assert audio_worker.run_audio_job(db_session, deleted.id, force=False) is False
+
+
+def test_audio_worker_enqueue_dedups_and_drains(monkeypatch):
+    from app.services import audio_worker
+    from unittest.mock import MagicMock
+
+    processed: list[int] = []
+
+    def fake_run(db, word_id, *, force, provider):
+        processed.append(word_id)
+
+    monkeypatch.setattr(audio_worker, "run_audio_job", fake_run)
+    worker = audio_worker._AudioWorker(session_factory=lambda: MagicMock())
+    added1 = worker.enqueue([1, 2, 3], force=True)
+    assert added1 == 3
+    added2 = worker.enqueue([2, 4], force=True)  # 2 already pending
+    assert added2 == 1
+    worker.wait_drained(timeout=5)
+    assert sorted(processed) == [1, 2, 3, 4]
+
+
+def test_import_enqueues_background_audio_generation(client, monkeypatch, tmp_path):
+    _enable_tts(monkeypatch, tmp_path)
+    _mock_tts(monkeypatch)
+    import json
+
+    import app.api.words as words_api
+
+    recorded: dict = {}
+
+    def fake_enqueue(word_ids, *, force, provider=None):
+        recorded["ids"] = list(word_ids)
+        recorded["force"] = force
+        return len(word_ids)
+
+    monkeypatch.setattr(words_api, "enqueue_audio_generation", fake_enqueue)
+
+    rows = [{"en_word": "ember", "cn_meaning": "余烬"}, {"en_word": "flame", "cn_meaning": "火焰"}]
+    response = client.post(
+        "/api/v1/words/import",
+        headers={"Idempotency-Key": "import-audio-1"},
+        files={"file": ("words.json", json.dumps(rows).encode(), "application/json")},
+        data={"conflict_policy": "skip", "unresolved_policy": "skip", "dry_run": "false"},
+    )
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert data["created"] == 2
+    assert data["audio_generation"]["queued"] == 2
+    assert recorded["force"] is False
+    assert len(recorded["ids"]) == 2
+
+
+def test_import_skips_audio_generation_when_disabled(client, monkeypatch, tmp_path):
+    _enable_tts(monkeypatch, tmp_path)
+    _mock_tts(monkeypatch)
+    monkeypatch.setenv("TTS_AUTO_GENERATE_ON_IMPORT", "false")
+    get_settings.cache_clear()
+    import app.api.words as words_api
+
+    def fake_enqueue(word_ids, *, force, provider):
+        raise AssertionError("should not enqueue when auto-generate disabled")
+
+    monkeypatch.setattr(words_api, "enqueue_audio_generation", fake_enqueue)
+
+    response = client.post(
+        "/api/v1/words/import",
+        headers={"Idempotency-Key": "import-audio-off"},
+        files={"file": ("words.txt", b"smoke\n", "text/plain")},
+        data={"conflict_policy": "skip", "unresolved_policy": "skip", "dry_run": "false"},
+    )
+    assert response.status_code == 200, response.text
+    assert "audio_generation" not in response.json()["data"]
