@@ -110,6 +110,11 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
       u.volume = 1
       u.onend = hooks.onEnd
       u.onerror = hooks.onError
+      // Chrome speechSynthesis 长期 bug:连续 speak()(下一词 / 重复第 2 次)若不在前面
+      // cancel() 清队列,会卡住 → 第 2 个起静音或不触发 onend(表现就是「自动到下一词没声音」)。
+      // 引擎保证上一次 onend 已处理完才发下一次 speak(永远经 scheduleAfter 定时器,不从 onend
+      // 同步重入),所以这里 cancel() 队列为空 = no-op,只起「冲掉卡住状态」的作用。
+      try { synth.cancel() } catch { /* 忽略 */ }
       synth.speak(u)
       return () => { try { synth.cancel() } catch { /* 忽略 */ } }
     }

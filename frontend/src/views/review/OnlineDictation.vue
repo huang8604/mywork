@@ -11,8 +11,8 @@ const settings = ref<DictationSettings>({
   intervalSec: 5,
   autoAdvance: true,
   accent: 'uk',
-  rate: 0.8,
-  repeat: 1,
+  rate: 1.0,
+  repeat: 2,
 })
 
 const texts = () => props.session.items?.map(i => i.word.en_word) ?? []
