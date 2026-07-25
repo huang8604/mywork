@@ -255,6 +255,7 @@ REQUIRED_SCOPES: dict[tuple[str, str], list[str]] = {
     ("POST", "/api/v1/words/import"): ["words:write"],
     ("POST", "/api/v1/words/audio/generate-missing"): ["words:write"],
     ("GET", "/api/v1/words/audio/providers"): ["words:read"],
+    ("GET", "/api/v1/words/audio/progress"): ["words:read"],
     ("POST", "/api/v1/words/audio/regenerate-all"): ["words:write"],
     ("GET", "/api/v1/words/{word_id}"): ["words:read"],
     ("GET", "/api/v1/words/{word_id}/audio"): ["words:read"],

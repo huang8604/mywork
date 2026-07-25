@@ -93,21 +93,22 @@ def _decode_audio(raw: bytes) -> bytes:
 def _synthesize_volc(text: str, settings: Settings) -> bytes:
     """doubao-seed-tts-2.0 via the openspeech agent-plan HTTP endpoint.
 
-    Contract verified by live probe up to the resource-acquire step:
+    Contract verified by live probe:
       POST ``{volc_base_url}/api/v3/plan/tts/unidirectional?api_key=<key>``
       Headers: ``X-Api-Resource-Id: seed-tts-2.0`` (the api key MUST go in the query
       string — a bare Authorization header is rejected as "app key not found").
-      Body: ``{"req_params": {text, model, voice_type, encoding, speed}}``.
-    The success audio field is confirmed once the model is activated in the Ark
-    console (配置模型 + 开启超额后付费); ``_decode_audio`` tolerates the likely shapes.
+      Body: ``{"req_params": {text, speaker (string), audio_params:{format, speed_ratio}}}``.
+    NOTE: the speaker id must be one bound to the seed-tts-2.0 resource on this
+    account — the built-in ``BVxxx`` voices return ``55000000 resource ID is
+    mismatched with speaker related resource``. Set ``VOLC_TTS_VOICE`` to a valid
+    speaker id from the 火山方舟 console. The success audio field is confirmed once
+    a valid speaker is supplied; ``_decode_audio`` tolerates the likely shapes.
     """
     body = {
         "req_params": {
             "text": text,
-            "model": settings.volc_model,
-            "voice_type": settings.volc_voice,
-            "encoding": "mp3",
-            "speed": VOLC_SPEED,
+            "speaker": settings.volc_voice,
+            "audio_params": {"format": "mp3", "speed_ratio": VOLC_SPEED},
         }
     }
     url = (

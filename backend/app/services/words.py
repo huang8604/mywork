@@ -265,39 +265,29 @@ def generate_word_audio(
     return word
 
 
-def generate_missing_word_audio(
+def enqueue_missing_word_audio(
     db: Session, *, limit: int, provider: str | None = None
 ) -> dict[str, object]:
+    """Enqueue up to ``limit`` audio-less words for background generation.
+
+    Returns ``{queued, total, provider}``. The route exposes run progress via
+    ``GET /api/v1/words/audio/progress`` (see ``services/audio_worker.py``).
+    """
+    from app.services.audio_worker import enqueue_audio_generation
+
     settings = get_settings()
     if not (settings.tts_enabled or settings.volc_enabled):
         raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
-    candidates = list(
+    ids = list(
         db.scalars(
-            select(Word)
+            select(Word.id)
             .where(Word.deleted_at.is_(None), Word.audio_path.is_(None))
             .order_by(asc(Word.id))
-            .limit(limit + 1)
+            .limit(limit)
         )
     )
-    has_more = len(candidates) > limit
-    failures: list[dict[str, object]] = []
-    generated = 0
-    for word in candidates[:limit]:
-        try:
-            generate_word_audio(db, word.id, force=False, provider=provider)
-            generated += 1
-        except AppError as exc:
-            failures.append({"word_id": word.id, "en_word": word.en_word, "message": exc.message})
-        except Exception:  # defensive: one bad provider response must not stop a whole batch
-            failures.append({"word_id": word.id, "en_word": word.en_word, "message": "TTS 供应商调用失败"})
-    return {
-        "requested": limit,
-        "generated": generated,
-        "skipped": 0,
-        "failed": len(failures),
-        "failures": failures,
-        "has_more": has_more,
-    }
+    queued = enqueue_audio_generation(ids, force=False, provider=provider) if ids else 0
+    return {"queued": queued, "total": len(ids), "provider": provider}
 
 
 def non_deleted_word_ids(db: Session) -> list[int]:

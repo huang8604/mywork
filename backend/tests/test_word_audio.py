@@ -126,18 +126,21 @@ def test_force_regenerates_word_audio(client, monkeypatch, tmp_path):
     assert second["audio_bytes"] == len(MP3)
 
 
-def test_batch_generates_missing_audio_in_id_order_with_failures(client, monkeypatch, tmp_path):
+def test_generate_missing_enqueues_audio_less_words_in_id_order(client, monkeypatch, tmp_path):
     _enable_tts(monkeypatch, tmp_path)
+    w1 = create_word(client, {"en_word": "alpha", "cn_meaning": "阿尔法", "tags": []})
+    w2 = create_word(client, {"en_word": "beta", "cn_meaning": "贝塔", "tags": []})
+    w3 = create_word(client, {"en_word": "gamma", "cn_meaning": "伽马", "tags": []})
 
-    def impl(text: str, *, settings=None) -> bytes:
-        if text == "beta":
-            raise RuntimeError("provider down")
-        return MP3 + text.encode()
+    recorded: dict = {}
+    import app.services.audio_worker as aw
 
-    calls = _mock_tts(monkeypatch, impl)
-    a = create_word(client, {"en_word": "alpha", "cn_meaning": "阿尔法", "tags": []})
-    b = create_word(client, {"en_word": "beta", "cn_meaning": "贝塔", "tags": []})
-    c = create_word(client, {"en_word": "gamma", "cn_meaning": "伽马", "tags": []})
+    def fake_enqueue(word_ids, *, force, provider=None):
+        recorded["ids"] = list(word_ids)
+        recorded["force"] = force
+        return len(word_ids)
+
+    monkeypatch.setattr(aw, "enqueue_audio_generation", fake_enqueue)
 
     response = client.post(
         "/api/v1/words/audio/generate-missing",
@@ -146,15 +149,11 @@ def test_batch_generates_missing_audio_in_id_order_with_failures(client, monkeyp
     )
     assert response.status_code == 200, response.text
     data = response.json()["data"]
-    assert data["requested"] == 2
-    assert data["generated"] == 1
-    assert data["failed"] == 1
-    assert data["has_more"] is True
-    assert data["failures"] == [{"word_id": b["id"], "en_word": "beta", "message": "TTS 供应商调用失败"}]
-    assert calls == ["alpha", "beta"]
-    assert client.get(f"/api/v1/words/{a['id']}/audio").status_code == 200
-    assert client.get(f"/api/v1/words/{b['id']}/audio").status_code == 404
-    assert client.get(f"/api/v1/words/{c['id']}/audio").status_code == 404
+    assert data["queued"] == 2
+    assert data["total"] == 2
+    assert recorded["force"] is False
+    # only the first 2 (by id) of the 3 audio-less words enqueued, ascending id order
+    assert recorded["ids"] == sorted([w1["id"], w2["id"], w3["id"]])[:2]
 
 
 def test_student_cannot_use_word_audio_routes_but_can_read_session_item_audio(
@@ -386,12 +385,51 @@ def test_audio_worker_enqueue_dedups_and_drains(monkeypatch):
 
     monkeypatch.setattr(audio_worker, "run_audio_job", fake_run)
     worker = audio_worker._AudioWorker(session_factory=lambda: MagicMock())
+    assert worker.progress()["state"] == "idle"
     added1 = worker.enqueue([1, 2, 3], force=True)
     assert added1 == 3
     added2 = worker.enqueue([2, 4], force=True)  # 2 already pending
     assert added2 == 1
     worker.wait_drained(timeout=5)
     assert sorted(processed) == [1, 2, 3, 4]
+    prog = worker.progress()
+    assert prog["state"] == "idle"
+    assert prog["total"] == 4
+    assert prog["completed"] == 4
+    assert prog["failed"] == 0
+    assert prog["pending"] == 0
+
+
+def test_audio_worker_progress_counts_failures(monkeypatch):
+    from app.services import audio_worker
+    from unittest.mock import MagicMock
+
+    def fake_run(db, word_id, *, force, provider):
+        if word_id % 2 == 0:
+            raise RuntimeError("provider down")
+
+    monkeypatch.setattr(audio_worker, "run_audio_job", fake_run)
+    worker = audio_worker._AudioWorker(session_factory=lambda: MagicMock())
+    worker.enqueue([1, 2, 3, 4], force=False)
+    worker.wait_drained(timeout=5)
+    prog = worker.progress()
+    assert prog["total"] == 4
+    assert prog["completed"] == 2  # 1, 3
+    assert prog["failed"] == 2     # 2, 4
+
+
+def test_audio_progress_endpoint(client, monkeypatch, tmp_path):
+    _enable_tts(monkeypatch, tmp_path)
+    import app.api.words as words_api
+
+    monkeypatch.setattr(words_api, "audio_progress", lambda: {
+        "state": "running", "total": 10, "completed": 4, "failed": 1, "pending": 5
+    })
+    response = client.get("/api/v1/words/audio/progress")
+    assert response.status_code == 200, response.text
+    assert response.json()["data"] == {
+        "state": "running", "total": 10, "completed": 4, "failed": 1, "pending": 5
+    }
 
 
 def test_import_enqueues_background_audio_generation(client, monkeypatch, tmp_path):

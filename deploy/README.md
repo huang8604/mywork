@@ -129,7 +129,7 @@ VOLC_TTS_VOICE: "BV700_V2_streaming"                      # 英音音色,开通�
 
 1. 容器挂载了对应 secret(`tts-api-key` / `volc-tts-api-key`),文件非空且 UID 10001 可读;
 2. `*_API_KEY_FILE` 已生效,未把 Key 写入明文环境变量;
-3. mimo:`TTS_BASE_URL` 含 `/v1`、模型 `mimo-v2.5-tts`、voice `Chloe`;volc:已在火山方舟控制台**配置模型 + 开启超额后付费**、`VOLC_TTS_RESOURCE_ID=seed-tts-2.0`;
+3. mimo:`TTS_BASE_URL` 含 `/v1`、模型 `mimo-v2.5-tts`、voice `Chloe`;volc:已在火山方舟控制台**配置模型 + 开启超额后付费**、`VOLC_TTS_RESOURCE_ID=seed-tts-2.0`、且 `VOLC_TTS_VOICE` 是 seed-tts-2.0 资源下的合法 speaker id(内置 `BVxxx` 会报 `resource ID is mismatched with speaker related resource`,需从控制台音色列表复制);
 4. `/app/data/audio`(或 `TTS_AUDIO_DIR`)归 UID 10001 可写;
 5. 容器日志中的 `TTS_PROVIDER_ERROR` / `AUDIO_STORAGE_ERROR`(日志不会输出 Key)。
 

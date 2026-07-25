@@ -3663,6 +3663,42 @@
         ]
       }
     },
+    "/api/v1/words/audio/progress": {
+      "get": {
+        "operationId": "audio_progress_route_api_v1_words_audio_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Audio Progress Route",
+        "tags": [
+          "words"
+        ],
+        "x-required-scopes": [
+          "words:read"
+        ]
+      }
+    },
     "/api/v1/words/audio/providers": {
       "get": {
         "operationId": "audio_providers_api_v1_words_audio_providers_get",

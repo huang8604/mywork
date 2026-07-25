@@ -89,6 +89,10 @@ export interface WordAudioBatchResult {
   requested: number; generated: number; skipped: number; failed: number; has_more: boolean
   failures: Array<{ word_id: number; en_word: string; message: string }>
 }
+export interface AudioBatchResult { queued: number; total: number; provider: string | null }
+export interface AudioProgress {
+  state: 'idle' | 'running'; total: number; completed: number; failed: number; pending: number
+}
 export type AudioProvider = 'mimo' | 'volc'
 export interface AudioProviderInfo {
   id: AudioProvider; label: string; enabled: boolean; voice: string; model: string

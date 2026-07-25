@@ -28,7 +28,7 @@ from app.schemas import (
     WordEnrichRequest,
     WordUpdate,
 )
-from app.services.audio_worker import enqueue_audio_generation
+from app.services.audio_worker import audio_progress, enqueue_audio_generation
 from app.services.dictionary import enrich_preview, enrich_word
 from app.services.idempotency import claim, complete
 from app.services.serializers import word_data
@@ -37,7 +37,7 @@ from app.services.words import (
     SORTS,
     create_word,
     delete_word,
-    generate_missing_word_audio,
+    enqueue_missing_word_audio,
     generate_word_audio,
     get_word,
     iter_words,
@@ -557,6 +557,14 @@ def audio_providers(
     return envelope(request, audio_providers_info())
 
 
+@router.get("/audio/progress")
+def audio_progress_route(
+    request: Request,
+    _actor: Annotated[Actor, Depends(require_scopes("words:read"))],
+):
+    return envelope(request, audio_progress())
+
+
 @router.post("/audio/generate-missing")
 def generate_missing_audio(
     request: Request,
@@ -581,7 +589,7 @@ def generate_missing_audio(
             status_code=idem.replay_status or 200,
             headers={"Idempotency-Replayed": "true"},
         )
-    data = generate_missing_word_audio(db, limit=payload.limit, provider=payload.provider)
+    data = enqueue_missing_word_audio(db, limit=payload.limit, provider=payload.provider)
     complete(idem, data=data, status_code=200, resource_type="word_audio_batch")
     add_audit(
         db,
@@ -590,10 +598,7 @@ def generate_missing_audio(
         action="word_audio.generate_missing",
         outcome="success",
         http_status=200,
-        metadata={
-            key: data[key]
-            for key in ("requested", "generated", "failed", "has_more")
-        },
+        metadata={"queued": data["queued"], "total": data["total"]},
     )
     _commit(db)
     return envelope(request, data)
