@@ -119,6 +119,7 @@ export interface DictationSettings {
   accent: DictationAccent  // 英音/美音/系统默认,默认 'us'
   rate: number             // 语速 0.7..1.2,默认 1.0
   repeat: number           // 每词播放次数 1..3,默认 1
+  announceNumber: boolean  // 播报单词前先播报序号 "number N"(1..50),默认 true
 }
 export interface Capabilities {
   api_version: string; server_time: string; server_timezone: string

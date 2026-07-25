@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useDictationPlayer } from '@/composables/useDictationPlayer'
-import { practiceItemAudioUrl } from '@/api/practiceSessions'
+import { numberAudioUrl, practiceItemAudioUrl } from '@/api/practiceSessions'
 import type { DictationAccent, DictationSettings, PracticeSession } from '@/types/domain'
 
 const props = defineProps<{ session: PracticeSession; sessions: PracticeSession[] }>()
@@ -13,11 +13,12 @@ const settings = ref<DictationSettings>({
   accent: 'uk',
   rate: 1.0,
   repeat: 2,
+  announceNumber: true,
 })
 
 const texts = () => props.session.items?.map(i => i.word.en_word) ?? []
 const audioUrls = () => props.session.items?.map(i => practiceItemAudioUrl(props.session.session_id, i.item_id)) ?? []
-const player = useDictationPlayer({ texts, audioUrls })
+const player = useDictationPlayer({ texts, audioUrls, numberAudioUrl: (pos: number) => numberAudioUrl(pos) })
 
 const draft = ref('')
 const startedAt = ref<number | null>(null)
@@ -99,6 +100,10 @@ const speakingHint = computed(() => {
           <el-slider v-model="settings.repeat" :min="1" :max="3" :step="1" />
         </label>
         <label class="setting">
+          <span>播报序号(number 1–50)</span>
+          <el-switch v-model="settings.announceNumber" />
+        </label>
+        <label class="setting">
           <span>语速 · {{ settings.rate.toFixed(1) }}</span>
           <el-slider v-model="settings.rate" :min="0.7" :max="1.2" :step="0.1" />
         </label>
@@ -143,7 +148,7 @@ const speakingHint = computed(() => {
       </div>
       <div class="runner-meta">
         <span>已听 {{ player.counts.value.played }} · 跳过 {{ player.counts.value.skipped }}</span>
-        <span>间隔 {{ settings.intervalSec }}s · 语速 {{ settings.rate.toFixed(1) }} · {{ accentLabel[settings.accent] }} · {{ settings.repeat }} 次</span>
+        <span>间隔 {{ settings.intervalSec }}s · 语速 {{ settings.rate.toFixed(1) }} · {{ accentLabel[settings.accent] }} · {{ settings.repeat }} 次 · 序号{{ settings.announceNumber ? '开' : '关' }}</span>
         <el-button link type="primary" @click="player.stop()">结束</el-button>
       </div>
     </div>

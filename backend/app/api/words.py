@@ -20,6 +20,7 @@ from app.core.errors import AppError
 from app.core.responses import envelope
 from app.models import Word
 from app.schemas import (
+    NumberAudioGenerateRequest,
     VersionRequest,
     WordAudioBatchGenerateRequest,
     WordAudioGenerateRequest,
@@ -28,9 +29,14 @@ from app.schemas import (
     WordEnrichRequest,
     WordUpdate,
 )
-from app.services.audio_worker import audio_progress, enqueue_audio_generation
+from app.services.audio_worker import (
+    audio_progress,
+    enqueue_audio_generation,
+    enqueue_number_generation,
+)
 from app.services.dictionary import enrich_preview, enrich_word
 from app.services.idempotency import claim, complete
+from app.services.number_audio import NUMBER_MAX, missing_numbers
 from app.services.serializers import word_data
 from app.services.tts import audio_providers_info
 from app.services.words import (
@@ -640,6 +646,57 @@ def regenerate_all_audio(
         outcome="success",
         http_status=200,
         metadata={"queued": queued, "total": len(word_ids)},
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
+@router.post("/audio/generate-numbers")
+def generate_numbers_audio(
+    request: Request,
+    payload: NumberAudioGenerateRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("words:write"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    """Generate the dictation number-announcement clips "number 1" .. "number 50".
+
+    豆包 preferred (provider defaults to volc); falls back to mimo via the worker.
+    ``force`` regenerates all 1..50, otherwise only missing clips up to ``limit``.
+    Returns ``{queued, total, provider}``; progress via ``GET /words/audio/progress``.
+    """
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/words/audio/generate-numbers",
+        key=idempotency_key,
+        payload=payload.model_dump(mode="json"),
+        required=actor.actor_type == "api_client",
+    )
+    if idem and idem.replayed:
+        return envelope(
+            request,
+            idem.replay_data,
+            status_code=idem.replay_status or 200,
+            headers={"Idempotency-Replayed": "true"},
+        )
+    provider = payload.provider or "volc"
+    if payload.force:
+        nums = list(range(1, NUMBER_MAX + 1))
+    else:
+        nums = missing_numbers(limit=payload.limit)
+    queued = enqueue_number_generation(nums, force=payload.force, provider=provider) if nums else 0
+    data = {"queued": queued, "total": len(nums), "provider": provider}
+    complete(idem, data=data, status_code=200, resource_type="number_audio_batch")
+    add_audit(
+        db,
+        request_id=_request_id(request),
+        actor=actor,
+        action="number_audio.generate",
+        outcome="success",
+        http_status=200,
+        metadata={"queued": queued, "total": len(nums), "force": payload.force},
     )
     _commit(db)
     return envelope(request, data)

@@ -1,13 +1,14 @@
-"""Background audio generation for imported / batch-regenerated words.
+"""Background audio generation for imported / batch-regenerated words + number clips.
 
 Single-user NAS context: no task queue, single uvicorn worker. One daemon thread
-pulls (word_id, force, provider) jobs off a queue and generates MP3s one at a time,
-each in its own short-lived session. Process restart interrupts unfinished work —
-the operator re-triggers via the "一键生成" / "全部重新生成" buttons. Per-word
-failures are logged and do not stop the batch.
+pulls jobs off a queue and generates MP3s one at a time, each in its own short-lived
+session (word jobs) or directly against the filesystem (number jobs — no DB record).
+Process restart interrupts unfinished work — the operator re-triggers via the
+"一键生成" / "全部重新生成" / "生成序号音频" buttons. Per-job failures are logged
+and do not stop the batch.
 
 A run-level counter tuple (state/total/completed/failed/pending) is exposed via
-``audio_progress()`` so the word-library UI can render a progress bar by polling
+``audio_progress()`` so the UI can render a progress bar by polling
 ``GET /api/v1/words/audio/progress``. A new "run" resets the counters when the
 worker transitions idle→running; counters persist after the run ends (state=idle)
 so the final tally is readable until the next batch begins.
@@ -17,6 +18,7 @@ from __future__ import annotations
 import logging
 import queue
 import threading
+from collections import namedtuple
 from collections.abc import Iterable
 from typing import Callable
 
@@ -46,14 +48,30 @@ def run_audio_job(
     return True
 
 
+def run_number_job(n: int, *, force: bool = False, provider: str | None = None) -> None:
+    """Generate the "number {n}" announcement clip (no DB record — file only).
+
+    Imported lazily so unit tests that monkeypatch ``run_audio_job`` don't need the
+    number-audio module loaded, and so a missing TTS config only errors at run time.
+    """
+    from app.services.number_audio import generate_number_audio
+
+    generate_number_audio(n, force=force, provider=provider)
+
+
+# A queued unit of audio work. ``kind`` ∈ {"word","number"}; ``key`` is the word_id
+# (word) or the 1-based number n (number). ``provider`` default is resolved later —
+# words defer to settings, numbers default to volc (豆包 preferred).
+_AudioJob = namedtuple("_AudioJob", ["kind", "key", "force", "provider"])
+
 SessionFactory = Callable[[], Session]
 
 
 class _AudioWorker:
     def __init__(self, session_factory: SessionFactory = SessionLocal) -> None:
         self._session_factory = session_factory
-        self._queue: queue.Queue[tuple[int, bool, str | None]] = queue.Queue()
-        self._pending: set[tuple[int, bool]] = set()
+        self._queue: queue.Queue[_AudioJob] = queue.Queue()
+        self._pending: set[tuple[str, int, bool]] = set()
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         self._state = "idle"
@@ -64,14 +82,28 @@ class _AudioWorker:
     def enqueue(
         self, word_ids: Iterable[int], *, force: bool = False, provider: str | None = None
     ) -> int:
+        return self._enqueue_jobs(
+            (("word", wid) for wid in word_ids), force=force, provider=provider
+        )
+
+    def enqueue_numbers(
+        self, numbers: Iterable[int], *, force: bool = False, provider: str | None = None
+    ) -> int:
+        return self._enqueue_jobs(
+            (("number", n) for n in numbers), force=force, provider=provider
+        )
+
+    def _enqueue_jobs(
+        self, items: Iterable[tuple[str, int]], *, force: bool, provider: str | None
+    ) -> int:
         added = 0
         with self._lock:
-            for wid in word_ids:
-                key = (wid, force)
-                if key in self._pending:
+            for kind, key in items:
+                dedup = (kind, key, force)
+                if dedup in self._pending:
                     continue
-                self._pending.add(key)
-                self._queue.put((wid, force, provider))
+                self._pending.add(dedup)
+                self._queue.put(_AudioJob(kind, key, force, provider))
                 added += 1
             if added:
                 if self._state == "idle":
@@ -99,26 +131,31 @@ class _AudioWorker:
 
     def _run(self) -> None:
         while True:
-            word_id, force, provider = self._queue.get()
+            job = self._queue.get()
             try:
-                self._process(word_id, force, provider)
+                self._process(job)
                 with self._lock:
                     self._completed += 1
             except Exception:  # defensive: never let the worker thread die
-                log.warning("audio worker: generate failed word_id=%s", word_id, exc_info=True)
+                log.warning(
+                    "audio worker: generate failed kind=%s key=%s", job.kind, job.key, exc_info=True
+                )
                 with self._lock:
                     self._failed += 1
             finally:
                 with self._lock:
-                    self._pending.discard((word_id, force))
+                    self._pending.discard((job.kind, job.key, job.force))
                     if not self._pending:
                         self._state = "idle"
                 self._queue.task_done()
 
-    def _process(self, word_id: int, force: bool, provider: str | None) -> None:
+    def _process(self, job: _AudioJob) -> None:
+        if job.kind == "number":
+            run_number_job(job.key, force=job.force, provider=job.provider)
+            return
         db = self._session_factory()
         try:
-            run_audio_job(db, word_id, force=force, provider=provider)
+            run_audio_job(db, job.key, force=job.force, provider=job.provider)
             db.commit()
         except Exception:
             db.rollback()
@@ -141,6 +178,13 @@ def enqueue_audio_generation(
 ) -> int:
     """Enqueue words for background MP3 generation. Returns how many were newly added."""
     return _worker.enqueue(word_ids, force=force, provider=provider)
+
+
+def enqueue_number_generation(
+    numbers: Iterable[int], *, force: bool = False, provider: str | None = None
+) -> int:
+    """Enqueue "number {n}" clips for background generation. Returns newly-added count."""
+    return _worker.enqueue_numbers(numbers, force=force, provider=provider)
 
 
 def audio_progress() -> dict[str, object]:

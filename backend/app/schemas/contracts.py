@@ -120,6 +120,14 @@ class WordAudioRegenerateAllRequest(StrictModel):
     provider: AudioProvider | None = None
 
 
+class NumberAudioGenerateRequest(StrictModel):
+    """Generate the dictation number-announcement clips ("number 1" .. "number 50")."""
+
+    force: bool = False
+    provider: AudioProvider | None = None
+    limit: int = Field(default=50, ge=1, le=50)
+
+
 class ReviewCreate(StrictModel):
     word_id: int = Field(gt=0)
     status: ReviewStatus

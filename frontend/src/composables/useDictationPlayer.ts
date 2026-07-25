@@ -7,7 +7,7 @@
  */
 import { onScopeDispose, ref, type Ref } from 'vue'
 import { createDictationEngine, type DictationEngineState, type DictationPhase } from './dictationEngine'
-import type { DictationPlayFn } from './dictationTypes'
+import type { DictationPlayFn, DictationPlayHooks } from './dictationTypes'
 import type { DictationAccent, DictationSettings } from '@/types/domain'
 
 const REPEAT_GAP_MS = 500
@@ -53,7 +53,7 @@ function pickVoice(voices: SpeechSynthesisVoice[], accent: DictationAccent): [Sp
   return [samePrefix ?? anyEn ?? voices[0] ?? null, false]
 }
 
-export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: () => string[] }): DictationPlayer {
+export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: () => string[]; numberAudioUrl?: (pos: number) => string }): DictationPlayer {
   const hasSpeech = speechSupported()
   const hasAudio = audioSupported()
   const supported = hasSpeech || hasAudio
@@ -66,6 +66,9 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
 
   const current = ref<DictationSettings | null>(null)
   const voices = ref<SpeechSynthesisVoice[]>([])
+
+  // 「本词序号是否已播报过」:每词只播一次 "number N"(repeat 重复不重播);replay/start 重置。
+  let announcedWordIndex = -1
 
   // 复用单个 <audio> 元素:首词由「开始默写」点击手势同步解锁(bless),之后自动到下一词经
   // setTimeout 触发的播放复用同一个已解锁元素。若每词 new Audio(),新元素在 iOS Safari /
@@ -128,8 +131,15 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
 
   function makePlay(): DictationPlayFn {
     const speechPlay = makeSpeechPlay()
-    return (text, hooks, wordIndex) => {
-      const url = opts.audioUrls?.()[wordIndex]
+
+    // Play the WORD clip on the shared element (cloud preferred, speechSynthesis
+    // fallback). Returns a cancel fn. Same logic as before extraction.
+    const playWord = (
+      text: string,
+      hooks: DictationPlayHooks,
+      wordIndex: number,
+      url: string | undefined,
+    ): (() => void) => {
       if (!url || !sharedAudio) return speechPlay(text, hooks, wordIndex)
 
       const audio = sharedAudio
@@ -181,6 +191,52 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
         if (fallbackCancel) fallbackCancel()
       }
     }
+
+    return (text, hooks, wordIndex) => {
+      const url = opts.audioUrls?.()[wordIndex]
+      const pos = wordIndex + 1
+      // 每词只播一次序号:repeat 重复(wordIndex === announcedWordIndex)、超出 1..50、
+      // 开关关闭、或走 speechSynthesis 兜底(无 sharedAudio)时,直接播单词。
+      const shouldAnnounce =
+        !!current.value?.announceNumber
+        && !!opts.numberAudioUrl
+        && !!sharedAudio
+        && pos >= 1 && pos <= 50
+        && wordIndex !== announcedWordIndex
+      if (shouldAnnounce) announcedWordIndex = wordIndex
+      const numberUrl = shouldAnnounce ? opts.numberAudioUrl!(pos) : null
+      if (!numberUrl) return playWord(text, hooks, wordIndex, url)
+
+      // 先在同一个已解锁的 shared <audio> 上播 "number N",结束/失败后无缝换 src 播单词。
+      // 序号缺失/被拦(404、autoplay)→ 静默跳过、直接播单词,不阻断默写。
+      const audio = sharedAudio!
+      let cancelled = false
+      let startedWord = false
+      let wordCancel: (() => void) | null = null
+      const detachNumber = () => { audio.onended = null; audio.onerror = null }
+      const goWord = () => {
+        if (cancelled || startedWord) return
+        startedWord = true
+        detachNumber()
+        audio.pause()
+        wordCancel = playWord(text, hooks, wordIndex, url)
+      }
+      audio.onended = goWord
+      audio.onerror = goWord
+      audio.playbackRate = current.value?.rate ?? 1
+      try {
+        audio.src = numberUrl
+        audio.load()
+      } catch { goWord(); return () => {} }
+      audio.play().catch(goWord)
+
+      return () => {
+        cancelled = true
+        detachNumber()
+        audio.pause()
+        if (wordCancel) wordCancel()
+      }
+    }
   }
 
   const engine = createDictationEngine({
@@ -198,6 +254,7 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
 
   function start(settings: DictationSettings) {
     if (!supported) return
+    announcedWordIndex = -1
     current.value = { ...settings }
     voiceWarning.value = null
     // 若音色尚未异步加载完成，这里 voices 为空 → pickVoice 返回 null → 用 lang 兜底，不阻塞。
@@ -231,7 +288,7 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
   return {
     phase, index, total, isSpeaking, counts, voiceWarning, supported,
     start,
-    replay: () => engine.replay(),
+    replay: () => { announcedWordIndex = -1; return engine.replay() },
     skip: () => engine.skip(),
     nextAndPlay: () => engine.nextAndPlay(),
     stop: () => engine.stop(),

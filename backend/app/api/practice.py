@@ -23,6 +23,7 @@ from app.services.sessions import auto_archive_expired_sessions, delete_session,
 from app.services.reviews import batch_round_results, put_round_result
 from app.services.serializers import review_data, round_data, session_data
 from app.services.strategy import generate_session
+from app.services.number_audio import number_audio_file
 from app.services.words import word_audio_file
 
 router = APIRouter(prefix="/api/v1", tags=["practice"])
@@ -182,6 +183,27 @@ def get_session_item_audio(
     audio = word_audio_file(word)
     if audio is None:
         raise AppError(404, "AUDIO_NOT_FOUND", "音频尚未生成")
+    return FileResponse(
+        audio,
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": "inline"},
+    )
+
+
+@router.get("/dictation/numbers/{n}/audio")
+def get_number_audio(
+    n: int,
+    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+):
+    """Serve the cached "number {n}" announcement clip for online dictation.
+
+    Read-only — generation happens via ``POST /api/v1/words/audio/generate-numbers``.
+    Out-of-range n or not-yet-generated clip → 404 (the dictation player silently
+    skips the number and just plays the word).
+    """
+    audio = number_audio_file(n)
+    if audio is None:
+        raise AppError(404, "AUDIO_NOT_FOUND", "序号音频尚未生成")
     return FileResponse(
         audio,
         media_type="audio/mpeg",
