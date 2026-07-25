@@ -67,6 +67,12 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
   const current = ref<DictationSettings | null>(null)
   const voices = ref<SpeechSynthesisVoice[]>([])
 
+  // 复用单个 <audio> 元素:首词由「开始默写」点击手势同步解锁(bless),之后自动到下一词经
+  // setTimeout 触发的播放复用同一个已解锁元素。若每词 new Audio(),新元素在 iOS Safari /
+  // 部分 Android 上会被自动播放策略静默拦截 → 自动到下一词没声音。
+  const sharedAudio: HTMLAudioElement | null = hasAudio ? new Audio() : null
+  if (sharedAudio) sharedAudio.preload = 'auto'
+
   function loadVoices() {
     if (!hasSpeech) return
     const list = window.speechSynthesis.getVoices()
@@ -124,19 +130,22 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
     const speechPlay = makeSpeechPlay()
     return (text, hooks, wordIndex) => {
       const url = opts.audioUrls?.()[wordIndex]
-      if (!url || !hasAudio) return speechPlay(text, hooks, wordIndex)
+      if (!url || !sharedAudio) return speechPlay(text, hooks, wordIndex)
 
-      const audio = new Audio(url)
+      const audio = sharedAudio
       let cancelled = false
       let fallbackCancel: (() => void) | null = null
       let usingFallback = false
 
-      const abandonAudio = () => {
+      // 复用元素:只摘事件 + pause,不 removeAttribute('src')(那会让某些浏览器把元素当新元素、
+      // 重新要求手势)。下一次播放会重新赋 src + load。
+      const detach = () => {
         audio.onended = null
         audio.onerror = null
+      }
+      const abandonAudio = () => {
+        detach()
         audio.pause()
-        audio.removeAttribute('src')
-        try { audio.load() } catch { /* 忽略 */ }
       }
       const fallback = () => {
         if (cancelled || usingFallback) return
@@ -146,15 +155,25 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
         fallbackCancel = speechPlay(text, hooks, wordIndex)
       }
 
-      audio.preload = 'auto'
-      audio.playbackRate = current.value?.rate ?? 1
       audio.onended = () => {
         if (cancelled) return
-        abandonAudio()
+        detach()
         hooks.onEnd()
       }
       audio.onerror = fallback
-      audio.play().catch(fallback)
+      audio.playbackRate = current.value?.rate ?? 1
+      // 复用已解锁元素:换 src + load + play。新 src 自动让 currentTime 归零。
+      try {
+        audio.src = url
+        audio.load()
+      } catch { /* 忽略 */ }
+      audio.play().catch((err: unknown) => {
+        // 诊断证据:autoplay 拦截(NotAllowedError)/ 网络 / 解码失败在此暴露,方便定位。
+        const name = (err as { name?: string } | null)?.name
+        const msg = (err as { message?: string } | null)?.message
+        if (typeof console !== 'undefined') console.warn('[dictation] audio play failed:', name, msg, 'wordIndex=', wordIndex)
+        fallback()
+      })
 
       return () => {
         cancelled = true
@@ -204,7 +223,10 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
     onScopeDispose(() => window.removeEventListener('blur', onBlur))
   }
 
-  onScopeDispose(() => { try { engine.dispose() } catch { /* 忽略 */ } })
+  onScopeDispose(() => {
+    try { if (sharedAudio) { sharedAudio.pause(); sharedAudio.removeAttribute('src') } } catch { /* 忽略 */ }
+    try { engine.dispose() } catch { /* 忽略 */ }
+  })
 
   return {
     phase, index, total, isSpeaking, counts, voiceWarning, supported,
