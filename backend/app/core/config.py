@@ -58,6 +58,9 @@ class Settings:
     volc_model: str
     volc_resource_id: str
     volc_voice: str
+    volc_speech_rate: int
+    volc_loudness_rate: int
+    volc_silence_ms: int
     volc_timeout_seconds: float
     web_login_required: bool
     web_admin_username: str
@@ -134,6 +137,9 @@ class Settings:
             volc_model=os.getenv("VOLC_TTS_MODEL", "doubao-seed-tts-2.0"),
             volc_resource_id=os.getenv("VOLC_TTS_RESOURCE_ID", "seed-tts-2.0"),
             volc_voice=os.getenv("VOLC_TTS_VOICE", "BV700_V2_streaming"),
+            volc_speech_rate=int(os.getenv("VOLC_TTS_SPEECH_RATE", "-10")),
+            volc_loudness_rate=int(os.getenv("VOLC_TTS_LOUDNESS_RATE", "20")),
+            volc_silence_ms=int(os.getenv("VOLC_TTS_SILENCE_MS", "500")),
             volc_timeout_seconds=float(os.getenv("VOLC_TTS_TIMEOUT_SECONDS", "60")),
             web_login_required=_boolean("WEB_LOGIN_REQUIRED", False),
             web_admin_username=os.getenv("WEB_ADMIN_USERNAME", "admin"),
@@ -156,6 +162,12 @@ class Settings:
             raise ValueError("TTS_TIMEOUT_SECONDS must be positive")
         if self.volc_timeout_seconds <= 0:
             raise ValueError("VOLC_TTS_TIMEOUT_SECONDS must be positive")
+        if not (-50 <= self.volc_speech_rate <= 100):
+            raise ValueError("VOLC_TTS_SPEECH_RATE must be between -50 and 100")
+        if not (-50 <= self.volc_loudness_rate <= 100):
+            raise ValueError("VOLC_TTS_LOUDNESS_RATE must be between -50 and 100")
+        if not (0 <= self.volc_silence_ms <= 30000):
+            raise ValueError("VOLC_TTS_SILENCE_MS must be between 0 and 30000")
         if self.tts_provider not in {"mimo", "volc"}:
             raise ValueError("TTS_PROVIDER must be 'mimo' or 'volc'")
         if min(

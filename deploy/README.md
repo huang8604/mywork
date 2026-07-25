@@ -119,8 +119,15 @@ VOLC_TTS_BASE_URL: "https://openspeech.bytedance.com"
 VOLC_TTS_API_KEY_FILE: "/run/secrets/volc-tts-api-key"   # Ark API Key
 VOLC_TTS_MODEL: "doubao-seed-tts-2.0"
 VOLC_TTS_RESOURCE_ID: "seed-tts-2.0"
-VOLC_TTS_VOICE: "BV700_V2_streaming"                      # 英音音色,开通后可在控制台确认/更换
+VOLC_TTS_VOICE: "<agent-plan 音色 speaker id>"            # 见下:必须从控制台复制,内置 BVxxx 无效
+# 平稳/耐心/有力/清晰 + 前后留白(留白:句尾追加静音 + MP3 自然句首留白 + 默写间隔)
+VOLC_TTS_SPEECH_RATE: "-10"   # -50..100,负=慢(耐心/平稳)
+VOLC_TTS_LOUDNESS_RATE: "20"  # -50..100,正=更响(有力/清晰)
+VOLC_TTS_SILENCE_MS: "500"    # 0..30000ms,句尾静音,防止结尾被切
 # 可选:TTS_AUDIO_DIR=/app/data/audio、TTS_TIMEOUT_SECONDS=60、VOLC_TTS_TIMEOUT_SECONDS=60、TTS_AUTO_GENERATE_ON_IMPORT=true
+```
+
+> ⚠️ **speaker id 是必填且必须从你的控制台复制**。探测确认:你给的是 **agent-plan 专属 Key**,只在 `https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional` 可用(标准 `/api/v3/tts/unidirectional` 返回 401 Invalid X-Api-Key)。在 agent-plan 端点上,**所有内置音色(含 `BV700_streaming`、文档示例 `zh_female_shuangkuaisisi_moon_bigtts` 等)都报 `resource ID is mismatched with speaker related resource`**。请到火山方舟控制台该 agent-plan / seed-tts-2.0 资源的音色列表里复制一个合法 speaker id(英文音色优先)填入 `VOLC_TTS_VOICE`。在你设好之前,豆包会失败并**自动兜底到 mimo** 出英音,音频生成不会中断。
 ```
 
 部署后 smoke:词库页选一个无音频的词 → 选模型 → 点「生成音频」→ 状态变「已生成」→ 点「播放」应能听到 MP3;`/review` 在线默写优先播该 MP3,缺失/失败自动回退浏览器 `speechSynthesis`。

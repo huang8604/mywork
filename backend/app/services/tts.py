@@ -20,8 +20,9 @@ PROMPT = (
     "then pause briefly at the end."
 )
 
-# Seed-TTS 2.0 speaks at a slightly slower rate for clarity/force.
-VOLC_SPEED = 0.9
+# Volc tuning defaults: speech_rate<0 = slower (patient/steady), loudness_rate>0 = louder
+# (forceful/clear), silence_ms = trailing silence so the end isn't clipped. Leading silence
+# comes from the MP3 encoder delay (~100ms, documented) plus the dictation engine's per-word gap.
 
 
 def _synthesize_mimo(text: str, settings: Settings) -> bytes:
@@ -105,11 +106,18 @@ def _synthesize_volc(text: str, settings: Settings) -> bytes:
     a valid speaker is supplied; ``_decode_audio`` tolerates the likely shapes.
     """
     body = {
+        "user": {"uid": "myword"},
         "req_params": {
             "text": text,
             "speaker": settings.volc_voice,
-            "audio_params": {"format": "mp3", "speed_ratio": VOLC_SPEED},
-        }
+            "audio_params": {
+                "format": "mp3",
+                "sample_rate": 24000,
+                "speech_rate": settings.volc_speech_rate,
+                "loudness_rate": settings.volc_loudness_rate,
+            },
+            "additions": {"silence_duration": settings.volc_silence_ms},
+        },
     }
     url = (
         f"{settings.volc_base_url}/api/v3/plan/tts/unidirectional"
