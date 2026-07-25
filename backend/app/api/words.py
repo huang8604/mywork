@@ -20,6 +20,10 @@ from app.core.errors import AppError
 from app.core.responses import envelope
 from app.models import Word
 from app.schemas import (
+    BatchAudioRequest,
+    BatchDeleteRequest,
+    BatchTagsRequest,
+    BatchWordIdsRequest,
     NumberAudioGenerateRequest,
     VersionRequest,
     WordAudioBatchGenerateRequest,
@@ -35,12 +39,17 @@ from app.services.audio_worker import (
     enqueue_number_generation,
 )
 from app.services.dictionary import enrich_preview, enrich_word
+from app.services.domain import normalize_word
 from app.services.idempotency import claim, complete
+from app.services.import_worker import enqueue_import, import_progress, run_import_row
 from app.services.number_audio import NUMBER_MAX, missing_numbers
 from app.services.serializers import word_data
 from app.services.tts import audio_providers_info
 from app.services.words import (
     SORTS,
+    batch_add_tags,
+    batch_delete_words,
+    batch_reset_progress,
     create_word,
     delete_word,
     enqueue_missing_word_audio,
@@ -48,8 +57,8 @@ from app.services.words import (
     get_word,
     iter_words,
     list_words,
+    merge_default_tags,
     non_deleted_word_ids,
-    reimport_word,
     reset_word_progress,
     restore_word,
     update_word,
@@ -70,14 +79,6 @@ def _commit(db: Session) -> None:
     except Exception:
         db.rollback()
         raise
-
-
-def _begin_import_transaction(db: Session) -> None:
-    if db.get_bind().dialect.name != "sqlite":
-        return
-    if db.in_transaction():
-        db.rollback()
-    db.connection().exec_driver_sql("BEGIN IMMEDIATE")
 
 
 @router.post("")
@@ -280,8 +281,19 @@ async def import_words(
     conflict_policy: Annotated[str, Form()] = "update",
     unresolved_policy: Annotated[str, Form()] = "ai",
     dry_run: Annotated[bool, Form()] = False,
+    tags: Annotated[str, Form()] = "",
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
+    """Import words.
+
+    ``dry_run`` returns a synchronous no-write preview. A real import is
+    enqueued to the background worker — each row committed independently, per-row
+    errors skipped — and the current progress snapshot is returned immediately
+    (so a slow enrichment can never blow the browser timeout and lose the batch).
+    ``tags`` is a comma-separated list of default tags unioned into every row.
+    ``conflict_policy=reject`` is pre-scanned: any existing word refuses the
+    import with zero writes before a job is enqueued.
+    """
     if conflict_policy not in {"skip", "update", "reject"}:
         raise AppError(422, "VALIDATION_ERROR", "不支持的冲突处理策略")
     if unresolved_policy not in {"skip", "reject", "ai"}:
@@ -292,13 +304,20 @@ async def import_words(
     payloads = _parse_import(file.filename or "", file.content_type or "", raw)
     if len(payloads) > get_settings().max_import_rows:
         raise AppError(413, "PAYLOAD_TOO_LARGE", "导入行数过多")
+    default_tags = _parse_tags_field(tags)
+    payloads = [merge_default_tags(p, default_tags) for p in payloads]
     input_total = len(payloads)
-    _begin_import_transaction(db)
+    # In-file duplicates are a parse-time user error. Under skip the worker
+    # dedupes (first wins); under reject/update we refuse synchronously with a
+    # clear error before enqueueing anything (matching the legacy behavior).
+    _check_infile_duplicates(payloads, conflict_policy)
+
     idem_payload = {
         "sha256": __import__("hashlib").sha256(raw).hexdigest(),
         "conflict_policy": conflict_policy,
         "unresolved_policy": unresolved_policy,
         "dry_run": dry_run,
+        "tags": default_tags,
     }
     idem = claim(
         db,
@@ -316,129 +335,53 @@ async def import_words(
             status_code=idem.replay_status or 200,
             headers={"Idempotency-Replayed": "true"},
         )
-    created = updated = skipped = dictionary_matches = 0
-    resolved: list[dict] = []
-    unresolved_details: list[dict[str, object]] = []
-    unresolved_words: list[str] = []
-    seen: set[str] = set()
-    # normalized → word_id of the first in-file occurrence, so a later duplicate
-    # (under conflict_policy=skip) can report the same word_id rather than null.
-    seen_ids: dict[str, int | None] = {}
-    from app.services.domain import normalize_word
 
-    for row_number, payload in enumerate(payloads, 1):
-        _, normalized = normalize_word(payload.en_word)
-        if normalized in seen:
-            # "skip" honors its name: dedupe within the file (first occurrence wins,
-            # repeats counted as skipped). reject/update still treat an in-file
-            # duplicate as a conflict and abort the whole batch atomically.
-            if conflict_policy == "skip":
-                skipped += 1
-                resolved.append(
-                    {
-                        "en_word": payload.en_word,
-                        "word_id": seen_ids.get(normalized),
-                        "action": "skipped",
-                    }
+    if dry_run:
+        data = _run_dry_run(db, payloads, conflict_policy, unresolved_policy)
+        complete(idem, data=data, status_code=200, resource_type="word_import")
+        add_audit(
+            db,
+            request_id=_request_id(request),
+            actor=actor,
+            action="word.import",
+            outcome="success",
+            http_status=200,
+            metadata={
+                key: data[key]
+                for key in (
+                    "created",
+                    "updated",
+                    "skipped",
+                    "unresolved",
+                    "total",
+                    "dry_run",
+                    "dictionary_matches",
                 )
-                continue
-            raise AppError(
-                422,
-                "VALIDATION_ERROR",
-                "导入文件内存在重复单词",
-                [{"path": ["file", row_number, "en_word"], "reason": "归一化后与文件内其他单词重复"}],
-            )
-        seen.add(normalized)
-        existing = db.scalar(select(Word).where(Word.normalized_en_word == normalized))
-        # A skipped duplicate is resolved before any dictionary or AI lookup.
-        # This avoids spending remote calls on a row that cannot change data.
-        if existing is not None and existing.deleted_at is None:
-            if conflict_policy == "reject":
-                raise AppError(409, "DUPLICATE_WORD", "导入内容包含已存在的单词")
-            if conflict_policy == "skip":
-                skipped += 1
-                seen_ids[normalized] = existing.id
-                resolved.append(
-                    {
-                        "en_word": payload.en_word,
-                        "word_id": existing.id,
-                        "action": "skipped",
-                    }
-                )
-                continue
-        try:
-            payload, found = enrich_word(payload, allow_ai=unresolved_policy == "ai")
-            dictionary_matches += int(found)
-        except AppError as exc:
-            if exc.code != "DICTIONARY_ENTRY_NOT_FOUND":
-                raise
-            if unresolved_policy in {"skip", "ai"}:
-                unresolved_words.append(payload.en_word)
-                seen_ids[normalized] = None
-                resolved.append(
-                    {
-                        "en_word": payload.en_word,
-                        "word_id": None,
-                        "action": "unresolved",
-                    }
-                )
-                continue
-            unresolved_details.append(
-                {
-                    "path": ["file", row_number, "en_word"],
-                    "reason": "词典未收录该词，请手动填写中文释义",
-                    "value": payload.en_word,
-                }
-            )
-            continue
-        if existing is None:
-            new_id: int | None = None
-            if not dry_run:
-                new_id = create_word(db, payload).id
-            created += 1
-            seen_ids[normalized] = new_id
-            resolved.append({"en_word": payload.en_word, "word_id": new_id, "action": "created"})
-            continue
-        if existing.deleted_at:
-            # Re-importing a soft-deleted word restores it (undelete + refresh),
-            # regardless of conflict_policy — bringing a deleted word back is the
-            # explicit intent of importing it again. The unique normalized_en_word
-            # constraint guarantees `existing` is the only matching row.
-            if not dry_run:
-                reimport_word(db, existing.id, payload)
-            updated += 1
-            seen_ids[normalized] = existing.id
-            resolved.append({"en_word": payload.en_word, "word_id": existing.id, "action": "updated"})
-            continue
-        if not dry_run:
-            update_word(
-                db,
-                existing.id,
-                WordUpdate(**payload.model_dump(), expected_version=existing.version),
-            )
-        updated += 1
-        seen_ids[normalized] = existing.id
-        resolved.append({"en_word": payload.en_word, "word_id": existing.id, "action": "updated"})
-    if unresolved_details:
-        raise AppError(
-            422,
-            "DICTIONARY_ENTRY_NOT_FOUND",
-            "部分单词无法获取释义",
-            unresolved_details,
+            },
         )
-    data = {
-        "created": created,
-        "updated": updated,
-        "skipped": skipped,
-        "rejected": 0,
-        "unresolved": len(unresolved_words),
-        "unresolved_words": unresolved_words,
-        "resolved": resolved,
-        "total": input_total,
-        "dry_run": dry_run,
-        "dictionary_matches": dictionary_matches,
-    }
-    complete(idem, data=data, status_code=200, resource_type="word_import")
+        _commit(db)
+        return envelope(request, data)
+
+    # Real import. reject → zero-write pre-scan; otherwise enqueue to background.
+    if conflict_policy == "reject":
+        _reject_prescan(db, payloads)  # raises DUPLICATE_WORD on any conflict
+
+    enqueue_import(
+        payloads,
+        conflict_policy=conflict_policy,
+        unresolved_policy=unresolved_policy,
+        actor_type=actor.actor_type,
+        actor_id=actor.actor_id,
+        request_id=_request_id(request),
+        idempotency_key=idempotency_key,
+    )
+    logger.info(
+        "word_import request_id=%s total=%s conflict_policy=%s unresolved_policy=%s background=True",
+        _request_id(request),
+        input_total,
+        conflict_policy,
+        unresolved_policy,
+    )
     add_audit(
         db,
         request_id=_request_id(request),
@@ -447,44 +390,139 @@ async def import_words(
         outcome="success",
         http_status=200,
         metadata={
-            key: data[key]
-            for key in (
-                "created",
-                "updated",
-                "skipped",
-                "unresolved",
-                "total",
-                "dry_run",
-                "dictionary_matches",
-            )
+            "total": input_total,
+            "conflict_policy": conflict_policy,
+            "unresolved_policy": unresolved_policy,
+            "background": True,
         },
     )
-    logger.info(
-        "word_import request_id=%s total=%s created=%s updated=%s skipped=%s unresolved=%s dictionary_matches=%s dry_run=%s",
-        _request_id(request),
-        data["total"],
-        data["created"],
-        data["updated"],
-        data["skipped"],
-        data["unresolved"],
-        data["dictionary_matches"],
-        data["dry_run"],
+    _commit(db)  # persists the idempotency claim + audit; the worker finalizes the claim
+    return envelope(request, import_progress())
+
+
+@router.get("/import/progress")
+def import_progress_route(
+    request: Request,
+    _actor: Annotated[Actor, Depends(require_scopes("words:read"))],
+):
+    return envelope(request, import_progress())
+
+
+def _parse_tags_field(tags: str) -> list[str]:
+    """Comma-separated tag string (CN comma accepted) → trimmed non-empty list."""
+    return [
+        value
+        for value in (item.strip() for item in tags.replace("，", ",").split(","))
+        if value
+    ]
+
+
+def _run_dry_run(
+    db: Session,
+    payloads: list[WordCreate],
+    conflict_policy: str,
+    unresolved_policy: str,
+) -> dict:
+    """Synchronous no-write preview. Reuses ``run_import_row(dry_run=True)`` so the
+    predicted actions match what the background worker will actually do."""
+    allow_ai = unresolved_policy == "ai"
+    created = updated = skipped = dictionary_matches = 0
+    resolved: list[dict] = []
+    unresolved_words: list[str] = []
+    seen: set[str] = set()
+    for payload in payloads:
+        _, normalized = normalize_word(payload.en_word)
+        if normalized in seen:
+            skipped += 1
+            resolved.append(
+                {"en_word": payload.en_word, "word_id": None, "action": "skipped"}
+            )
+            continue
+        seen.add(normalized)
+        result = run_import_row(
+            db,
+            payload,
+            conflict_policy=conflict_policy,
+            allow_ai=allow_ai,
+            dry_run=True,
+        )
+        action = result["action"]
+        if action == "created":
+            created += 1
+        elif action == "updated":
+            updated += 1
+        elif action == "skipped":
+            skipped += 1
+        elif action == "unresolved":
+            unresolved_words.append(payload.en_word)
+        if result.get("dictionary_found"):
+            dictionary_matches += 1
+        resolved.append(result)
+    return {
+        "created": created,
+        "updated": updated,
+        "skipped": skipped,
+        "rejected": 0,
+        "unresolved": len(unresolved_words),
+        "unresolved_words": unresolved_words,
+        "resolved": resolved,
+        "total": len(payloads),
+        "dry_run": True,
+        "dictionary_matches": dictionary_matches,
+    }
+
+
+def _reject_prescan(db: Session, payloads: list[WordCreate]) -> None:
+    """conflict_policy=reject: if any payload matches an existing non-deleted word,
+    refuse the whole import before enqueueing (zero writes). Soft-deleted words are
+    not conflicts — they get restored (reimported) by the worker as usual."""
+    norms: list[str] = []
+    for payload in payloads:
+        _, normalized = normalize_word(payload.en_word)
+        norms.append(normalized)
+    if not norms:
+        return
+    hit = db.scalar(
+        select(Word).where(
+            Word.normalized_en_word.in_(norms), Word.deleted_at.is_(None)
+        )
     )
-    _commit(db)
-    settings = get_settings()
-    if (
-        not dry_run
-        and settings.tts_auto_generate_on_import
-        and (settings.tts_enabled or settings.volc_enabled)
-    ):
-        created_ids = [
-            r["word_id"]
-            for r in resolved
-            if r.get("action") == "created" and r.get("word_id")
-        ]
-        queued = enqueue_audio_generation(created_ids, force=False)
-        data["audio_generation"] = {"queued": queued}
-    return envelope(request, data)
+    if hit is not None:
+        raise AppError(
+            409,
+            "DUPLICATE_WORD",
+            "导入内容包含已存在的单词",
+            [
+                {
+                    "path": ["body", "en_word"],
+                    "reason": f"已存在：{hit.en_word}",
+                    "word_id": hit.id,
+                }
+            ],
+        )
+
+
+def _check_infile_duplicates(payloads: list[WordCreate], conflict_policy: str) -> None:
+    """Under reject/update, refuse a file containing duplicate (normalized) words
+    synchronously. Under skip the worker dedupes (first occurrence wins)."""
+    if conflict_policy == "skip":
+        return
+    seen: set[str] = set()
+    for row_number, payload in enumerate(payloads, 1):
+        _, normalized = normalize_word(payload.en_word)
+        if normalized in seen:
+            raise AppError(
+                422,
+                "VALIDATION_ERROR",
+                "导入文件内存在重复单词",
+                [
+                    {
+                        "path": ["file", row_number, "en_word"],
+                        "reason": "归一化后与文件内其他单词重复",
+                    }
+                ],
+            )
+        seen.add(normalized)
 
 
 def _parse_import(filename: str, content_type: str, raw: bytes) -> list[WordCreate]:
@@ -553,6 +591,185 @@ def _parse_import(filename: str, content_type: str, raw: bytes) -> list[WordCrea
                 }
             )
         raise AppError(422, "VALIDATION_ERROR", "导入数据无效", details) from exc
+
+
+@router.post("/batch/delete")
+def batch_delete(
+    request: Request,
+    payload: BatchDeleteRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("words:write"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    """Soft-delete each word by id + expected_version. Per-word conflicts/missing
+    are collected and reported; the batch always partial-succeeds."""
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/words/batch/delete",
+        key=idempotency_key,
+        payload=payload.model_dump(mode="json"),
+        required=actor.actor_type == "api_client",
+    )
+    if idem and idem.replayed:
+        return envelope(
+            request,
+            idem.replay_data,
+            status_code=idem.replay_status or 200,
+            headers={"Idempotency-Replayed": "true"},
+        )
+    items = [item.model_dump() for item in payload.items]
+    data = batch_delete_words(db, items)
+    complete(idem, data=data, status_code=200, resource_type="word_batch")
+    add_audit(
+        db,
+        request_id=_request_id(request),
+        actor=actor,
+        action="word.batch_delete",
+        outcome="success",
+        http_status=200,
+        metadata={
+            "requested": len(items),
+            "deleted": len(data["deleted"]),
+            "conflicts": len(data["conflicts"]),
+            "missing": len(data["missing"]),
+        },
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
+@router.post("/batch/tags")
+def batch_tags(
+    request: Request,
+    payload: BatchTagsRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("words:write"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    """Union ``tags`` onto each word. Per-word conflicts/missing collected."""
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/words/batch/tags",
+        key=idempotency_key,
+        payload=payload.model_dump(mode="json"),
+        required=actor.actor_type == "api_client",
+    )
+    if idem and idem.replayed:
+        return envelope(
+            request,
+            idem.replay_data,
+            status_code=idem.replay_status or 200,
+            headers={"Idempotency-Replayed": "true"},
+        )
+    items = [item.model_dump() for item in payload.items]
+    data = batch_add_tags(db, items, payload.tags)
+    complete(idem, data=data, status_code=200, resource_type="word_batch")
+    add_audit(
+        db,
+        request_id=_request_id(request),
+        actor=actor,
+        action="word.batch_tags",
+        outcome="success",
+        http_status=200,
+        metadata={
+            "requested": len(items),
+            "updated": len(data["updated"]),
+            "conflicts": len(data["conflicts"]),
+            "missing": len(data["missing"]),
+            "tags": payload.tags,
+        },
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
+@router.post("/batch/audio")
+def batch_audio(
+    request: Request,
+    payload: BatchAudioRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("words:write"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    """Enqueue selected words for background MP3 generation (fire-and-forget)."""
+    settings = get_settings()
+    if not (settings.tts_enabled or settings.volc_enabled):
+        raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/words/batch/audio",
+        key=idempotency_key,
+        payload=payload.model_dump(mode="json"),
+        required=actor.actor_type == "api_client",
+    )
+    if idem and idem.replayed:
+        return envelope(
+            request,
+            idem.replay_data,
+            status_code=idem.replay_status or 200,
+            headers={"Idempotency-Replayed": "true"},
+        )
+    queued = enqueue_audio_generation(payload.word_ids, force=False, provider=payload.provider)
+    data = {"queued": queued, "total": len(payload.word_ids), "provider": payload.provider}
+    complete(idem, data=data, status_code=200, resource_type="word_audio_batch")
+    add_audit(
+        db,
+        request_id=_request_id(request),
+        actor=actor,
+        action="word_audio.batch_generate",
+        outcome="success",
+        http_status=200,
+        metadata={"queued": queued, "total": len(payload.word_ids)},
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
+@router.post("/batch/reset-progress")
+def batch_reset(
+    request: Request,
+    payload: BatchWordIdsRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("words:write"))],
+    idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
+):
+    """Clear review history for each id (back to the 新词 pool). Missing/deleted
+    ids are skipped silently."""
+    idem = claim(
+        db,
+        actor=actor,
+        method="POST",
+        route_template="/api/v1/words/batch/reset-progress",
+        key=idempotency_key,
+        payload=payload.model_dump(mode="json"),
+        required=actor.actor_type == "api_client",
+    )
+    if idem and idem.replayed:
+        return envelope(
+            request,
+            idem.replay_data,
+            status_code=idem.replay_status or 200,
+            headers={"Idempotency-Replayed": "true"},
+        )
+    data = batch_reset_progress(db, payload.word_ids)
+    complete(idem, data=data, status_code=200, resource_type="word_batch")
+    add_audit(
+        db,
+        request_id=_request_id(request),
+        actor=actor,
+        action="word.batch_reset_progress",
+        outcome="success",
+        http_status=200,
+        metadata={"requested": len(payload.word_ids), "reset": data["reset"]},
+    )
+    _commit(db)
+    return envelope(request, data)
 
 
 @router.get("/audio/providers")

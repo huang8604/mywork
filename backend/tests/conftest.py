@@ -19,6 +19,12 @@ os.environ.pop("AI_API_KEY_FILE", None)
 os.environ["TTS_BASE_URL"] = ""
 os.environ["TTS_API_KEY"] = ""
 os.environ.pop("TTS_API_KEY_FILE", None)
+# Same for 豆包/VOLC — the import worker auto-enqueues audio for created words
+# when a provider is configured, so tests must default to "no TTS". Tests that
+# need it opt in via _audio_dir / monkeypatch.setenv + get_settings.cache_clear().
+os.environ["VOLC_TTS_BASE_URL"] = ""
+os.environ["VOLC_TTS_API_KEY"] = ""
+os.environ.pop("VOLC_TTS_API_KEY_FILE", None)
 
 from app.core.database import Base, build_engine, get_db
 from app.main import app
@@ -40,9 +46,52 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
         yield db_session
 
     app.dependency_overrides[get_db] = override_db
-    with TestClient(app) as test_client:
-        yield test_client
-    app.dependency_overrides.clear()
+
+    # Point the background import worker at this test's engine so HTTP import
+    # tests can observe the worker's writes. The module singleton otherwise uses
+    # the production SessionLocal, which is a different database than db_session.
+    from app.services import import_worker
+
+    factory = sessionmaker(
+        bind=db_session.get_bind(), autoflush=False, expire_on_commit=False
+    )
+    orig_factory = import_worker._worker._session_factory
+    import_worker._worker._session_factory = factory
+    try:
+        with TestClient(app) as test_client:
+            yield test_client
+    finally:
+        try:
+            import_worker._worker.wait_drained(timeout=10)
+        except Exception:
+            pass
+        import_worker._worker._session_factory = orig_factory
+        app.dependency_overrides.clear()
+
+
+def drain_import_worker(timeout: float = 15.0) -> None:
+    """Block until the background import worker finishes the current job.
+
+    HTTP import tests call this after POST /import (which only enqueues) and
+    before asserting on GET /import/progress or the word list.
+    """
+    from app.services.import_worker import _worker
+
+    _worker.wait_drained(timeout=timeout)
+
+
+@pytest.fixture
+def db_factory(tmp_path) -> Generator[sessionmaker, None, None]:
+    """A session factory on a fresh test engine.
+
+    For worker-thread tests (import / audio workers) that open sessions inside a
+    background thread — they cannot reuse the request-scoped ``db_session``.
+    """
+    engine = build_engine(f"sqlite:///{tmp_path / 'test.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    yield factory
+    engine.dispose()
 
 
 @pytest.fixture

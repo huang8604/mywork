@@ -432,59 +432,6 @@ def test_audio_progress_endpoint(client, monkeypatch, tmp_path):
     }
 
 
-def test_import_enqueues_background_audio_generation(client, monkeypatch, tmp_path):
-    _enable_tts(monkeypatch, tmp_path)
-    _mock_tts(monkeypatch)
-    import json
-
-    import app.api.words as words_api
-
-    recorded: dict = {}
-
-    def fake_enqueue(word_ids, *, force, provider=None):
-        recorded["ids"] = list(word_ids)
-        recorded["force"] = force
-        return len(word_ids)
-
-    monkeypatch.setattr(words_api, "enqueue_audio_generation", fake_enqueue)
-
-    rows = [{"en_word": "ember", "cn_meaning": "余烬"}, {"en_word": "flame", "cn_meaning": "火焰"}]
-    response = client.post(
-        "/api/v1/words/import",
-        headers={"Idempotency-Key": "import-audio-1"},
-        files={"file": ("words.json", json.dumps(rows).encode(), "application/json")},
-        data={"conflict_policy": "skip", "unresolved_policy": "skip", "dry_run": "false"},
-    )
-    assert response.status_code == 200, response.text
-    data = response.json()["data"]
-    assert data["created"] == 2
-    assert data["audio_generation"]["queued"] == 2
-    assert recorded["force"] is False
-    assert len(recorded["ids"]) == 2
-
-
-def test_import_skips_audio_generation_when_disabled(client, monkeypatch, tmp_path):
-    _enable_tts(monkeypatch, tmp_path)
-    _mock_tts(monkeypatch)
-    monkeypatch.setenv("TTS_AUTO_GENERATE_ON_IMPORT", "false")
-    get_settings.cache_clear()
-    import app.api.words as words_api
-
-    def fake_enqueue(word_ids, *, force, provider):
-        raise AssertionError("should not enqueue when auto-generate disabled")
-
-    monkeypatch.setattr(words_api, "enqueue_audio_generation", fake_enqueue)
-
-    response = client.post(
-        "/api/v1/words/import",
-        headers={"Idempotency-Key": "import-audio-off"},
-        files={"file": ("words.txt", b"smoke\n", "text/plain")},
-        data={"conflict_policy": "skip", "unresolved_policy": "skip", "dry_run": "false"},
-    )
-    assert response.status_code == 200, response.text
-    assert "audio_generation" not in response.json()["data"]
-
-
 def _b64(b: bytes) -> str:
     import base64
 

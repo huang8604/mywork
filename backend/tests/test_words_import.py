@@ -5,72 +5,126 @@ from app.services import dictionary as dict_mod
 from app.services.dictionary import clear_dictionary_cache
 
 
-def test_import_returns_resolved_word_ids(client, monkeypatch):
-    # Pre-create "camera" so the import's conflict_policy=skip skips it. Going
-    # through the HTTP endpoint (rather than the service directly) keeps the
-    # row visible to the client's request cycle without session/transaction
-    # surprises. cn_meaning is supplied so enrichment passes without the index.
+def _patch_index(monkeypatch, mapping: dict) -> None:
+    monkeypatch.setattr(
+        dict_mod,
+        "_load_index",
+        lambda path: mapping,
+    )
+
+
+def test_dry_run_returns_synchronous_preview(client, monkeypatch):
+    # dry_run stays synchronous: it predicts actions without writing.
+    _patch_index(
+        monkeypatch,
+        {"camera": {"t": [{"pos": "n.", "cn": "照相机"}]}, "focus": {"t": [{"pos": "n.", "cn": "焦点"}]}},
+    )
     pre = client.post(
         "/api/v1/words",
         json={"en_word": "camera", "cn_meaning": "相机", "is_custom": False, "tags": []},
     )
     assert pre.status_code == 201, pre.text
-    camera_id = pre.json()["data"]["id"]
-
-    # Provide dictionary entries so the txt import (which carries no cn_meaning)
-    # can enrich both words without depending on the real (git-ignored) index.
-    monkeypatch.setattr(
-        dict_mod,
-        "_load_index",
-        lambda path: {
-            "camera": {"t": [{"pos": "n.", "cn": "照相机"}]},
-            "focus": {"t": [{"pos": "n.", "cn": "焦点"}]},
-        },
-    )
 
     resp = client.post(
         "/api/v1/words/import",
         files={"file": ("words.txt", b"camera\nfocus\n", "text/plain")},
-        data={"conflict_policy": "skip", "unresolved_policy": "skip"},
+        data={"conflict_policy": "skip", "unresolved_policy": "skip", "dry_run": "true"},
     )
     assert resp.status_code == 200, resp.text
     data = resp.json()["data"]
-    resolved = data["resolved"]
-    by_word = {r["en_word"]: r for r in resolved}
+    assert data["dry_run"] is True
+    by_word = {r["en_word"]: r for r in data["resolved"]}
     assert by_word["camera"]["action"] == "skipped"
-    assert by_word["camera"]["word_id"] == camera_id
     assert by_word["focus"]["action"] == "created"
-    assert isinstance(by_word["focus"]["word_id"], int)
-    # focus got a real new id different from camera's
-    assert by_word["focus"]["word_id"] != camera_id
+    # dry-run never writes, so a would-be-created row has no id yet.
+    assert by_word["focus"]["word_id"] is None
 
 
-def test_import_in_file_duplicate_resolved_reports_first_id(client, monkeypatch):
-    # An in-file duplicate under conflict_policy=skip is counted as skipped and
-    # the resolved entry reuses the first occurrence's word_id.
-    monkeypatch.setattr(
-        dict_mod,
-        "_load_index",
-        lambda path: {"focus": {"t": [{"pos": "n.", "cn": "焦点"}]}},
-    )
+def test_real_import_enqueues_and_returns_running(client, monkeypatch):
+    _patch_index(monkeypatch, {"focus": {"t": [{"pos": "n.", "cn": "焦点"}]}})
+
+    import app.api.words as words_api
+
+    captured: dict[str, object] = {}
+
+    def fake_enqueue(payloads, *, conflict_policy, unresolved_policy, actor_type, actor_id, request_id, idempotency_key):
+        captured["payloads"] = payloads
+        captured["conflict_policy"] = conflict_policy
+        captured["unresolved_policy"] = unresolved_policy
+        return len(payloads)
+
+    def fake_progress():
+        return {"state": "running", "total": 1, "processed": 0}
+
+    monkeypatch.setattr(words_api, "enqueue_import", fake_enqueue)
+    monkeypatch.setattr(words_api, "import_progress", fake_progress)
+
     resp = client.post(
         "/api/v1/words/import",
-        files={"file": ("words.txt", b"focus\nFOCUS\n", "text/plain")},
-        data={"conflict_policy": "skip", "unresolved_policy": "skip"},
+        files={"file": ("words.txt", b"focus\n", "text/plain")},
+        data={"conflict_policy": "update", "unresolved_policy": "ai"},
     )
     assert resp.status_code == 200, resp.text
-    resolved = resp.json()["data"]["resolved"]
-    by_word = {r["en_word"]: r for r in resolved}
-    assert by_word["focus"]["action"] == "created"
-    first_id = by_word["focus"]["word_id"]
-    assert isinstance(first_id, int)
-    assert by_word["FOCUS"]["action"] == "skipped"
-    assert by_word["FOCUS"]["word_id"] == first_id
+    data = resp.json()["data"]
+    assert data["state"] == "running"
+    assert data["total"] == 1
+    assert captured["conflict_policy"] == "update"
+    assert captured["unresolved_policy"] == "ai"
+    assert [p.en_word for p in captured["payloads"]] == ["focus"]
 
 
-def test_import_marks_unresolved_dropped_words(client, monkeypatch, tmp_path):
-    # No dictionary entry and AI disabled → the word is dropped under
-    # unresolved_policy=skip and surfaces in resolved[] with action=unresolved.
+def test_import_merges_default_tags_into_rows(client, monkeypatch):
+    _patch_index(monkeypatch, {"focus": {"t": [{"pos": "n.", "cn": "焦点"}]}})
+
+    import app.api.words as words_api
+
+    captured: dict[str, object] = {}
+
+    def fake_enqueue(payloads, **_kwargs):
+        captured["payloads"] = payloads
+        return len(payloads)
+
+    monkeypatch.setattr(words_api, "enqueue_import", fake_enqueue)
+    monkeypatch.setattr(words_api, "import_progress", lambda: {"state": "running", "total": 1})
+
+    resp = client.post(
+        "/api/v1/words/import",
+        files={"file": ("words.txt", b"focus\n", "text/plain")},
+        data={"conflict_policy": "update", "tags": "基础, 词汇"},
+    )
+    assert resp.status_code == 200, resp.text
+    [payload] = captured["payloads"]
+    # comma + space trimmed, merged into the row's tags.
+    assert payload.tags == ["基础", "词汇"]
+
+
+def test_reject_prescan_refuses_existing_word(client, monkeypatch):
+    _patch_index(monkeypatch, {"camera": {"t": [{"pos": "n.", "cn": "照相机"}]}})
+    pre = client.post(
+        "/api/v1/words",
+        json={"en_word": "camera", "cn_meaning": "相机", "is_custom": False, "tags": []},
+    )
+    assert pre.status_code == 201, pre.text
+
+    import app.api.words as words_api
+
+    called = {"enqueue": False}
+    monkeypatch.setattr(
+        words_api, "enqueue_import", lambda *a, **k: called.__setitem__("enqueue", True) or 1
+    )
+
+    resp = client.post(
+        "/api/v1/words/import",
+        files={"file": ("words.txt", b"camera\n", "text/plain")},
+        data={"conflict_policy": "reject"},
+    )
+    assert resp.status_code == 409, resp.text
+    assert resp.json()["code"] == "DUPLICATE_WORD"
+    # Nothing was enqueued — zero writes guaranteed by the pre-scan.
+    assert called["enqueue"] is False
+
+
+def test_dry_run_marks_unresolved_dropped_words(client, monkeypatch, tmp_path):
     monkeypatch.setenv("DICTIONARY_INDEX_PATH", str(tmp_path / "missing.json"))
     monkeypatch.setenv("AI_BASE_URL", "")
     monkeypatch.setenv("AI_API_KEY", "")
@@ -80,7 +134,7 @@ def test_import_marks_unresolved_dropped_words(client, monkeypatch, tmp_path):
         resp = client.post(
             "/api/v1/words/import",
             files={"file": ("words.txt", b"syzygy\n", "text/plain")},
-            data={"conflict_policy": "skip", "unresolved_policy": "skip"},
+            data={"conflict_policy": "skip", "unresolved_policy": "skip", "dry_run": "true"},
         )
         assert resp.status_code == 200, resp.text
         resolved = resp.json()["data"]["resolved"]

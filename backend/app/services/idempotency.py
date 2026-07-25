@@ -146,3 +146,42 @@ def complete(
     claim_.record.response_json = canonical_json(data)
     claim_.record.resource_type = resource_type
     claim_.record.resource_id = str(resource_id) if resource_id is not None else None
+
+
+def complete_by_key(
+    db: Session,
+    *,
+    actor_type: str,
+    actor_id: str | None,
+    method: str,
+    route_template: str,
+    key: str | None,
+    data: dict[str, object] | list[object],
+    status_code: int,
+    resource_type: str | None = None,
+) -> None:
+    """Finalize an idempotency record by key from a background worker thread.
+
+    The import worker runs in its own session and cannot reuse the route's
+    in-memory ``IdempotencyClaim``; it looks the record up by key instead.
+    No-op when there is no key (e.g. a web user import, which is not required
+    to send one) or when the key was never claimed.
+    """
+    if not key:
+        return
+    record = db.scalar(
+        select(IdempotencyRecord).where(
+            IdempotencyRecord.actor_type == actor_type,
+            IdempotencyRecord.actor_id == actor_id,
+            IdempotencyRecord.method == method,
+            IdempotencyRecord.route_template == route_template,
+            IdempotencyRecord.idempotency_key == key,
+        )
+    )
+    if record is None:
+        return
+    record.state = "succeeded"
+    record.response_status = status_code
+    record.response_json = canonical_json(data)
+    record.resource_type = resource_type
+    db.flush()

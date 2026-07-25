@@ -110,6 +110,59 @@
         "title": "ApiClientUpdateRequest",
         "type": "object"
       },
+      "BatchAudioRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "mimo",
+                  "volc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          },
+          "word_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Word Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "word_ids"
+        ],
+        "title": "BatchAudioRequest",
+        "type": "object"
+      },
+      "BatchDeleteRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchWordItem"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "title": "BatchDeleteRequest",
+        "type": "object"
+      },
       "BatchResults": {
         "additionalProperties": false,
         "properties": {
@@ -197,6 +250,77 @@
         "title": "BatchRoundResult",
         "type": "object"
       },
+      "BatchTagsRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/BatchWordItem"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Items",
+            "type": "array"
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "minItems": 1,
+            "title": "Tags",
+            "type": "array"
+          }
+        },
+        "required": [
+          "items",
+          "tags"
+        ],
+        "title": "BatchTagsRequest",
+        "type": "object"
+      },
+      "BatchWordIdsRequest": {
+        "additionalProperties": false,
+        "description": "Shared shape for batch audio / reset-progress (ids only, no version check).",
+        "properties": {
+          "word_ids": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 500,
+            "minItems": 1,
+            "title": "Word Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "word_ids"
+        ],
+        "title": "BatchWordIdsRequest",
+        "type": "object"
+      },
+      "BatchWordItem": {
+        "additionalProperties": false,
+        "description": "A target word for a batch operation, with the optimistic-lock version.",
+        "properties": {
+          "expected_version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "id": {
+            "exclusiveMinimum": 0.0,
+            "title": "Id",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "expected_version"
+        ],
+        "title": "BatchWordItem",
+        "type": "object"
+      },
       "Body_import_words_api_v1_words_import_post": {
         "properties": {
           "conflict_policy": {
@@ -212,6 +336,11 @@
           "file": {
             "contentMediaType": "application/octet-stream",
             "title": "File",
+            "type": "string"
+          },
+          "tags": {
+            "default": "",
+            "title": "Tags",
             "type": "string"
           },
           "unresolved_policy": {
@@ -3977,6 +4106,306 @@
         ]
       }
     },
+    "/api/v1/words/batch/audio": {
+      "post": {
+        "description": "Enqueue selected words for background MP3 generation (fire-and-forget).",
+        "operationId": "batch_audio_api_v1_words_batch_audio_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchAudioRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Batch Audio",
+        "tags": [
+          "words"
+        ],
+        "x-required-scopes": [
+          "words:write"
+        ]
+      }
+    },
+    "/api/v1/words/batch/delete": {
+      "post": {
+        "description": "Soft-delete each word by id + expected_version. Per-word conflicts/missing\nare collected and reported; the batch always partial-succeeds.",
+        "operationId": "batch_delete_api_v1_words_batch_delete_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchDeleteRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Batch Delete",
+        "tags": [
+          "words"
+        ],
+        "x-required-scopes": [
+          "words:write"
+        ]
+      }
+    },
+    "/api/v1/words/batch/reset-progress": {
+      "post": {
+        "description": "Clear review history for each id (back to the 新词 pool). Missing/deleted\nids are skipped silently.",
+        "operationId": "batch_reset_api_v1_words_batch_reset_progress_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchWordIdsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Batch Reset",
+        "tags": [
+          "words"
+        ],
+        "x-required-scopes": [
+          "words:write"
+        ]
+      }
+    },
+    "/api/v1/words/batch/tags": {
+      "post": {
+        "description": "Union ``tags`` onto each word. Per-word conflicts/missing collected.",
+        "operationId": "batch_tags_api_v1_words_batch_tags_post",
+        "parameters": [
+          {
+            "in": "header",
+            "name": "Idempotency-Key",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Idempotency-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchTagsRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Batch Tags",
+        "tags": [
+          "words"
+        ],
+        "x-required-scopes": [
+          "words:write"
+        ]
+      }
+    },
     "/api/v1/words/enrich": {
       "post": {
         "operationId": "enrich_api_v1_words_enrich_post",
@@ -4186,6 +4615,7 @@
     },
     "/api/v1/words/import": {
       "post": {
+        "description": "Import words.\n\n``dry_run`` returns a synchronous no-write preview. A real import is\nenqueued to the background worker — each row committed independently, per-row\nerrors skipped — and the current progress snapshot is returned immediately\n(so a slow enrichment can never blow the browser timeout and lose the batch).\n``tags`` is a comma-separated list of default tags unioned into every row.\n``conflict_policy=reject`` is pre-scanned: any existing word refuses the\nimport with zero writes before a job is enqueued.",
         "operationId": "import_words_api_v1_words_import_post",
         "parameters": [
           {
@@ -4255,6 +4685,42 @@
         ],
         "x-required-scopes": [
           "words:write"
+        ]
+      }
+    },
+    "/api/v1/words/import/progress": {
+      "get": {
+        "operationId": "import_progress_route_api_v1_words_import_progress_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Import Progress Route",
+        "tags": [
+          "words"
+        ],
+        "x-required-scopes": [
+          "words:read"
         ]
       }
     },

@@ -128,6 +128,58 @@ class NumberAudioGenerateRequest(StrictModel):
     limit: int = Field(default=50, ge=1, le=50)
 
 
+class BatchWordItem(StrictModel):
+    """A target word for a batch operation, with the optimistic-lock version."""
+
+    id: int = Field(gt=0)
+    expected_version: int = Field(gt=0)
+
+
+class BatchDeleteRequest(StrictModel):
+    items: list[BatchWordItem] = Field(min_length=1, max_length=500)
+
+
+class BatchTagsRequest(StrictModel):
+    items: list[BatchWordItem] = Field(min_length=1, max_length=500)
+    tags: list[str] = Field(min_length=1, max_length=20)
+
+    @field_validator("tags")
+    @classmethod
+    def unique_tags(cls, values: list[str]) -> list[str]:
+        if len({value.casefold().strip() for value in values}) != len(values):
+            raise ValueError("tags must be unique after normalization")
+        return values
+
+
+class BatchWordIdsRequest(StrictModel):
+    """Shared shape for batch audio / reset-progress (ids only, no version check)."""
+
+    word_ids: list[int] = Field(min_length=1, max_length=500)
+
+    @field_validator("word_ids")
+    @classmethod
+    def unique_word_ids(cls, values: list[int]) -> list[int]:
+        if any(value <= 0 for value in values):
+            raise ValueError("word_ids must contain positive integers")
+        if len(values) != len(set(values)):
+            raise ValueError("word_ids must be unique")
+        return values
+
+
+class BatchAudioRequest(StrictModel):
+    word_ids: list[int] = Field(min_length=1, max_length=500)
+    provider: AudioProvider | None = None
+
+    @field_validator("word_ids")
+    @classmethod
+    def unique_word_ids(cls, values: list[int]) -> list[int]:
+        if any(value <= 0 for value in values):
+            raise ValueError("word_ids must contain positive integers")
+        if len(values) != len(set(values)):
+            raise ValueError("word_ids must be unique")
+        return values
+
+
 class ReviewCreate(StrictModel):
     word_id: int = Field(gt=0)
     status: ReviewStatus

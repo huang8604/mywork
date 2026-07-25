@@ -8,7 +8,7 @@ from app.api.words import _decode_safe_csv, _safe_csv
 from app.core.config import get_settings
 from app.models import PracticeSession, ReviewLog, WordStats
 from app.services.dictionary import clear_dictionary_cache
-from conftest import create_word
+from conftest import create_word, drain_import_worker
 
 
 def test_sqlite_pragmas_are_enabled(db_session):
@@ -127,7 +127,9 @@ def test_atomic_import_and_safe_csv_export(client):
         data={"conflict_policy": "reject", "dry_run": "false"},
     )
     assert response.status_code == 200, response.text
-    assert response.json()["data"]["created"] == 2
+    drain_import_worker()
+    summary = client.get("/api/v1/words/import/progress").json()["data"]
+    assert summary["created"] == 2
     exported = client.get("/api/v1/words/export?format=csv")
     assert exported.status_code == 200
     assert exported.content.startswith(b"\xef\xbb\xbf")
@@ -164,7 +166,8 @@ def test_import_skip_policy_dedupes_in_file_duplicates(client):
         data={"conflict_policy": "skip"},
     )
     assert skipped_resp.status_code == 200, skipped_resp.text
-    summary = skipped_resp.json()["data"]
+    drain_import_worker()
+    summary = client.get("/api/v1/words/import/progress").json()["data"]
     assert (summary["created"], summary["skipped"], summary["total"]) == (1, 1, 2)
 
     rejected = client.post(
@@ -211,7 +214,9 @@ def test_import_skip_checks_existing_words_before_ai(client, monkeypatch, tmp_pa
             data={"conflict_policy": "skip", "unresolved_policy": "ai"},
         )
         assert response.status_code == 200, response.text
-        assert response.json()["data"]["skipped"] == 2
+        drain_import_worker()
+        summary = client.get("/api/v1/words/import/progress").json()["data"]
+        assert summary["skipped"] == 2
         assert calls == []
     finally:
         get_settings.cache_clear()
@@ -220,8 +225,8 @@ def test_import_skip_checks_existing_words_before_ai(client, monkeypatch, tmp_pa
 
 def test_import_unresolved_policy_skip_avoids_zero_write(client, monkeypatch, tmp_path):
     # No dictionary configured: a word with cn_meaning still imports; a word
-    # without one is "unresolved". Under skip the rest imports (no zero-write);
-    # under reject the whole batch still aborts.
+    # without one is "unresolved" (never written, only counted). Background mode
+    # always partial-succeeds — resolvable rows are written regardless of policy.
     monkeypatch.setenv("DICTIONARY_INDEX_PATH", str(tmp_path / "missing.json"))
     get_settings.cache_clear()
     clear_dictionary_cache()
@@ -236,11 +241,15 @@ def test_import_unresolved_policy_skip_avoids_zero_write(client, monkeypatch, tm
             data={"conflict_policy": "reject", "unresolved_policy": "skip"},
         )
         assert skipped.status_code == 200, skipped.text
-        summary = skipped.json()["data"]
+        drain_import_worker()
+        summary = client.get("/api/v1/words/import/progress").json()["data"]
         assert (summary["created"], summary["unresolved"], summary["total"]) == (1, 1, 2)
         assert summary["unresolved_words"] == ["flibbertigibbet"]
         assert client.get("/api/v1/words?keyword=warm").json()["data"]
 
+        # unresolved=reject used to abort the whole batch; in background mode it
+        # just means "don't try AI", so cool (which carries a meaning) still
+        # imports while flibbertigibbet stays unresolved.
         rejected_rows = [
             {"en_word": "cool", "cn_meaning": "凉", "is_custom": False, "tags": []},
             {"en_word": "flibbertigibbet", "is_custom": False, "tags": []},
@@ -256,9 +265,12 @@ def test_import_unresolved_policy_skip_avoids_zero_write(client, monkeypatch, tm
             },
             data={"conflict_policy": "reject", "unresolved_policy": "reject"},
         )
-        assert rejected.status_code == 422
-        assert rejected.json()["code"] == "DICTIONARY_ENTRY_NOT_FOUND"
-        assert client.get("/api/v1/words?keyword=cool").json()["data"] == []
+        assert rejected.status_code == 200, rejected.text
+        drain_import_worker()
+        summary2 = client.get("/api/v1/words/import/progress").json()["data"]
+        assert summary2["created"] == 1
+        assert summary2["unresolved"] == 1
+        assert client.get("/api/v1/words?keyword=cool").json()["data"]
     finally:
         get_settings.cache_clear()
         clear_dictionary_cache()
@@ -318,7 +330,8 @@ def test_import_restores_deleted_word(client, word_payload):
         data={"conflict_policy": "reject"},
     )
     assert resp.status_code == 200, resp.text
-    summary = resp.json()["data"]
+    drain_import_worker()
+    summary = client.get("/api/v1/words/import/progress").json()["data"]
     assert summary["updated"] == 1
     assert summary["created"] == 0
     restored = client.get(f"/api/v1/words/{word['id']}").json()["data"]
@@ -378,7 +391,8 @@ def test_import_ai_policy_resolves_unresolved_words(client, monkeypatch, tmp_pat
             data={"conflict_policy": "reject", "unresolved_policy": "ai"},
         )
         assert resp.status_code == 200, resp.text
-        summary = resp.json()["data"]
+        drain_import_worker()
+        summary = client.get("/api/v1/words/import/progress").json()["data"]
         assert summary["created"] == 1
         assert summary["unresolved"] == 0
     finally:
@@ -440,7 +454,9 @@ def test_english_only_create_preview_and_txt_import_use_local_dictionary(
             data={"conflict_policy": "reject", "dry_run": "false"},
         )
         assert imported.status_code == 200, imported.text
-        assert imported.json()["data"]["dictionary_matches"] == 1
+        drain_import_worker()
+        summary = client.get("/api/v1/words/import/progress").json()["data"]
+        assert summary["dictionary_matches"] == 1
         camera = client.get("/api/v1/words?keyword=camera").json()["data"][0]
         assert camera["example_sentence"] == "She bought a camera."
 

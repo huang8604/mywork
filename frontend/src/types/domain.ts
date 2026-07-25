@@ -102,6 +102,26 @@ export interface AudioProvidersInfo {
 }
 export interface ImportResolved { en_word: string; word_id: number | null; action: 'created' | 'updated' | 'skipped' | 'unresolved' }
 export interface ImportSummary { created: number; updated: number; skipped: number; rejected: number; unresolved?: number; unresolved_words?: string[]; total: number; dry_run: boolean; dictionary_matches?: number; resolved?: ImportResolved[]; audio_generation?: { queued: number } }
+export interface ImportProgress {
+  state: 'idle' | 'running'
+  total: number
+  processed: number
+  created: number
+  updated: number
+  skipped: number
+  failed: number
+  unresolved: number
+  unresolved_words: string[]
+  resolved: ImportResolved[]
+  dictionary_matches: number
+  audio_generation: { queued: number }
+  finished: boolean
+}
+export interface BatchItem { id: number; expected_version: number }
+export interface BatchConflict { id: number; current_version: number }
+export interface BatchDeleteResult { deleted: { id: number }[]; conflicts: BatchConflict[]; missing: { id: number }[] }
+export interface BatchTagsResult { updated: { id: number; version: number }[]; conflicts: BatchConflict[]; missing: { id: number }[] }
+export interface BatchResetResult { reset: number }
 export interface EnrichedWord extends WordPayload {
   dictionary_found: boolean; source: 'dictionary-index' | 'ai' | null; missing_fields: string[]
 }

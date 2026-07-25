@@ -39,6 +39,63 @@ def _set_tags(db: Session, word: Word, values: list[str]) -> None:
         db.add(WordTag(word_id=word.id, tag_id=tag.id))
 
 
+def _word_tag_names(db: Session, word_id: int) -> list[str]:
+    return list(
+        db.scalars(
+            select(Tag.name)
+            .join(WordTag, WordTag.tag_id == Tag.id)
+            .where(WordTag.word_id == word_id)
+        )
+    )
+
+
+def _union_tags(existing: list[str], add_tags: list[str]) -> list[str]:
+    """Merge tag lists, dedup by normalized form, preserve first-seen display order."""
+    merged: list[str] = []
+    seen: set[str] = set()
+    for value in [*existing, *add_tags]:
+        display, normalized = normalize_tag(value)
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        merged.append(display)
+    return merged
+
+
+def merge_default_tags(payload: WordCreate, default_tags: list[str]) -> WordCreate:
+    """Return a copy of ``payload`` with ``default_tags`` unioned into its tags.
+
+    Used by the import path so the dialog's "default tags" apply to every row
+    (txt / csv / json) without mutating the parsed payload in place.
+    """
+    if not default_tags:
+        return payload
+    return payload.model_copy(update={"tags": _union_tags(list(payload.tags), default_tags)})
+
+
+def add_tags_to_word(
+    db: Session, word_id: int, add_tags: list[str], expected_version: int
+) -> Word:
+    """Union ``add_tags`` onto a word's existing tags. Version-checked, single bump.
+
+    The batch-add-tags path goes straight to ``_set_tags`` with the merged set
+    rather than reconstructing a full-field ``WordUpdate``.
+    """
+    word = get_word(db, word_id)
+    if word.version != expected_version:
+        raise AppError(
+            409,
+            "VERSION_CONFLICT",
+            "单词已被其他操作修改，请刷新后重试",
+            [{"current_version": word.version}],
+        )
+    _set_tags(db, word, _union_tags(_word_tag_names(db, word_id), add_tags))
+    word.version += 1
+    word.updated_at = utc_text()
+    db.flush()
+    return word
+
+
 def create_word(db: Session, payload: WordCreate) -> Word:
     display, normalized = normalize_word(payload.en_word)
     duplicate = db.scalar(select(Word).where(Word.normalized_en_word == normalized))
@@ -402,3 +459,68 @@ def _word_filters(
             )
         )
     return filters
+
+
+def batch_delete_words(db: Session, items: list[dict]) -> dict[str, object]:
+    """Soft-delete each word by id + expected_version.
+
+    Per-word: a version conflict or missing word is collected, never raised —
+    the batch always partial-succeeds. Already-deleted words count as deleted
+    (idempotent). Caller owns the transaction (commits once at the end).
+    """
+    deleted: list[dict[str, int]] = []
+    conflicts: list[dict[str, int]] = []
+    missing: list[dict[str, int]] = []
+    for item in items:
+        word = db.get(Word, item["id"])
+        if word is None:
+            missing.append({"id": item["id"]})
+            continue
+        if word.deleted_at is not None:
+            deleted.append({"id": item["id"]})
+            continue
+        if word.version != item["expected_version"]:
+            conflicts.append({"id": item["id"], "current_version": word.version})
+            continue
+        now = utc_text()
+        word.deleted_at = now
+        word.updated_at = now
+        word.version += 1
+        deleted.append({"id": item["id"]})
+    db.flush()
+    return {"deleted": deleted, "conflicts": conflicts, "missing": missing}
+
+
+def batch_add_tags(
+    db: Session, items: list[dict], add_tags: list[str]
+) -> dict[str, object]:
+    """Union ``add_tags`` onto each word's existing tags. Per-word conflict/missing."""
+    updated: list[dict[str, int]] = []
+    conflicts: list[dict[str, int]] = []
+    missing: list[dict[str, int]] = []
+    for item in items:
+        word = db.get(Word, item["id"])
+        if word is None or word.deleted_at is not None:
+            missing.append({"id": item["id"]})
+            continue
+        if word.version != item["expected_version"]:
+            conflicts.append({"id": item["id"], "current_version": word.version})
+            continue
+        _set_tags(db, word, _union_tags(_word_tag_names(db, item["id"]), add_tags))
+        word.version += 1
+        word.updated_at = utc_text()
+        updated.append({"id": item["id"], "version": word.version})
+    db.flush()
+    return {"updated": updated, "conflicts": conflicts, "missing": missing}
+
+
+def batch_reset_progress(db: Session, word_ids: list[int]) -> dict[str, object]:
+    """Clear review history for each id. Missing/deleted ids are skipped silently."""
+    count = 0
+    for word_id in word_ids:
+        word = db.get(Word, word_id)
+        if word is None or word.deleted_at is not None:
+            continue
+        reset_word_progress(db, word_id)
+        count += 1
+    return {"reset": count}
