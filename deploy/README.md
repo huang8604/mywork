@@ -119,7 +119,7 @@ VOLC_TTS_BASE_URL: "https://openspeech.bytedance.com"
 VOLC_TTS_API_KEY_FILE: "/run/secrets/volc-tts-api-key"   # Ark API Key
 VOLC_TTS_MODEL: "doubao-seed-tts-2.0"
 VOLC_TTS_RESOURCE_ID: "seed-tts-2.0"
-VOLC_TTS_VOICE: "<agent-plan 音色 speaker id>"            # 见下:必须从控制台复制,内置 BVxxx 无效
+VOLC_TTS_VOICE: "zh_female_yingyujiaoxue_uranus_bigtts"   # Tina老师 2.0(教育/中文+英式英语)。必须用 2.0 音色(*_uranus_bigtts),见下
 # 平稳/耐心/有力/清晰 + 前后留白(留白:句尾追加静音 + MP3 自然句首留白 + 默写间隔)
 VOLC_TTS_SPEECH_RATE: "-10"   # -50..100,负=慢(耐心/平稳)
 VOLC_TTS_LOUDNESS_RATE: "20"  # -50..100,正=更响(有力/清晰)
@@ -127,7 +127,7 @@ VOLC_TTS_SILENCE_MS: "500"    # 0..30000ms,句尾静音,防止结尾被切
 # 可选:TTS_AUDIO_DIR=/app/data/audio、TTS_TIMEOUT_SECONDS=60、VOLC_TTS_TIMEOUT_SECONDS=60、TTS_AUTO_GENERATE_ON_IMPORT=true
 ```
 
-> ⚠️ **speaker id 是必填且必须从你的控制台复制**。探测确认:你给的是 **agent-plan 专属 Key**,只在 `https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional` 可用(标准 `/api/v3/tts/unidirectional` 返回 401 Invalid X-Api-Key)。在 agent-plan 端点上,**所有内置音色(含 `BV700_streaming`、文档示例 `zh_female_shuangkuaisisi_moon_bigtts` 等)都报 `resource ID is mismatched with speaker related resource`**。请到火山方舟控制台该 agent-plan / seed-tts-2.0 资源的音色列表里复制一个合法 speaker id(英文音色优先)填入 `VOLC_TTS_VOICE`。在你设好之前,豆包会失败并**自动兜底到 mimo** 出英音,音频生成不会中断。
+> ⚠️ **`VOLC_TTS_VOICE` 必须是「豆包语音合成模型 2.0」音色**。`seed-tts-2.0` 资源**只接受 2.0 音色**(voice_type 形如 `*_uranus_bigtts`,见[2.0 音色列表](https://www.volcengine.com/docs/6561/1257544));填 1.0 音色(`BV700_streaming`、`*_moon_bigtts`、`*_mars_bigtts` 等)会报 `55000000 resource ID is mismatched with speaker related resource`。默认 `zh_female_yingyujiaoxue_uranus_bigtts`(Tina老师 2.0,教育场景,中文+英式英语)适配本项目的英音需求;若要美音,2.0 列表里有大量 `en_*_uranus_bigtts`(如 `en_female_myra_uranus_bigtts`、`en_male_russell_uranus_bigtts`)可选。Key 仍是 **agent-plan 专属 Key**,只在 `https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional?api_key=` 可用(标准 `/api/v3/tts/unidirectional` 返回 401)。豆包失败会**自动兜底到 mimo** 出英音,音频生成不会中断。
 ```
 
 部署后 smoke:词库页选一个无音频的词 → 选模型 → 点「生成音频」→ 状态变「已生成」→ 点「播放」应能听到 MP3;`/review` 在线默写优先播该 MP3,缺失/失败自动回退浏览器 `speechSynthesis`。
@@ -136,7 +136,7 @@ VOLC_TTS_SILENCE_MS: "500"    # 0..30000ms,句尾静音,防止结尾被切
 
 1. 容器挂载了对应 secret(`tts-api-key` / `volc-tts-api-key`),文件非空且 UID 10001 可读;
 2. `*_API_KEY_FILE` 已生效,未把 Key 写入明文环境变量;
-3. mimo:`TTS_BASE_URL` 含 `/v1`、模型 `mimo-v2.5-tts`、voice `Chloe`;volc:已在火山方舟控制台**配置模型 + 开启超额后付费**、`VOLC_TTS_RESOURCE_ID=seed-tts-2.0`、且 `VOLC_TTS_VOICE` 是 seed-tts-2.0 资源下的合法 speaker id(内置 `BVxxx` 会报 `resource ID is mismatched with speaker related resource`,需从控制台音色列表复制);
+3. mimo:`TTS_BASE_URL` 含 `/v1`、模型 `mimo-v2.5-tts`、voice `Chloe`;volc:已在火山方舟控制台**配置模型 + 开启超额后付费**、`VOLC_TTS_RESOURCE_ID=seed-tts-2.0`、且 `VOLC_TTS_VOICE` 是 **2.0 音色**(`*_uranus_bigtts`,如默认的 `zh_female_yingyujiaoxue_uranus_bigtts`);填 1.0 音色(`BVxxx` / `*_moon_bigtts` / `*_mars_bigtts`)会报 `resource ID is mismatched with speaker related resource`;
 4. `/app/data/audio`(或 `TTS_AUDIO_DIR`)归 UID 10001 可写;
 5. 容器日志中的 `TTS_PROVIDER_ERROR` / `AUDIO_STORAGE_ERROR`(日志不会输出 Key)。
 

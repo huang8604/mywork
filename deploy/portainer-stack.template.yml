@@ -45,7 +45,7 @@ services:
       VOLC_TTS_API_KEY_FILE: /run/secrets/volc-tts-api-key
       VOLC_TTS_MODEL: doubao-seed-tts-2.0
       VOLC_TTS_RESOURCE_ID: seed-tts-2.0
-      VOLC_TTS_VOICE: BV700_V2_streaming      # MUST be a speaker id bound to your agent-plan; copy from console
+      VOLC_TTS_VOICE: zh_female_yingyujiaoxue_uranus_bigtts   # Tina老师 2.0 (英式英语/教育). MUST be a 2.0 voice (*_uranus_bigtts); 1.0 ids (BVxxx/*_moon_bigtts) mismatch seed-tts-2.0
       VOLC_TTS_SPEECH_RATE: "-10"             # -50..100, negative = slower (patient/steady)
       VOLC_TTS_LOUDNESS_RATE: "20"            # -50..100, positive = louder (forceful/clear)
       VOLC_TTS_SILENCE_MS: "500"              # 0..30000ms trailing silence so the end isn't clipped

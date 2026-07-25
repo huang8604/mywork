@@ -60,17 +60,53 @@ def _synthesize_mimo(text: str, settings: Settings) -> bytes:
 
 
 def _decode_audio(raw: bytes) -> bytes:
-    """Defensive audio extraction: binary mp3, or JSON base64 envelope.
+    """Defensive audio extraction: raw mp3, a JSON base64 envelope, or chunked NDJSON.
 
-    seed-tts-2.0's exact success field is unverified until the model is activated
-    on the account, so accept the common shapes: raw mp3 bytes, a top-level base64
-    `data`/`audio`, or a mimo-style nested message.audio.data. Volc JSON error
-    envelopes (``{"reqid","code","message"}``) surface as a provider error.
+    seed-tts-2.0's HTTP chunked endpoint streams **one JSON event per line**
+    (``{"code","message","data"}``); the base64 MP3 arrives across several
+    ``data`` chunks and is terminated by a ``code=20000000`` "OK" event. A
+    provider JSON error surfaces either as a single ``{"reqid","code","message"}``
+    object or as a mid-stream error event — both become a provider error. mimo
+    returns a single object with nested ``choices[0].message.audio.data``.
     """
-    if raw[:3] in (b"\xff\xf3", b"\xff\xfb") or raw[:3] == b"ID3":
+    if raw[:3] == b"ID3" or (
+        len(raw) >= 2 and raw[0] == 0xFF and (raw[1] & 0xE0) == 0xE0
+    ):
+        # ID3-tagged MP3 or a bare MP3 frame sync word (0xFFEx).
         return raw
+    text = raw.decode("utf-8", errors="replace")
+    audio = bytearray()
+    error_msg: str | None = None
+    saw_event = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or not stripped.startswith("{"):
+            continue
+        try:
+            event = json.loads(stripped)
+        except (ValueError, TypeError):
+            continue
+        if not isinstance(event, dict):
+            continue
+        saw_event = True
+        code = event.get("code")
+        if code not in (None, 0, "0", 20000000) and error_msg is None:
+            error_msg = event.get("message") or str(code)
+            continue
+        value = event.get("data")
+        if isinstance(value, str) and value:
+            try:
+                audio.extend(base64.b64decode(value))
+            except (ValueError, TypeError):
+                pass
+    if audio:
+        return bytes(audio)
+    if saw_event and error_msg is not None:
+        log.warning("TTS provider JSON error: %s", error_msg)
+        raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商调用失败")
+    # Single-object envelope (mimo nested, or top-level data/audio base64).
     try:
-        data = json.loads(raw)
+        data = json.loads(text)
     except (ValueError, TypeError):
         return b""
     if isinstance(data, dict):
@@ -92,18 +128,24 @@ def _decode_audio(raw: bytes) -> bytes:
 
 
 def _synthesize_volc(text: str, settings: Settings) -> bytes:
-    """doubao-seed-tts-2.0 via the openspeech agent-plan HTTP endpoint.
+    """doubao-seed-tts-2.0 via the openspeech agent-plan HTTP chunked endpoint.
 
-    Contract verified by live probe:
+    Contract verified by live probe (returns ~17KB MP3 for one word):
       POST ``{volc_base_url}/api/v3/plan/tts/unidirectional?api_key=<key>``
-      Headers: ``X-Api-Resource-Id: seed-tts-2.0`` (the api key MUST go in the query
-      string — a bare Authorization header is rejected as "app key not found").
-      Body: ``{"req_params": {text, speaker (string), audio_params:{format, speed_ratio}}}``.
-    NOTE: the speaker id must be one bound to the seed-tts-2.0 resource on this
-    account — the built-in ``BVxxx`` voices return ``55000000 resource ID is
-    mismatched with speaker related resource``. Set ``VOLC_TTS_VOICE`` to a valid
-    speaker id from the 火山方舟 console. The success audio field is confirmed once
-    a valid speaker is supplied; ``_decode_audio`` tolerates the likely shapes.
+      Headers: ``X-Api-Resource-Id: seed-tts-2.0`` (the api key MUST go in the
+      query string — this agent-plan key 401s on the standard
+      ``/api/v3/tts/unidirectional`` and on a bare Authorization header).
+      Body: ``{"user":{"uid"}, "req_params": {text, speaker, audio_params:{format,
+      sample_rate, speech_rate, loudness_rate}, additions: "<json string>"}}``.
+    Three shape requirements learned from probing:
+      1. ``speaker`` MUST be a 豆包语音合成模型2.0 voice (``*_uranus_bigtts``); 1.0
+         ids (``BVxxx`` / ``*_moon_bigtts`` / ``*_mars_bigtts``) return
+         ``55000000 resource ID is mismatched with speaker related resource``.
+      2. ``additions`` is typed "jsonstring" — pass a serialized JSON string,
+         not an object (object → "cannot unmarshal object into ... type string").
+      3. The success response is HTTP-chunked NDJSON, one ``{code,message,data}``
+         event per line; base64 MP3 fragments sit in ``data`` and the stream ends
+         with ``code=20000000``. ``_decode_audio`` reassembles them.
     """
     body = {
         "user": {"uid": "myword"},
@@ -116,7 +158,10 @@ def _synthesize_volc(text: str, settings: Settings) -> bytes:
                 "speech_rate": settings.volc_speech_rate,
                 "loudness_rate": settings.volc_loudness_rate,
             },
-            "additions": {"silence_duration": settings.volc_silence_ms},
+            # `additions` is typed "jsonstring" by the API — it MUST be a
+            # serialized JSON string, not an object (the server rejects an object
+            # with "cannot unmarshal object into ... additions of type string").
+            "additions": json.dumps({"silence_duration": settings.volc_silence_ms}),
         },
     }
     url = (

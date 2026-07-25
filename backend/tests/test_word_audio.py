@@ -23,7 +23,7 @@ def _enable_volc(monkeypatch) -> None:
     monkeypatch.setenv("VOLC_TTS_API_KEY", "volc-key")
     monkeypatch.setenv("VOLC_TTS_MODEL", "doubao-seed-tts-2.0")
     monkeypatch.setenv("VOLC_TTS_RESOURCE_ID", "seed-tts-2.0")
-    monkeypatch.setenv("VOLC_TTS_VOICE", "BV700_V2_streaming")
+    monkeypatch.setenv("VOLC_TTS_VOICE", "zh_female_yingyujiaoxue_uranus_bigtts")
     get_settings.cache_clear()
 
 
@@ -243,7 +243,7 @@ def test_synthesize_dispatches_to_selected_provider(monkeypatch, tmp_path):
     _mock_providers(monkeypatch, fake_mimo, fake_volc)
     audio, voice = tts.synthesize_word_mp3("camera", provider="volc")
     assert audio == MP3
-    assert voice == "BV700_V2_streaming"
+    assert voice == "zh_female_yingyujiaoxue_uranus_bigtts"
     assert volc_calls == ["camera"]
     assert mimo_calls == []
 
@@ -262,7 +262,7 @@ def test_synthesize_falls_back_to_other_provider_on_failure(monkeypatch, tmp_pat
     _mock_providers(monkeypatch, fake_mimo, fake_volc)
     audio, voice = tts.synthesize_word_mp3("camera", provider="mimo")
     assert audio == MP3 + b"volc"
-    assert voice == "BV700_V2_streaming"
+    assert voice == "zh_female_yingyujiaoxue_uranus_bigtts"
 
 
 def test_synthesize_skips_unconfigured_provider(monkeypatch, tmp_path):
@@ -483,3 +483,62 @@ def test_import_skips_audio_generation_when_disabled(client, monkeypatch, tmp_pa
     )
     assert response.status_code == 200, response.text
     assert "audio_generation" not in response.json()["data"]
+
+
+def _b64(b: bytes) -> str:
+    import base64
+
+    return base64.b64encode(b).decode("ascii")
+
+
+def test_decode_audio_passes_through_raw_mp3():
+    from app.services.tts import _decode_audio
+
+    raw = b"ID3" + b"\x00" * 40 + b"frames"
+    assert _decode_audio(raw) == raw
+    assert _decode_audio(b"\xff\xf3AB" + b"x" * 20) == b"\xff\xf3AB" + b"x" * 20
+
+
+def test_decode_audio_reassembles_volc_ndjson_chunks():
+    # seed-tts-2.0 HTTP-chunked success shape: one JSON event per line, base64
+    # MP3 fragments in `data`, terminated by code=20000000 "OK".
+    from app.services.tts import _decode_audio
+
+    part1, part2 = b"\xff\xf3header", b"body-bytes"
+    ndjson = (
+        '{"code":0,"message":"","data":"' + _b64(part1) + '"}\n'
+        '{"code":0,"message":"","data":null,"sentence":{"text":"camera"}}\n'
+        '{"code":0,"message":"","data":"' + _b64(part2) + '"}\n'
+        '{"code":20000000,"message":"OK","data":null}\n'
+    ).encode("utf-8")
+    assert _decode_audio(ndjson) == part1 + part2
+
+
+def test_decode_audio_raises_on_volc_error_envelope():
+    from app.services.tts import _decode_audio
+
+    envelope = (
+        '{"reqid":"","code":55000000,"message":"resource ID is mismatched"}'
+    ).encode("utf-8")
+    try:
+        _decode_audio(envelope)
+    except AppError as exc:
+        assert exc.code == "TTS_PROVIDER_ERROR"
+    else:
+        raise AssertionError("expected AppError for volc error envelope")
+
+
+def test_decode_audio_handles_mimo_nested_envelope():
+    from app.services.tts import _decode_audio
+
+    payload = (
+        '{"choices":[{"message":{"audio":{"data":"' + _b64(MP3) + '"}}}]}'
+    ).encode("utf-8")
+    assert _decode_audio(payload) == MP3
+
+
+def test_decode_audio_empty_for_garbage():
+    from app.services.tts import _decode_audio
+
+    assert _decode_audio(b"") == b""
+    assert _decode_audio(b"not json at all") == b""

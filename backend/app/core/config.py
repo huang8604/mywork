@@ -136,7 +136,12 @@ class Settings:
             volc_api_key=volc_api_key,
             volc_model=os.getenv("VOLC_TTS_MODEL", "doubao-seed-tts-2.0"),
             volc_resource_id=os.getenv("VOLC_TTS_RESOURCE_ID", "seed-tts-2.0"),
-            volc_voice=os.getenv("VOLC_TTS_VOICE", "BV700_V2_streaming"),
+            # Tina老师 2.0 — 教育场景, 中文+英式英语. seed-tts-2.0 resource ONLY
+            # accepts 2.0 voices (`*_uranus_bigtts`); 1.0 ids (BVxxx / *_moon_bigtts)
+            # return "resource ID is mismatched with speaker related resource".
+            volc_voice=os.getenv(
+                "VOLC_TTS_VOICE", "zh_female_yingyujiaoxue_uranus_bigtts"
+            ),
             volc_speech_rate=int(os.getenv("VOLC_TTS_SPEECH_RATE", "-10")),
             volc_loudness_rate=int(os.getenv("VOLC_TTS_LOUDNESS_RATE", "20")),
             volc_silence_ms=int(os.getenv("VOLC_TTS_SILENCE_MS", "500")),
