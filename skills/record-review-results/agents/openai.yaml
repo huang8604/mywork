@@ -1,0 +1,4 @@
+interface:
+  display_name: "回录复习结果"
+  short_description: "读取复习表题目并原子记录认识、不认识或跳过结果"
+  default_prompt: "Use $record-review-results to record these worksheet review results."

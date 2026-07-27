@@ -67,7 +67,48 @@
 
 ## 外部 Skill 接入
 
-系统提供带权限的版本化 REST API：外部 Skill 用 Bearer token（按 scope 授权、幂等、限流、审计）生成复习表、创建复习轮次、批量录入三态结果，**不能直接访问数据库**。仓库内置 `add-words` Skill，通过 `words:write` 权限安全添加单词。API 发现在 `/.well-known/word-review-api` 与 `/api/v1/capabilities`。
+系统提供带权限的版本化 REST API：外部 Skill 使用 Bearer token（按 scope 授权、幂等、限流、审计），**不能直接访问数据库**。API 发现在 `/.well-known/word-review-api` 与 `/api/v1/capabilities`。
+
+仓库内置四个 Skill：
+
+| Skill | 用途 | 最小 scope |
+|---|---|---|
+| `add-words` | 预览补全并添加最多 200 个单词，支持手工中文释义 | `words:write` |
+| `import-words` | 后台导入 TXT / CSV / JSON 并轮询进度 | `words:write`、`words:read` |
+| `generate-worksheet` | 按策略、总词数或指定单词生成复习表 | `practice:generate` |
+| `record-review-results` | 读取复习表题目并原子批量回录三态 | `practice:read`、`reviews:write` |
+
+### 安装 Skill
+
+从仓库根目录复制完整 Skill 目录到 Codex 的 Skill 根目录：
+
+```bash
+SKILL_ROOT="${CODEX_HOME:-$HOME/.codex}/skills"
+mkdir -p "$SKILL_ROOT"
+cp -R skills/add-words skills/import-words skills/generate-worksheet skills/record-review-results "$SKILL_ROOT/"
+```
+
+重新启动或刷新 Codex 会话后，可通过 `$add-words`、`$import-words`、`$generate-worksheet`、`$record-review-results` 调用。也可先检查脚本是否可见：
+
+```bash
+python3 "$SKILL_ROOT/add-words/scripts/add_words.py" --help
+```
+
+### 创建并配置 Token
+
+1. 使用管理员账号进入「系统 → API 客户端」，点击「新增客户端」。
+2. 填写名称、Skill 名称、版本、有效期，并按上表只选择所需 scope。
+3. 创建后立即保存明文 token；关闭弹窗后不能再次查看，只能轮换。
+4. 在运行 Skill 的环境中设置：
+
+   ```bash
+   export WORD_MEMORY_BASE_URL="https://words.example.com"
+   export WORD_MEMORY_API_TOKEN="wm_..."
+   ```
+
+   `WORD_MEMORY_BASE_URL` 填站点根地址，**不要**追加 `/api/v1`。生产环境必须使用 HTTPS；脚本仅允许 localhost 使用 HTTP。不要把 token 写入仓库、Compose、提示词或日志。
+
+建议每个 Skill 使用独立客户端和最小权限 token，便于单独撤销、轮换与审计。每个 Skill 的具体输入格式、dry-run、幂等重试和错误处理见其目录内 `SKILL.md`。
 
 ---
 

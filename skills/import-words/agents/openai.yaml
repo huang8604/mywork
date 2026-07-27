@@ -1,0 +1,4 @@
+interface:
+  display_name: "批量导入单词"
+  short_description: "后台导入 TXT、CSV 或 JSON 单词文件并跟踪进度"
+  default_prompt: "Use $import-words to import this word list and report progress."

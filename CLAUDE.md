@@ -150,7 +150,7 @@ The `/system` route (`meta.roles: ['admin']`) is the admin console: API-client/t
 
 ## External Skills
 
-The repo ships an `add-words` Skill (`skills/add-words/`) that adds words via the authenticated REST API. It reads `WORD_MEMORY_BASE_URL` + `WORD_MEMORY_API_TOKEN` (token needs `words:write`) and **must not touch SQLite or print the token**. API discovery is at `/.well-known/word-review-api` and the authenticated `/api/v1/capabilities`.
+The repo ships four self-contained Skills under `skills/`: `add-words` (`words:write`), `import-words` (`words:write` + `words:read`), `generate-worksheet` (`practice:generate`), and `record-review-results` (`practice:read` + `reviews:write`). They read `WORD_MEMORY_BASE_URL` + `WORD_MEMORY_API_TOKEN`, **must not touch SQLite or print the token**, and use only Python's standard library. `README.md` is the installation/token guide; each Skill's `SKILL.md` owns its task workflow. API discovery is at `/.well-known/word-review-api` and the authenticated `/api/v1/capabilities`.
 
 ## Configuration & startup
 

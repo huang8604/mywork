@@ -1,0 +1,4 @@
+interface:
+  display_name: "生成复习表"
+  short_description: "按默认策略、总词数或指定单词生成一张可打印复习表"
+  default_prompt: "Use $generate-worksheet to generate a worksheet with 20 words."
