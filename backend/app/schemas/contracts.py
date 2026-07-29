@@ -200,7 +200,7 @@ class ReviewCorrection(StrictModel):
 class StrategyRequest(StrictModel):
     new_words_limit: int = Field(default=0, ge=0, le=100)
     error_words_limit: int = Field(default=10, ge=0, le=100)
-    due_words_limit: int = Field(default=10, ge=0, le=100)
+    due_words_limit: int = Field(default=0, ge=0, le=100)
     custom_words_limit: int = Field(default=0, ge=0, le=100)
     total_words: int | None = Field(default=None, ge=1)
     fallback_unreviewed_days: int = Field(default=3, ge=1, le=365)

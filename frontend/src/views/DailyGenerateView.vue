@@ -17,7 +17,7 @@ const router=useRouter();const state=useAsyncState<PracticeSession[]>([]);const 
 const mode=ref<'strategy'|'selection'>('strategy');const wordOptions=ref<Word[]>([]);const wordsLoading=ref(false);const txtInput=ref('');const parsedWords=ref<string[]>([]);const importing=ref(false)
 const totalMode=ref(false);const totalWords=ref(25)
 const showArchived=ref(false)
-const form=reactive<StrategyRequest>({new_words_limit:0,error_words_limit:10,due_words_limit:10,custom_words_limit:0,fallback_unreviewed_days:3,word_ids:[]})
+const form=reactive<StrategyRequest>({new_words_limit:0,error_words_limit:10,due_words_limit:0,custom_words_limit:0,fallback_unreviewed_days:3,word_ids:[]})
 const weightTotal=computed(()=>form.new_words_limit+form.error_words_limit+form.due_words_limit+form.custom_words_limit)
 const estimatedTotal=computed(()=>mode.value==='selection'?form.word_ids.length:totalMode.value?totalWords.value:weightTotal.value)
 const invalidReason=computed(()=>mode.value==='strategy'&&totalMode.value&&weightTotal.value===0?'请至少设置一个大于 0 的单词类别权重。':estimatedTotal.value===0?'请至少选择 1 个单词。':estimatedTotal.value>maxPracticeWords.value?`预计总量不能超过 ${maxPracticeWords.value}。`:null)
