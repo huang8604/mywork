@@ -198,10 +198,10 @@ class ReviewCorrection(StrictModel):
 
 
 class StrategyRequest(StrictModel):
-    new_words_limit: int = Field(default=10, ge=0, le=100)
-    error_words_limit: int = Field(default=5, ge=0, le=100)
-    due_words_limit: int = Field(default=5, ge=0, le=100)
-    custom_words_limit: int = Field(default=5, ge=0, le=100)
+    new_words_limit: int = Field(default=0, ge=0, le=100)
+    error_words_limit: int = Field(default=10, ge=0, le=100)
+    due_words_limit: int = Field(default=10, ge=0, le=100)
+    custom_words_limit: int = Field(default=0, ge=0, le=100)
     total_words: int | None = Field(default=None, ge=1)
     fallback_unreviewed_days: int = Field(default=3, ge=1, le=365)
     seed: int | None = Field(default=None, ge=0, le=2_147_483_647)
@@ -313,6 +313,20 @@ class SessionUpdate(StrictModel):
     title: str | None = Field(default=None, max_length=200)
     note: str | None = Field(default=None, max_length=5000)
     expected_version: int = Field(gt=0)
+
+
+class SessionItemsUpdate(StrictModel):
+    word_ids: list[int] = Field(min_length=1, max_length=200)
+    expected_version: int = Field(gt=0)
+
+    @field_validator("word_ids")
+    @classmethod
+    def unique_word_ids(cls, values: list[int]) -> list[int]:
+        if any(value <= 0 for value in values):
+            raise ValueError("word_ids must contain positive integers")
+        if len(values) != len(set(values)):
+            raise ValueError("word_ids must be unique")
+        return values
 
 
 WebRole = Literal["admin", "student"]

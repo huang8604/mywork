@@ -574,6 +574,60 @@ def test_update_session_title_and_note_with_version_check(client):
     assert stale.json()["code"] == "VERSION_CONFLICT"
 
 
+def test_replace_session_items_adds_removes_and_preserves_order(client):
+    first = create_word(
+        client, {"en_word": "take off", "cn_meaning": "起飞", "tags": []}
+    )
+    second = create_word(
+        client, {"en_word": "landing", "cn_meaning": "着陆", "tags": []}
+    )
+    generated = client.post(
+        "/api/v1/daily-table/generate",
+        headers={"Idempotency-Key": "gen-edit-items"},
+        json={
+            "new_words_limit": 0,
+            "error_words_limit": 0,
+            "due_words_limit": 0,
+            "custom_words_limit": 0,
+            "word_ids": [first["id"]],
+        },
+    ).json()["data"]
+    sid = generated["session_id"]
+    printed = client.post(
+        f"/api/v1/practice-sessions/{sid}/printed",
+        headers={"Idempotency-Key": "print-before-edit"},
+    ).json()["data"]
+
+    updated = client.put(
+        f"/api/v1/practice-sessions/{sid}/items",
+        json={
+            "word_ids": [second["id"], first["id"]],
+            "expected_version": printed["version"],
+        },
+    )
+    assert updated.status_code == 200, updated.text
+    data = updated.json()["data"]
+    assert [item["word_id"] for item in data["items"]] == [second["id"], first["id"]]
+    assert [item["position"] for item in data["items"]] == [1, 2]
+    assert data["items"][1]["word"]["en_word"] == "take off"
+    assert data["actual_counts"] == {"unique_total": 2, "selected": 2}
+    assert data["printed_at"] is None
+
+    round_response = client.post(
+        f"/api/v1/practice-sessions/{sid}/review-rounds",
+        headers={"Idempotency-Key": "round-after-edit"},
+        json={"mode": "offline"},
+    )
+    assert round_response.status_code == 201
+    current = client.get(f"/api/v1/practice-sessions/{sid}").json()["data"]
+    blocked = client.put(
+        f"/api/v1/practice-sessions/{sid}/items",
+        json={"word_ids": [first["id"]], "expected_version": current["version"]},
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "INVALID_STATE"
+
+
 def test_delete_session_archives_and_preserves_reviews_and_stats(client, db_session):
     session = _session_with_word(client, key="gen-delete-session")
     sid = session["session_id"]

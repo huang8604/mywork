@@ -51,6 +51,12 @@ export interface StatsSummary {
   known_count: number; unknown_count: number; skipped_count: number; total_attempts: number
   accuracy: number | null; reviewed_words: number; due_words: number
 }
+export interface ContributionDay {
+  date: string; count: number; known: number; unknown: number; skipped: number
+}
+export interface ContributionsSummary {
+  from: string; to: string; timezone: string; total: number; days: ContributionDay[]
+}
 
 export interface TodayReviewItem {
   review_id: number; round_id: number; session_id: number; session_title: string | null

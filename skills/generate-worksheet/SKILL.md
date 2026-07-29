@@ -22,6 +22,8 @@ Set `WORD_MEMORY_BASE_URL` to the HTTPS site root and `WORD_MEMORY_API_TOKEN` to
    python scripts/generate_worksheet.py --word-id 12 --word-id 18
    ```
 
+   With no category flags, the API defaults to new `0`, error `10`, due `10`, custom `0`.
+
 3. Report `worksheet.session_id`, `web_url`, `print_url`, and the actual category counts.
 4. If a request times out after it may have reached the server, retry with the exact `idempotency_key` printed by the failed run:
 

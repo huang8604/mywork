@@ -15,10 +15,10 @@ from conftest import create_word
 
 def test_strategy_defaults_and_total_word_proportions():
     defaults = StrategyRequest()
-    assert defaults.new_words_limit == 10
-    assert defaults.error_words_limit == 5
-    assert defaults.due_words_limit == 5
-    assert defaults.custom_words_limit == 5
+    assert defaults.new_words_limit == 0
+    assert defaults.error_words_limit == 10
+    assert defaults.due_words_limit == 10
+    assert defaults.custom_words_limit == 0
     assert defaults.total_words is None
 
     proportional = StrategyRequest(

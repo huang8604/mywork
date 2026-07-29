@@ -23,7 +23,7 @@ from app.models import (
 )
 from app.schemas import ReviewCorrection, ReviewCreate, TodayReviewResponse
 from app.services.reviews import correct_review, create_quick_review
-from app.services.domain import utc_text
+from app.services.domain import parse_utc, utc_text
 from app.services.serializers import review_data, stats_data
 
 router = APIRouter(prefix="/api/v1", tags=["reviews"])
@@ -254,6 +254,56 @@ def stats_summary(
             "accuracy": known / effective if effective else None,
             "reviewed_words": reviewed_words,
             "due_words": due_words,
+        },
+    )
+
+
+@router.get("/stats/contributions")
+def stats_contributions(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    _actor: Annotated[Actor, Depends(require_scopes("reviews:read"))],
+    days: Annotated[int, Query(ge=1, le=366)] = 365,
+):
+    zone = ZoneInfo(get_settings().app_timezone)
+    today = datetime.now(UTC).astimezone(zone).date()
+    start_date = today - timedelta(days=days - 1)
+    start_local = datetime.combine(start_date, time.min, tzinfo=zone)
+    end_local = datetime.combine(today + timedelta(days=1), time.min, tzinfo=zone)
+    logs = db.scalars(
+        select(ReviewLog).where(
+            ReviewLog.reviewed_at >= utc_text(start_local),
+            ReviewLog.reviewed_at < utc_text(end_local),
+        )
+    ).all()
+    counts = {
+        start_date + timedelta(days=offset): {
+            "known": 0,
+            "unknown": 0,
+            "skipped": 0,
+        }
+        for offset in range(days)
+    }
+    for log in logs:
+        local_date = parse_utc(log.reviewed_at).astimezone(zone).date()
+        if local_date in counts:
+            counts[local_date][log.status] += 1
+    contribution_days = [
+        {
+            "date": date.isoformat(),
+            **statuses,
+            "count": sum(statuses.values()),
+        }
+        for date, statuses in counts.items()
+    ]
+    return envelope(
+        request,
+        {
+            "from": start_date.isoformat(),
+            "to": today.isoformat(),
+            "timezone": str(zone),
+            "total": sum(item["count"] for item in contribution_days),
+            "days": contribution_days,
         },
     )
 

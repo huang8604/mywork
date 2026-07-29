@@ -15,11 +15,24 @@ from app.core.database import get_db
 from app.core.errors import AppError, not_found
 from app.core.responses import envelope
 from app.models import PracticeReviewRound, PracticeSession, PracticeSessionItem, Word
-from app.schemas import BatchResults, RoundCreate, RoundResult, SessionUpdate, StrategyRequest, VersionRequest
+from app.schemas import (
+    BatchResults,
+    RoundCreate,
+    RoundResult,
+    SessionItemsUpdate,
+    SessionUpdate,
+    StrategyRequest,
+    VersionRequest,
+)
 from app.services.domain import utc_text
 from app.services.idempotency import claim, complete
 from app.services.recitation import build_recitation_md, render_recitation_pdf
-from app.services.sessions import auto_archive_expired_sessions, delete_session, update_session
+from app.services.sessions import (
+    auto_archive_expired_sessions,
+    delete_session,
+    replace_session_items,
+    update_session,
+)
 from app.services.reviews import batch_round_results, put_round_result
 from app.services.serializers import review_data, round_data, session_data
 from app.services.strategy import generate_session
@@ -309,6 +322,36 @@ def update_session_route(
     return envelope(request, data)
 
 
+@router.put("/practice-sessions/{session_id}/items")
+def replace_session_items_route(
+    request: Request,
+    session_id: int,
+    payload: SessionItemsUpdate,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("practice:write"))],
+):
+    before_count = db.scalar(
+        select(func.count())
+        .select_from(PracticeSessionItem)
+        .where(PracticeSessionItem.session_id == session_id)
+    ) or 0
+    session = replace_session_items(db, session_id, payload)
+    data = session_data(db, session, include_items=True)
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="practice.items.replace",
+        outcome="success",
+        http_status=200,
+        target_type="practice_session",
+        target_id=session_id,
+        metadata={"before_count": int(before_count), "after_count": len(payload.word_ids)},
+    )
+    _commit(db)
+    return envelope(request, data)
+
+
 @router.delete("/practice-sessions/{session_id}", status_code=204)
 def delete_session_route(
     request: Request,
@@ -416,7 +459,7 @@ def create_round(
     # marker so the worksheet status flips 已完成 -> 进行中.
     if session.completed_at is not None:
         session.completed_at = None
-        session.version += 1
+    session.version += 1
     data = round_data(db, round_)
     complete(idem, data=data, status_code=201, resource_type="practice_review_round", resource_id=round_.id)
     add_audit(

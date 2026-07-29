@@ -7,8 +7,8 @@ import type { PracticeItem, PracticeSession } from '@/types/domain'
 export type WorksheetMode = 'cn-to-en' | 'en-to-cn'
 export type WorksheetFontSize = 'small' | 'medium' | 'large'
 const props = withDefaults(defineProps<{ session: PracticeSession; mode: WorksheetMode; answer?: boolean; fontSize?: WorksheetFontSize }>(), { answer: false, fontSize: 'medium' })
-const fontPoints: Record<WorksheetFontSize, number> = { small: 9, medium: 11, large: 13 }
-const wordFontPoints: Record<WorksheetFontSize, number> = { small: 12, medium: 15, large: 17 }
+const fontPoints: Record<WorksheetFontSize, number> = { small: 13, medium: 15, large: 17 }
+const wordFontPoints: Record<WorksheetFontSize, number> = { small: 17, medium: 19, large: 21 }
 const theme = computed(() => worksheetTheme(props.session.generated_at))
 const worksheetStyle = computed<Record<string, string>>(() => ({
   '--worksheet-font-size': `${fontPoints[props.fontSize]}pt`,
@@ -17,7 +17,7 @@ const worksheetStyle = computed<Record<string, string>>(() => ({
   '--ws-deep': theme.value.deep,
   '--ws-accent': theme.value.accent,
 }))
-const title = computed(() => props.answer ? '单词默写 · 参考答案' : '单词默写练习')
+const title = computed(() => props.answer ? '单词背诵表' : '单词默写练习')
 const count = computed(() => props.session.items?.length ?? 0)
 const dateText = computed(() => {
   const d = new Date(props.session.generated_at)
@@ -51,7 +51,7 @@ function example(item: PracticeItem): string {
       <div class="ws-hero-title">
         <p class="ws-eyebrow">拾词 · WORD MEMORY</p>
         <h2>{{ title }}</h2>
-        <p class="ws-subtitle">{{ modeLabel }} · 共 {{ count }} 词 · {{ theme.weekdayName }}</p>
+        <p class="ws-subtitle"><template v-if="!answer">{{ modeLabel }} · </template>共 {{ count }} 词 · {{ theme.weekdayName }}</p>
       </div>
       <div class="ws-date-card">
         <span class="ws-date-label">DATE / 日期</span>
@@ -67,7 +67,7 @@ function example(item: PracticeItem): string {
     <p class="worksheet-fit-hint no-print">标准字号已按「约 20 词 / 一页 A4」校准；主题色按复习表日期(周{{ theme.weekdayName.replace('周','') }})变化。词多或例句较长时浏览器会自动续页。</p>
     <table class="worksheet-table">
       <colgroup><col class="number-col"><col class="word-col"><col class="phonetic-col"><col class="meaning-col"><col class="example-col"></colgroup>
-      <thead><tr class="repeat-print-header"><th colspan="5">{{ answer?'参考答案':'单词默写练习' }} · {{ modeLabel }} · {{ dateText }} · {{ theme.weekdayName }} · 第 ____ 页</th></tr><tr><th class="number-cell">序号</th><th>单词</th><th>音标</th><th>中文释义</th><th>例句</th></tr></thead>
+      <thead><tr class="repeat-print-header"><th colspan="5">{{ answer?'单词背诵表':`单词默写练习 · ${modeLabel}` }} · {{ dateText }} · {{ theme.weekdayName }} · 第 ____ 页</th></tr><tr><th class="number-cell">序号</th><th>单词</th><th>音标</th><th>中文释义</th><th>例句</th></tr></thead>
       <tbody><tr v-for="item in session.items" :key="item.item_id"><td class="number-cell">{{ item.position }}</td><td class="word-cell">{{ english(item) }}</td><td class="phonetic-cell">{{ phonetic(item) }}</td><td class="meaning-cell">{{ chinese(item) }}</td><td class="example-cell">{{ example(item) }}</td></tr></tbody>
     </table>
     <div class="worksheet-mobile"><article v-for="item in session.items" :key="item.item_id"><span class="number-cell">{{ item.position }}</span><p class="word-cell">{{ english(item) }}</p><p class="phonetic-cell">{{ phonetic(item) }}</p><strong>{{ chinese(item) }}</strong><p class="example-cell">{{ example(item) }}</p></article></div>
@@ -90,7 +90,7 @@ function example(item: PracticeItem): string {
 .ws-sheet-mark{margin-left:auto;padding:3px 10px;border:1px solid var(--ws-primary);border-radius:999px;background:rgba(255,255,255,.6);color:var(--ws-deep);font-size:.68rem;font-weight:800;letter-spacing:.1em}
 .worksheet-table{width:100%;border-collapse:collapse;table-layout:fixed}
 .number-col{width:5%}.word-col{width:18%}.phonetic-col{width:18%}.meaning-col{width:25%}.example-col{width:34%}
-.worksheet-table th,.worksheet-table td{border:1px solid #aabacf;padding:7px 6px;text-align:left;vertical-align:top;overflow-wrap:break-word;font-size:var(--worksheet-font-size)}
+.worksheet-table th,.worksheet-table td{border:1px solid #aabacf;padding:10px 8px;text-align:left;vertical-align:top;overflow-wrap:break-word;font-size:var(--worksheet-font-size);line-height:1.35}
 .worksheet-table th{background:var(--ws-primary);color:#fff;letter-spacing:.03em}
 .worksheet-table tbody tr:nth-child(even){background:#f6f9fd}
 .number-cell{text-align:center!important}

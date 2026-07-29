@@ -81,20 +81,21 @@ describe('PracticeWorksheet', () => {
 
   it('applies the selected worksheet font size to screen and print content', () => {
     const w = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn', fontSize: 'large' } })
-    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-font-size: 13pt')
-    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-word-font-size: 17pt')
+    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-font-size: 17pt')
+    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-word-font-size: 21pt')
   })
 
   it('uses the retuned medium preset (slightly larger, tuned for ~20 words/page)', () => {
     const w = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn', fontSize: 'medium' } })
-    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-font-size: 11pt')
-    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-word-font-size: 15pt')
+    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-font-size: 15pt')
+    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-word-font-size: 19pt')
   })
 
   it('labels the paper without exposing an internal session id', () => {
     const w = mount(PracticeWorksheet, { props: { session, answer: true, mode: 'cn-to-en' } })
-    expect(w.text()).toContain('参考答案')
-    expect(w.text()).toContain('看中文写英文')
+    expect(w.text()).toContain('单词背诵表')
+    expect(w.text()).not.toContain('参考答案')
+    expect(w.text()).not.toContain('看中文写英文')
     expect(w.text()).not.toContain('会话')
     expect(w.text()).not.toContain('#1')
   })

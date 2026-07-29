@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from conftest import create_word, seed_credential
 
 
@@ -77,3 +79,35 @@ def test_today_online_reviews_are_isolated_for_students_and_visible_to_admin(
 
     operation = client.get("/openapi.json").json()["paths"]["/api/v1/reviews/today"]["get"]
     assert operation["x-required-scopes"] == ["reviews:write", "practice:read"]
+
+
+def test_stats_contributions_returns_a_zero_filled_year(client):
+    word = create_word(
+        client,
+        {"en_word": "contribution", "cn_meaning": "贡献", "tags": []},
+    )
+    reviewed = client.post(
+        "/api/v1/reviews",
+        json={
+            "word_id": word["id"],
+            "status": "known",
+            "source": "quick_review",
+            "client_event_id": "contribution-today",
+            "reviewed_at": datetime.now(UTC).isoformat(),
+        },
+    )
+    assert reviewed.status_code == 201, reviewed.text
+
+    response = client.get("/api/v1/stats/contributions")
+    assert response.status_code == 200, response.text
+    data = response.json()["data"]
+    assert len(data["days"]) == 365
+    assert data["days"][-1]["date"] == data["to"]
+    assert data["days"][-1]["count"] == 1
+    assert data["days"][-1]["known"] == 1
+    assert data["total"] == 1
+
+    operation = client.get("/openapi.json").json()["paths"][
+        "/api/v1/stats/contributions"
+    ]["get"]
+    assert operation["x-required-scopes"] == ["reviews:read"]
