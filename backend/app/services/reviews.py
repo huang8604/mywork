@@ -219,8 +219,9 @@ def _refresh_item_and_round(
         round_.completed_at = now
         round_.version += 1
         session = db.get(PracticeSession, round_.session_id)
-        if session is not None and session.completed_at is None:
-            session.completed_at = now
+        if session is not None:
+            session.status = "completed"
+            session.completed_at = session.completed_at or now
             session.version += 1
     round_.updated_at = now
 

@@ -2,30 +2,28 @@
 import { computed, ref, watch } from 'vue'
 import { useDictationPlayer } from '@/composables/useDictationPlayer'
 import { numberAudioUrl, practiceItemAudioUrl } from '@/api/practiceSessions'
-import type { DictationAccent, DictationSettings, PracticeSession } from '@/types/domain'
+import type { DictationSettings, PracticeSession } from '@/types/domain'
 
 const props = defineProps<{ session: PracticeSession; sessions: PracticeSession[] }>()
 const emit = defineEmits<{ select: [sessionId: number]; back: [] }>()
 
 const settings = ref<DictationSettings>({
-  intervalSec: 5,
+  intervalSec: 6,
   autoAdvance: true,
-  accent: 'uk',
+  language: 'en',
   rate: 1.0,
   repeat: 2,
-  announceNumber: true,
 })
 
-const texts = () => props.session.items?.map(i => i.word.en_word) ?? []
-const audioUrls = () => props.session.items?.map(i => practiceItemAudioUrl(props.session.session_id, i.item_id)) ?? []
-const player = useDictationPlayer({ texts, audioUrls, numberAudioUrl: (pos: number) => numberAudioUrl(pos) })
+const texts = () => props.session.items?.map(i => settings.value.language === 'zh' ? i.word.cn_meaning : i.word.en_word) ?? []
+const audioUrls = () => props.session.items?.map(i => practiceItemAudioUrl(props.session.session_id, i.item_id, settings.value.language)) ?? []
+const player = useDictationPlayer({ texts, audioUrls, numberAudioUrl: (pos: number) => numberAudioUrl(pos, settings.value.language) })
 
 const draft = ref('')
 const startedAt = ref<number | null>(null)
 const finishedAt = ref<number | null>(null)
 
 const total = computed(() => props.session.items?.length ?? 0)
-const accentLabel: Record<DictationAccent, string> = { us: '美音', uk: '英音', system: '系统默认' }
 
 // 切换复习表：停播放、回到设置态（保留用户已调好的设置）。
 watch(() => props.session?.session_id, () => {
@@ -57,6 +55,7 @@ function formatElapsed(): string {
   return m > 0 ? `${m} 分 ${s} 秒` : `${s} 秒`
 }
 const speakingHint = computed(() => {
+  if (player.paused.value) return '已暂停，点「继续」重播当前题'
   if (player.isSpeaking.value) return '正在播放…'
   if (!settings.value.autoAdvance) return '点「下一个并播放」继续，或「重播」再听一遍'
   return `${settings.value.intervalSec} 秒后自动播放下一词（可点「下一个并播放」立即继续）`
@@ -100,24 +99,19 @@ const speakingHint = computed(() => {
           <el-slider v-model="settings.repeat" :min="1" :max="3" :step="1" />
         </label>
         <label class="setting">
-          <span>播报序号(number 1–50)</span>
-          <el-switch v-model="settings.announceNumber" />
+          <span>默写语言</span>
+          <el-radio-group v-model="settings.language" aria-label="默写语言">
+            <el-radio-button value="en">英文</el-radio-button>
+            <el-radio-button value="zh">中文</el-radio-button>
+          </el-radio-group>
         </label>
         <label class="setting">
           <span>语速 · {{ settings.rate.toFixed(1) }}</span>
           <el-slider v-model="settings.rate" :min="0.7" :max="1.2" :step="0.1" />
         </label>
-        <label class="setting">
-          <span>口音</span>
-          <el-radio-group v-model="settings.accent" aria-label="口音">
-            <el-radio-button value="us">美音</el-radio-button>
-            <el-radio-button value="uk">英音</el-radio-button>
-            <el-radio-button value="system">系统默认</el-radio-button>
-          </el-radio-group>
-        </label>
       </div>
       <p v-if="player.voiceWarning.value" class="warning">{{ player.voiceWarning.value }}</p>
-      <p class="muted hint">点击「开始默写」后由你启动第一段语音；英文会隐藏，只留题号、草稿框与播放控制。</p>
+      <p class="muted hint">英文使用当前英音；中文会自动生成并缓存普通话音频。序号 1–50 始终自动播报，默写内容只通过语音呈现。</p>
       <el-button type="primary" size="large" :disabled="!total" @click="begin">开始默写</el-button>
     </div>
 
@@ -128,10 +122,10 @@ const speakingHint = computed(() => {
         <el-progress :percentage="player.total.value ? Math.round(((player.index.value) / player.total.value) * 100) : 0" :show-text="false" />
       </div>
       <div class="draft-wrap">
-        <span class="card-label">听音默写（草稿 · 不判对错）</span>
+        <span class="card-label">{{ settings.language === 'zh' ? '中文' : '英文' }}听音默写（草稿 · 不判对错）</span>
         <el-input
           v-model="draft"
-          placeholder="听到什么就写什么，回车 = 下一个并播放"
+          :placeholder="settings.language === 'zh' ? '听到什么就写什么，回车 = 下一题' : '听到什么就写什么，回车 = 下一题'"
           size="large"
           autocomplete="off"
           autocapitalize="off"
@@ -142,13 +136,15 @@ const speakingHint = computed(() => {
       <p class="speaking-hint" :class="{ on: player.isSpeaking.value }" aria-live="polite">{{ speakingHint }}</p>
       <p v-if="player.voiceWarning.value" class="warning small">{{ player.voiceWarning.value }}</p>
       <div class="runner-controls">
+        <el-button v-if="!player.paused.value" size="large" type="warning" plain @click="player.pause()">暂停</el-button>
+        <el-button v-else size="large" type="success" plain @click="player.resume()">继续</el-button>
         <el-button size="large" @click="player.replay()">重播</el-button>
         <el-button size="large" @click="player.skip()">跳过</el-button>
         <el-button type="primary" size="large" @click="player.nextAndPlay()">下一个并播放</el-button>
       </div>
       <div class="runner-meta">
         <span>已听 {{ player.counts.value.played }} · 跳过 {{ player.counts.value.skipped }}</span>
-        <span>间隔 {{ settings.intervalSec }}s · 语速 {{ settings.rate.toFixed(1) }} · {{ accentLabel[settings.accent] }} · {{ settings.repeat }} 次 · 序号{{ settings.announceNumber ? '开' : '关' }}</span>
+        <span>{{ settings.language === 'zh' ? '中文普通话' : '英文英音' }} · 间隔 {{ settings.intervalSec }}s · 语速 {{ settings.rate.toFixed(1) }} · {{ settings.repeat }} 次 · 自动播报序号</span>
         <el-button link type="primary" @click="player.stop()">结束</el-button>
       </div>
     </div>

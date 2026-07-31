@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 ReviewStatus = Literal["known", "unknown", "skipped"]
 ReviewSource = Literal["quick_review", "online_practice", "print_manual"]
 RoundMode = Literal["offline", "online"]
+SessionStatus = Literal["not_started", "active", "completed", "archived"]
 
 
 class StrictModel(BaseModel):
@@ -312,6 +313,7 @@ class VersionRequest(StrictModel):
 class SessionUpdate(StrictModel):
     title: str | None = Field(default=None, max_length=200)
     note: str | None = Field(default=None, max_length=5000)
+    status: SessionStatus | None = None
     expected_version: int = Field(gt=0)
 
 

@@ -130,7 +130,7 @@ VOLC_TTS_SILENCE_MS: "500"    # 0..30000ms,句尾静音,防止结尾被切
 > ⚠️ **`VOLC_TTS_VOICE` 必须是「豆包语音合成模型 2.0」音色**。`seed-tts-2.0` 资源**只接受 2.0 音色**(voice_type 形如 `*_uranus_bigtts`,见[2.0 音色列表](https://www.volcengine.com/docs/6561/1257544));填 1.0 音色(`BV700_streaming`、`*_moon_bigtts`、`*_mars_bigtts` 等)会报 `55000000 resource ID is mismatched with speaker related resource`。默认 `zh_female_yingyujiaoxue_uranus_bigtts`(Tina老师 2.0,教育场景,中文+英式英语)适配本项目的英音需求;若要美音,2.0 列表里有大量 `en_*_uranus_bigtts`(如 `en_female_myra_uranus_bigtts`、`en_male_russell_uranus_bigtts`)可选。Key 仍是 **agent-plan 专属 Key**,只在 `https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional?api_key=` 可用(标准 `/api/v3/tts/unidirectional` 返回 401)。豆包失败会**自动兜底到 mimo** 出英音,音频生成不会中断。
 ```
 
-部署后 smoke:词库页选一个无音频的词 → 选模型 → 点「生成音频」→ 状态变「已生成」→ 点「播放」应能听到 MP3;`/review` 在线默写优先播该 MP3,缺失/失败自动回退浏览器 `speechSynthesis`。
+部署后 smoke:词库页选一个无音频的词 → 选模型 → 点「生成音频」→ 状态变「已生成」→ 点「播放」应能听到 MP3；把复习表设为“进行中”后进入 `/review` 在线默写，英文优先播词库 MP3，中文释义与中文序号 1–50 会在首次播放时自动生成并缓存，缺失/失败自动回退浏览器 `speechSynthesis`。
 
 若生成失败,依次检查:
 

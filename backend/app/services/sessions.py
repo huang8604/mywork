@@ -35,6 +35,17 @@ def update_session(db: Session, session_id: int, payload: SessionUpdate) -> Prac
         )
     session.title = payload.title
     session.note = payload.note
+    if payload.status is not None and payload.status != session.status:
+        now = utc_text()
+        session.status = payload.status
+        if payload.status == "completed":
+            session.completed_at = session.completed_at or now
+        elif payload.status in {"not_started", "active"}:
+            session.completed_at = None
+        if payload.status == "archived":
+            session.archived_at = session.archived_at or now
+        else:
+            session.archived_at = None
     session.version += 1
     db.flush()
     return session
@@ -55,8 +66,8 @@ def replace_session_items(
             "复习表已被修改，请刷新后重试",
             [{"current_version": session.version}],
         )
-    if session.status != "active":
-        raise AppError(409, "INVALID_STATE", "已归档的复习表不能修改单词")
+    if session.status not in {"not_started", "active"}:
+        raise AppError(409, "INVALID_STATE", "已完成或已归档的复习表不能修改单词")
     if db.scalar(
         select(PracticeReviewRound.id)
         .where(PracticeReviewRound.session_id == session_id)
@@ -166,7 +177,7 @@ def auto_archive_expired_sessions(
     now: datetime | None = None,
     days: int = AUTO_ARCHIVE_DAYS,
 ) -> int:
-    """Archive active worksheets whose generation time is at least ``days`` old."""
+    """Archive non-archived worksheets whose generation time is at least ``days`` old."""
 
     moment = (now or datetime.now(UTC)).astimezone(UTC)
     cutoff = utc_text(moment - timedelta(days=days))
@@ -174,7 +185,7 @@ def auto_archive_expired_sessions(
     result = db.execute(
         update(PracticeSession)
         .where(
-            PracticeSession.status == "active",
+            PracticeSession.status != "archived",
             PracticeSession.generated_at <= cutoff,
         )
         .values(

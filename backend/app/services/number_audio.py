@@ -1,7 +1,7 @@
-"""Numbered announcement audio ("number 1" .. "number 50") for online dictation.
+"""English and Chinese number-announcement audio for online dictation.
 
 These are standalone MP3 assets — **not words**. They live under
-``audio_dir()/numbers/number-{n}.mp3`` with no DB record, generated once via TTS
+``audio_dir()/numbers`` with no DB record, generated once via TTS
 (豆包 seed-tts-2.0 preferred; mimo fallback — see ``services/tts.synthesize_word_mp3``)
 and served cached. Online dictation plays "number {position}" before each word so
 the learner can map the audio to the printed worksheet's question number.
@@ -24,16 +24,21 @@ NUMBER_MIN = 1
 NUMBER_MAX = 50
 
 
-def _numbers_root(settings: Settings | None = None) -> Path:
-    return audio_dir(settings).resolve() / "numbers"
+def _numbers_root(settings: Settings | None = None, language: str = "en") -> Path:
+    root = audio_dir(settings).resolve() / "numbers"
+    return root if language == "en" else root / "zh"
 
 
-def number_audio_path(n: int, settings: Settings | None = None) -> Path:
+def number_audio_path(
+    n: int, settings: Settings | None = None, *, language: str = "en"
+) -> Path:
     """Absolute path for the "number {n}" clip (the file may not exist yet)."""
-    return _numbers_root(settings) / f"number-{n}.mp3"
+    return _numbers_root(settings, language) / f"number-{n}.mp3"
 
 
-def number_audio_file(n: int, settings: Settings | None = None) -> Path | None:
+def number_audio_file(
+    n: int, settings: Settings | None = None, *, language: str = "en"
+) -> Path | None:
     """Resolved path if the clip exists and sits under the audio root, else None.
 
     Mirrors ``word_audio_file``'s path-traversal guard so a stray ``n`` can't escape
@@ -41,8 +46,10 @@ def number_audio_file(n: int, settings: Settings | None = None) -> Path | None:
     """
     if not (NUMBER_MIN <= n <= NUMBER_MAX):
         return None
-    root = _numbers_root(settings)
-    candidate = number_audio_path(n, settings).resolve()
+    if language not in {"en", "zh"}:
+        return None
+    root = _numbers_root(settings, language)
+    candidate = number_audio_path(n, settings, language=language).resolve()
     try:
         candidate.relative_to(root)
     except ValueError:
@@ -56,6 +63,7 @@ def generate_number_audio(
     force: bool = False,
     provider: str | None = None,
     settings: Settings | None = None,
+    language: str = "en",
 ) -> Path:
     """Synthesize + cache the "number {n}" clip. Idempotent unless ``force``.
 
@@ -65,14 +73,18 @@ def generate_number_audio(
     """
     if not (NUMBER_MIN <= n <= NUMBER_MAX):
         raise AppError(400, "VALIDATION_ERROR", f"序号必须在 {NUMBER_MIN}..{NUMBER_MAX} 之间")
+    if language not in {"en", "zh"}:
+        raise AppError(422, "VALIDATION_ERROR", "不支持的语音语言")
     settings = settings or get_settings()
-    existing = number_audio_file(n, settings)
+    existing = number_audio_file(n, settings, language=language)
     if existing and not force:
         return existing
-    audio, _voice = tts_service.synthesize_word_mp3(
-        f"number {n}", provider=provider or "volc", settings=settings
-    )
-    root = _numbers_root(settings)
+    text = f"number {n}" if language == "en" else f"第{_chinese_number(n)}题"
+    kwargs = {"provider": provider or "volc", "settings": settings}
+    if language == "zh":
+        kwargs["language"] = "zh"
+    audio, _voice = tts_service.synthesize_word_mp3(text, **kwargs)
+    root = _numbers_root(settings, language)
     filename = f"number-{n}.mp3"
     final = root / filename
     try:
@@ -96,10 +108,21 @@ def generate_number_audio(
 
 
 def missing_numbers(
-    settings: Settings | None = None, *, limit: int = NUMBER_MAX
+    settings: Settings | None = None, *, limit: int = NUMBER_MAX, language: str = "en"
 ) -> list[int]:
     """Numbers in 1..min(NUMBER_MAX, limit) whose clip does not yet exist (ascending)."""
     upper = min(NUMBER_MAX, max(NUMBER_MIN, limit))
     return [
-        n for n in range(NUMBER_MIN, upper + 1) if number_audio_file(n, settings) is None
+        n
+        for n in range(NUMBER_MIN, upper + 1)
+        if number_audio_file(n, settings, language=language) is None
     ]
+
+
+def _chinese_number(n: int) -> str:
+    digits = "零一二三四五六七八九"
+    if n < 10:
+        return digits[n]
+    tens, ones = divmod(n, 10)
+    prefix = "十" if tens == 1 else f"{digits[tens]}十"
+    return prefix if ones == 0 else f"{prefix}{digits[ones]}"

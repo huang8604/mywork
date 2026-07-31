@@ -5,7 +5,7 @@ const contributions = { from: '2025-07-21', to: '2026-07-20', timezone: 'Asia/Sh
 const wordStats = { known_count: 0, unknown_count: 0, skipped_count: 0, total_attempts: 0, accuracy: null, consecutive_known: 0, consecutive_unknown: 0, last_status: null, last_reviewed_at: null, last_effective_status: null, last_effective_reviewed_at: null, interval_days: 0, due_at: null }
 const word = { id: 1, en_word: 'serendipity', normalized_en_word: 'serendipity', phonetic: '/ˌserənˈdɪpəti/', cn_meaning: '意外发现美好事物的能力', example_sentence: 'A fortunate discovery.', is_custom: true, tags: ['灵感'], version: 1, created_at: '2026-07-20T01:00:00Z', updated_at: '2026-07-20T01:00:00Z', deleted_at: null, stats: wordStats }
 const session = { session_id: 1, status: 'active', strategy_version: 'v1', seed: 7, strategy_params: {}, requested_counts: { new: 1 }, actual_counts: { new: 1 }, created_by_actor_type: 'api_client', created_by_actor_id: 'skill-1', skill_name: 'Family Review', skill_version: '1.0', version: 1, generated_at: '2026-07-20T03:00:00Z', printed_at: null, completed_at: null, archived_at: null, title: null, note: null, items: [{ item_id: 11, position: 1, word_id: 1, word: { en_word: word.en_word, phonetic: word.phonetic, cn_meaning: word.cn_meaning, example_sentence: word.example_sentence }, source_categories: ['new'], reason: 'new word', latest_review_log_id: null }], rounds: [] }
-const sessions = [session, { ...session, session_id: 2, title: '期末冲刺', generated_at: '2026-07-20T02:00:00Z' }, { ...session, session_id: 3, title: '周末巩固', generated_at: '2026-07-20T01:00:00Z' }]
+const sessions = [session, { ...session, session_id: 2, title: '期末冲刺', generated_at: '2026-07-20T02:00:00Z' }, { ...session, session_id: 3, status: 'not_started', title: '周末巩固', generated_at: '2026-07-20T01:00:00Z' }]
 const envelope = <T>(data: T, meta: Record<string, unknown> = {}) => ({ code: 'OK', message: 'success', data, meta, request_id: 'e2e-request' })
 
 async function installApi(page: Page) {
@@ -65,6 +65,28 @@ test('keyboard focus and navigation targets meet accessibility basics', async ({
   const targetHeights = await page.locator('.bottom-nav-item:visible, .nav-item:visible').evaluateAll((items) => items.map((item) => item.getBoundingClientRect().height))
   expect(targetHeights.length).toBeGreaterThan(0); expect(targetHeights.every((height) => height >= 44)).toBe(true)
   await page.goto('/review'); await page.getByRole('button', { name: '开始在线复习' }).click(); await page.keyboard.press('1'); await expect(page.locator('.finish-summary')).toContainText('本轮已完成'); await expect(page.locator('.flash-card')).toHaveCount(0)
+})
+
+test('activity heatmap and dictation defaults expose the new interaction model', async ({ page }) => {
+  await page.goto('/dashboard')
+  await expect(page.locator('.contribution-day:not(.placeholder)')).toHaveCount(1)
+  await page.locator('.contribution-day:not(.placeholder)').focus()
+  await expect(page.locator('.day-detail')).toContainText('复习 1 次')
+
+  await page.goto('/review')
+  await page.getByRole('radio', { name: '在线默写' }).click()
+  await expect(page.getByText('间隔 · 6 秒')).toBeVisible()
+  await expect(page.getByRole('radio', { name: '英文' })).toBeChecked()
+  await expect(page.getByRole('radio', { name: '中文' })).toBeVisible()
+  await expect(page.getByText('口音', { exact: true })).toHaveCount(0)
+  await page.getByLabel('切换复习表').click()
+  await expect(page.locator('.el-select-dropdown:visible .el-select-dropdown__item')).toHaveCount(2)
+  await expect(page.locator('.el-select-dropdown:visible')).not.toContainText('周末巩固')
+  await page.keyboard.press('Escape')
+  await page.getByRole('button', { name: '开始默写' }).click()
+  await expect(page.getByRole('button', { name: '暂停' })).toBeVisible()
+  await page.getByRole('button', { name: '暂停' }).click()
+  await expect(page.getByRole('button', { name: '继续' })).toBeVisible()
 })
 
 test('word CRUD autofill and English-only import remain usable', async ({ page }) => {

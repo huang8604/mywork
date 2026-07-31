@@ -30,7 +30,7 @@ async function installPhase4Api(page: Page, options: { conflictOnce?: boolean; f
     if(path==='/api/v1/practice-review-rounds/9/results'&&method==='PUT'){
       batchCalls++;const body=JSON.parse(request.postData()||'{}');if(options.failBatchOnce&&batchCalls===1)return route.fulfill({status:503,json:{code:'UNAVAILABLE',message:'temporary failure',details:[],request_id:'batch-failure'}})
       if(options.conflictOnce&&batchCalls===1){savedReviews=[review(body.items[0].item_id,'unknown',2)];return route.fulfill({status:409,json:{code:'VERSION_CONFLICT',message:'review was modified',details:[{item_id:body.items[0].item_id,current_version:2}],request_id:'conflict'}})}
-      const changed=body.items.map((entry:{item_id:number;status:string;expected_version?:number})=>review(entry.item_id,entry.status,(entry.expected_version||0)+1));for(const item of changed){savedReviews=savedReviews.filter(existing=>existing.session_item_id!==item.session_item_id);savedReviews.push(item)}if(savedReviews.length===24)session={...session,completed_at:'2026-07-20T03:00:00Z'}
+      const changed=body.items.map((entry:{item_id:number;status:string;expected_version?:number})=>review(entry.item_id,entry.status,(entry.expected_version||0)+1));for(const item of changed){savedReviews=savedReviews.filter(existing=>existing.session_item_id!==item.session_item_id);savedReviews.push(item)}if(savedReviews.length===24)session={...session,status:'completed',completed_at:'2026-07-20T03:00:00Z'}
       return route.fulfill({json:envelope({round:{...round,answered_count:savedReviews.length,status:savedReviews.length===24?'completed':'active'},items:changed})})
     }
     return route.fulfill({status:404,json:{code:'NOT_FOUND',message:'not found',details:[],request_id:'phase4-404'}})

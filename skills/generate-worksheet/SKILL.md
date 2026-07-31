@@ -24,7 +24,7 @@ Set `WORD_MEMORY_BASE_URL` to the HTTPS site root and `WORD_MEMORY_API_TOKEN` to
 
    With no category flags, the API defaults to new `0`, error `10`, due `0`, custom `0`.
 
-3. Report `worksheet.session_id`, `web_url`, `print_url`, and the actual category counts.
+3. Report `worksheet.session_id`, `web_url`, `print_url`, the actual category counts, and status `not_started` (new worksheets are not in progress until a review round starts or the user changes the status).
 4. If a request times out after it may have reached the server, retry with the exact `idempotency_key` printed by the failed run:
 
    ```bash

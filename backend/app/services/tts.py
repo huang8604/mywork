@@ -19,6 +19,10 @@ PROMPT = (
     "Pause briefly before speaking, articulate the word with force and clarity, "
     "then pause briefly at the end."
 )
+CHINESE_PROMPT = (
+    "请用清晰、自然、适合课堂听写的普通话朗读下面的中文内容。"
+    "朗读前后稍作停顿，不要添加任何解释。"
+)
 
 # Volc tuning defaults: speech_rate<0 = slower (patient/steady), loudness_rate>0 = louder
 # (forceful/clear), silence_ms = trailing silence so the end isn't clipped. Leading silence
@@ -53,6 +57,39 @@ def _synthesize_mimo(text: str, settings: Settings) -> bytes:
         audio = base64.b64decode(encoded)
     except (urllib.error.URLError, TimeoutError, KeyError, IndexError, TypeError, ValueError) as exc:
         log.warning("mimo TTS provider failed: %s", exc.__class__.__name__)
+        raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商调用失败") from exc
+    if not audio:
+        raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商未返回音频")
+    return audio
+
+
+def _synthesize_mimo_chinese(text: str, settings: Settings) -> bytes:
+    """mimo Chinese speech using the same audio contract with a Mandarin prompt."""
+    payload = {
+        "model": settings.tts_model,
+        "modalities": ["text", "audio"],
+        "audio": {"voice": settings.tts_voice, "format": "mp3"},
+        "messages": [
+            {"role": "user", "content": CHINESE_PROMPT},
+            {"role": "assistant", "content": text},
+        ],
+    }
+    req = urllib.request.Request(
+        f"{settings.tts_base_url}/chat/completions",
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {settings.tts_api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=settings.tts_timeout_seconds) as response:
+            raw = response.read()
+        data = json.loads(raw)
+        audio = base64.b64decode(data["choices"][0]["message"]["audio"]["data"])
+    except (urllib.error.URLError, TimeoutError, KeyError, IndexError, TypeError, ValueError) as exc:
+        log.warning("mimo Chinese TTS provider failed: %s", exc.__class__.__name__)
         raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商调用失败") from exc
     if not audio:
         raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商未返回音频")
@@ -192,6 +229,7 @@ def _synthesize_volc(text: str, settings: Settings) -> bytes:
 
 
 _PROVIDERS = {"mimo": _synthesize_mimo, "volc": _synthesize_volc}
+_CHINESE_PROVIDERS = {"mimo": _synthesize_mimo_chinese, "volc": _synthesize_volc}
 
 _PROVIDER_LABELS = {"mimo": "mimo", "volc": "豆包 seed-tts-2.0"}
 
@@ -226,22 +264,29 @@ def _provider_order(provider: str | None, settings: Settings) -> list[str]:
 
 
 def synthesize_word_mp3(
-    text: str, *, provider: str | None = None, settings: Settings | None = None
+    text: str,
+    *,
+    provider: str | None = None,
+    settings: Settings | None = None,
+    language: str = "en",
 ) -> tuple[bytes, str]:
-    """Synthesize one English word to MP3, returning ``(audio_bytes, effective_voice)``.
+    """Synthesize English or Chinese text to MP3.
 
     Tries the selected (or default) provider first; if it is not configured or the
     remote call fails, falls back to the other configured provider. Raises
     ``TTS_NOT_CONFIGURED`` (409) if neither is configured, else the last provider error.
     """
+    if language not in {"en", "zh"}:
+        raise AppError(422, "VALIDATION_ERROR", "不支持的语音语言")
     settings = settings or get_settings()
+    providers = _CHINESE_PROVIDERS if language == "zh" else _PROVIDERS
     last_exc: AppError | None = None
     for current in _provider_order(provider, settings):
         if not settings.provider_enabled(current):
             last_exc = AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
             continue
         try:
-            audio = _PROVIDERS[current](text, settings)
+            audio = providers[current](text, settings)
         except AppError as exc:
             if exc.code in {"TTS_PROVIDER_ERROR", "TTS_NOT_CONFIGURED"}:
                 last_exc = exc

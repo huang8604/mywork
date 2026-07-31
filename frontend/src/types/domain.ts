@@ -82,8 +82,9 @@ export interface PracticeRound {
   round_id: number; session_id: number; mode: 'offline' | 'online'; status: string; version: number
   started_at: string; completed_at: string | null; item_total: number; answered_count: number
 }
+export type PracticeSessionStatus = 'not_started' | 'active' | 'completed' | 'archived'
 export interface PracticeSession {
-  session_id: number; status: 'active' | 'archived'; strategy_version: string; seed: number
+  session_id: number; status: PracticeSessionStatus; strategy_version: string; seed: number
   strategy_params: StrategyRequest; requested_counts: Record<string, number>; actual_counts: Record<string, number>
   created_by_actor_type: ActorType; created_by_actor_id: string | null; skill_name: string | null
   skill_version: string | null; version: number; generated_at: string; printed_at: string | null
@@ -137,15 +138,14 @@ export interface BatchRoundResult {
 }
 export interface BatchRoundResponse { round: PracticeRound; items: ReviewLog[] }
 
-// 在线默写（dictation）— Phase 1: 浏览器 speechSynthesis,不计入结果。
-export type DictationAccent = 'us' | 'uk' | 'system'
+// 在线默写（dictation）— 云音频优先，浏览器 speechSynthesis 兜底，不计入结果。
+export type DictationLanguage = 'en' | 'zh'
 export interface DictationSettings {
-  intervalSec: number      // 自动模式下「上一词播放结束 → 下一词」的间隔,2..30,默认 5
+  intervalSec: number      // 自动模式下「上一词播放结束 → 下一词」的间隔,2..30,默认 6
   autoAdvance: boolean     // 自动播放下一词,默认 true
-  accent: DictationAccent  // 英音/美音/系统默认,默认 'us'
+  language: DictationLanguage // 英文（英音）或中文（普通话）
   rate: number             // 语速 0.7..1.2,默认 1.0
   repeat: number           // 每词播放次数 1..3,默认 1
-  announceNumber: boolean  // 播报单词前先播报序号 "number N"(1..50),默认 true
 }
 export interface Capabilities {
   api_version: string; server_time: string; server_timezone: string

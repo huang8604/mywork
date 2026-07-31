@@ -8,7 +8,7 @@
 import { onScopeDispose, ref, type Ref } from 'vue'
 import { createDictationEngine, type DictationEngineState, type DictationPhase } from './dictationEngine'
 import type { DictationPlayFn, DictationPlayHooks } from './dictationTypes'
-import type { DictationAccent, DictationSettings } from '@/types/domain'
+import type { DictationLanguage, DictationSettings } from '@/types/domain'
 
 const REPEAT_GAP_MS = 500
 const FALLBACK_MS = 8000
@@ -18,6 +18,7 @@ export interface DictationPlayer {
   index: Ref<number>
   total: Ref<number>
   isSpeaking: Ref<boolean>
+  paused: Ref<boolean>
   counts: Ref<{ played: number; skipped: number }>
   voiceWarning: Ref<string | null>
   supported: boolean
@@ -25,6 +26,8 @@ export interface DictationPlayer {
   replay(): void
   skip(): void
   nextAndPlay(): void
+  pause(): void
+  resume(): void
   stop(): void
 }
 
@@ -38,19 +41,14 @@ function audioSupported(): boolean {
   return typeof window !== 'undefined' && typeof Audio !== 'undefined'
 }
 
-/** 按口音挑音色；返回 [voice, exact]。exact=false 表示没找到目标口音、用了兜底。 */
-function pickVoice(voices: SpeechSynthesisVoice[], accent: DictationAccent): [SpeechSynthesisVoice | null, boolean] {
+/** 按默写语言挑音色；英文固定英音，中文固定普通话。 */
+function pickVoice(voices: SpeechSynthesisVoice[], language: DictationLanguage): [SpeechSynthesisVoice | null, boolean] {
   if (!voices.length) return [null, false]
-  if (accent === 'system') {
-    const en = voices.find(v => /^en/i.test(v.lang)) ?? voices[0] ?? null
-    return [en, true]
-  }
-  const want = accent === 'uk' ? 'en-GB' : 'en-US'
-  const exact = voices.find(v => v.lang === want)
+  const want = language === 'zh' ? 'zh-CN' : 'en-GB'
+  const exact = voices.find(v => v.lang?.toLowerCase() === want.toLowerCase())
   if (exact) return [exact, true]
-  const samePrefix = voices.find(v => v.lang?.toLowerCase().startsWith(want.toLowerCase().slice(0, 2)))
-  const anyEn = voices.find(v => /^en/i.test(v.lang))
-  return [samePrefix ?? anyEn ?? voices[0] ?? null, false]
+  const samePrefix = voices.find(v => v.lang?.toLowerCase().startsWith(language))
+  return [samePrefix ?? voices[0] ?? null, false]
 }
 
 export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: () => string[]; numberAudioUrl?: (pos: number) => string }): DictationPlayer {
@@ -61,6 +59,7 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
   const index = ref(0)
   const total = ref(0)
   const isSpeaking = ref(false)
+  const paused = ref(false)
   const counts = ref({ played: 0, skipped: 0 })
   const voiceWarning = ref<string | null>(null)
 
@@ -106,14 +105,14 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
       }
       const synth = window.speechSynthesis
       const settings = current.value
-      const accent: DictationAccent = settings?.accent ?? 'us'
-      const [voice, exact] = pickVoice(voices.value, accent)
+      const language: DictationLanguage = settings?.language ?? 'en'
+      const [voice, exact] = pickVoice(voices.value, language)
       voiceWarning.value = (!exact && voices.value.length)
-        ? `未找到${accent === 'uk' ? '英音' : '美音'}音色，已使用系统默认`
+        ? `未找到${language === 'zh' ? '中文普通话' : '英音'}音色，已使用系统默认`
         : null
       const u = new window.SpeechSynthesisUtterance(text)
       if (voice) { u.voice = voice; u.lang = voice.lang }
-      else { u.lang = accent === 'uk' ? 'en-GB' : 'en-US' }
+      else { u.lang = language === 'zh' ? 'zh-CN' : 'en-GB' }
       u.rate = settings?.rate ?? 1
       u.pitch = 1
       u.volume = 1
@@ -196,10 +195,9 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
       const url = opts.audioUrls?.()[wordIndex]
       const pos = wordIndex + 1
       // 每词只播一次序号:repeat 重复(wordIndex === announcedWordIndex)、超出 1..50、
-      // 开关关闭、或走 speechSynthesis 兜底(无 sharedAudio)时,直接播单词。
+      // 或走 speechSynthesis 兜底(无 sharedAudio)时,直接播正文。
       const shouldAnnounce =
-        !!current.value?.announceNumber
-        && !!opts.numberAudioUrl
+        !!opts.numberAudioUrl
         && !!sharedAudio
         && pos >= 1 && pos <= 50
         && wordIndex !== announcedWordIndex
@@ -243,7 +241,7 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
     texts: opts.texts,
     settings: () => ({
       autoAdvance: current.value?.autoAdvance ?? true,
-      intervalSec: current.value?.intervalSec ?? 5,
+      intervalSec: current.value?.intervalSec ?? 6,
       repeat: current.value?.repeat ?? 1,
     }),
     play: makePlay(),
@@ -256,20 +254,21 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
     if (!supported) return
     announcedWordIndex = -1
     current.value = { ...settings }
+    paused.value = false
     voiceWarning.value = null
     // 若音色尚未异步加载完成，这里 voices 为空 → pickVoice 返回 null → 用 lang 兜底，不阻塞。
-    const [, exact] = pickVoice(voices.value, settings.accent)
-    voiceWarning.value = (!exact && voices.value.length && settings.accent !== 'system')
-      ? `未找到${settings.accent === 'uk' ? '英音' : '美音'}音色，已使用系统默认`
+    const [, exact] = pickVoice(voices.value, settings.language)
+    voiceWarning.value = (!exact && voices.value.length)
+      ? `未找到${settings.language === 'zh' ? '中文普通话' : '英音'}音色，已使用系统默认`
       : null
     engine.start()
   }
 
   // 标签页进后台 / 窗口失焦：立即停播放 + 清定时器（保留进度，回前台不自动续）。
   function onVisibility() {
-    if (document.visibilityState === 'hidden') engine.pause()
+    if (document.visibilityState === 'hidden') { engine.pause(); paused.value = true }
   }
-  function onBlur() { engine.pause() }
+  function onBlur() { engine.pause(); paused.value = true }
 
   if (typeof document !== 'undefined') {
     document.addEventListener('visibilitychange', onVisibility)
@@ -286,11 +285,13 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
   })
 
   return {
-    phase, index, total, isSpeaking, counts, voiceWarning, supported,
+    phase, index, total, isSpeaking, paused, counts, voiceWarning, supported,
     start,
-    replay: () => { announcedWordIndex = -1; return engine.replay() },
-    skip: () => engine.skip(),
-    nextAndPlay: () => engine.nextAndPlay(),
-    stop: () => engine.stop(),
+    replay: () => { paused.value = false; announcedWordIndex = -1; return engine.replay() },
+    skip: () => { paused.value = false; return engine.skip() },
+    nextAndPlay: () => { paused.value = false; return engine.nextAndPlay() },
+    pause: () => { engine.pause(); paused.value = true },
+    resume: () => { paused.value = false; announcedWordIndex = -1; engine.replay() },
+    stop: () => { paused.value = false; engine.stop() },
   }
 }

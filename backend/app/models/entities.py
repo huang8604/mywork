@@ -123,7 +123,10 @@ class WordStats(Base):
 class PracticeSession(Base):
     __tablename__ = "practice_sessions"
     __table_args__ = (
-        CheckConstraint("status IN ('active','archived')", name="ck_sessions_status"),
+        CheckConstraint(
+            "status IN ('not_started','active','completed','archived')",
+            name="ck_sessions_status",
+        ),
         CheckConstraint("seed BETWEEN 0 AND 2147483647", name="ck_sessions_seed"),
         CheckConstraint("version > 0", name="ck_sessions_version"),
         CheckConstraint(
@@ -140,7 +143,7 @@ class PracticeSession(Base):
     )
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
-    status: Mapped[str] = mapped_column(String(16), nullable=False, default="active")
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="not_started")
     strategy_version: Mapped[str] = mapped_column(String(16), nullable=False, default="v1")
     strategy_params_json: Mapped[str] = mapped_column(Text, nullable=False)
     strategy_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -421,4 +424,3 @@ class AuditLog(Base):
     latency_ms: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     remote_addr_hash: Mapped[str | None] = mapped_column(String(64))
     metadata_json: Mapped[str | None] = mapped_column(Text)
-

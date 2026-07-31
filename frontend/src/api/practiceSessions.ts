@@ -1,16 +1,16 @@
 import { apiClient, newEventId, unwrap } from './client'
-import type { ApiEnvelope, BatchRoundResponse, BatchRoundResult, PracticeRound, PracticeSession, ReviewLog, ReviewStatus, StrategyRequest } from '@/types/domain'
+import type { ApiEnvelope, BatchRoundResponse, BatchRoundResult, PracticeRound, PracticeSession, PracticeSessionStatus, ReviewLog, ReviewStatus, StrategyRequest } from '@/types/domain'
 
-export function practiceItemAudioUrl(sessionId: number, itemId: number) { return `/api/v1/practice-sessions/${sessionId}/items/${itemId}/audio` }
-export function numberAudioUrl(n: number) { return `/api/v1/dictation/numbers/${n}/audio` }
+export function practiceItemAudioUrl(sessionId: number, itemId: number, language: 'en' | 'zh' = 'en') { return `/api/v1/practice-sessions/${sessionId}/items/${itemId}/audio?language=${language}` }
+export function numberAudioUrl(n: number, language: 'en' | 'zh' = 'en') { return `/api/v1/dictation/numbers/${n}/audio?language=${language}` }
 
 export async function generateSession(payload: StrategyRequest, signal?: AbortSignal, idempotencyKey = newEventId()) { return unwrap((await apiClient.post<ApiEnvelope<PracticeSession>>('/daily-table/generate', payload, { signal, headers: { 'Idempotency-Key': idempotencyKey } })).data) }
-export async function listSessions(page = 1, size = 20, signal?: AbortSignal, status?: 'active' | 'archived') {
+export async function listSessions(page = 1, size = 20, signal?: AbortSignal, status?: PracticeSessionStatus) {
   const response = await apiClient.get<ApiEnvelope<PracticeSession[]>>('/practice-sessions', { params: { page, size, status }, signal })
   return { data: response.data.data, meta: response.data.meta }
 }
 export async function getSession(id: number, signal?: AbortSignal) { return unwrap((await apiClient.get<ApiEnvelope<PracticeSession>>(`/practice-sessions/${id}`, { signal })).data) }
-export async function updateSession(id: number, payload: { title: string | null; note: string | null; expected_version: number }) { return unwrap((await apiClient.patch<ApiEnvelope<PracticeSession>>(`/practice-sessions/${id}`, payload)).data) }
+export async function updateSession(id: number, payload: { title: string | null; note: string | null; status?: PracticeSessionStatus; expected_version: number }) { return unwrap((await apiClient.patch<ApiEnvelope<PracticeSession>>(`/practice-sessions/${id}`, payload)).data) }
 export async function replaceSessionItems(id: number, wordIds: number[], expectedVersion: number) { return unwrap((await apiClient.put<ApiEnvelope<PracticeSession>>(`/practice-sessions/${id}/items`, { word_ids: wordIds, expected_version: expectedVersion })).data) }
 export async function deleteSession(id: number, expectedVersion: number) { await apiClient.delete(`/practice-sessions/${id}`, { params: { expected_version: expectedVersion } }) }
 export async function markSessionPrinted(sessionId: number, idempotencyKey = newEventId()) { return unwrap((await apiClient.post<ApiEnvelope<PracticeSession>>(`/practice-sessions/${sessionId}/printed`, undefined, { headers: { 'Idempotency-Key': idempotencyKey } })).data) }
