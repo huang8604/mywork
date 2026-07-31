@@ -73,17 +73,22 @@ Docker 端口发布后，Lucky 请求在容器内通常来自 `172.x` 网桥网�
 
 ## 1. 更新流程(人工)
 
-1. 在 GitHub Actions 确认目标提交的测试与镜像发布**成功**,记录对应 `sha-<commit>`。
-2. **更新前备份**(见 §2)。
-3. 进入 Portainer 的 `vocab-app` 容器/服务。
-4. 手动 Pull 目标镜像。日常更新可用 `latest`；变更窗口和回滚应改为已记录的 `sha-<commit>`。
-5. 手动 Recreate(沿用原环境变量与数据卷)。
-6. 等待容器变为 `healthy`,访问 `/healthz/ready`(应返回 `{"status":"ready"}`)。
-7. Smoke:
+1. 使用仓库脚本 push 并等待对应提交的 GitHub Actions 完成：
+   ```bash
+   ./scripts/push-and-monitor-actions.sh
+   ```
+   脚本默认先执行 `git push`，等待 15 秒，然后按完整 commit SHA 查找 `ci.yml` 的 push run，并持续轮询到成功或失败；失败或 30 分钟超时会返回非零状态。需要向 `git push` 传参时放在 `--` 后，例如 `./scripts/push-and-monitor-actions.sh -- --set-upstream origin main`。只监控已经 push 的提交时使用 `--skip-push --sha <commit>`。
+2. 确认目标提交的测试与镜像发布**成功**,记录对应 `sha-<commit>`。
+3. **更新前备份**(见 §2)。
+4. 进入 Portainer 的 `vocab-app` 容器/服务。
+5. 手动 Pull 目标镜像。日常更新可用 `latest`；变更窗口和回滚应改为已记录的 `sha-<commit>`。
+6. 手动 Recreate(沿用原环境变量与数据卷)。
+7. 等待容器变为 `healthy`,访问 `/healthz/ready`(应返回 `{"status":"ready"}`)。
+8. Smoke:
    - 浏览器登录首页正常;
    - 用专用**只读 Token** 调 `/api/v1/capabilities` 返回正常;
    - (完整 Skill 生成/回录流程已在 CI 临时库中验证,**勿**在生产库跑生成/回录测试以免污染数据。)
-8. 记录实际运行 SHA、更新时间、操作者。
+9. 记录实际运行 SHA、更新时间、操作者。
 
 ### 词典与 AI smoke
 

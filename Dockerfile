@@ -48,6 +48,7 @@ RUN apt-get update \
         libharfbuzz0b \
         libfontconfig1 \
         libcairo2 \
+        libexpat1 \
     && rm -rf /var/lib/apt/lists/*
 
 # Non-root user. Fixed UID/GID 10001 must match the NAS host data directory.
