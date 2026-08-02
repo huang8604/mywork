@@ -15,6 +15,7 @@ from app.models import (
     WordStats,
     WordTag,
 )
+from app.services.words import word_chinese_audio_file
 
 
 def stats_data(stats: WordStats | None) -> dict[str, object]:
@@ -72,6 +73,7 @@ def word_data(db: Session, word: Word, *, include_stats: bool = True) -> dict[st
         "audio_voice": word.audio_voice,
         "audio_generated_at": word.audio_generated_at,
         "audio_bytes": word.audio_bytes,
+        "cn_audio_ready": word_chinese_audio_file(word) is not None,
         "is_custom": bool(word.is_custom),
         "tags": list(tags),
         "version": word.version,
@@ -181,4 +183,3 @@ def session_data(db: Session, session: PracticeSession, *, include_items: bool) 
         ).all()
         data["rounds"] = [round_data(db, item) for item in rounds]
     return data
-

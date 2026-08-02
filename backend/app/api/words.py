@@ -42,7 +42,7 @@ from app.services.dictionary import enrich_preview, enrich_word
 from app.services.domain import normalize_word
 from app.services.idempotency import claim, complete
 from app.services.import_worker import enqueue_import, import_progress, run_import_row
-from app.services.number_audio import NUMBER_MAX, missing_numbers
+from app.services.number_audio import NUMBER_MAX, missing_number_pairs
 from app.services.serializers import word_data
 from app.services.tts import audio_providers_info
 from app.services.words import (
@@ -53,7 +53,7 @@ from app.services.words import (
     create_word,
     delete_word,
     enqueue_missing_word_audio,
-    generate_word_audio,
+    generate_word_audio_pair,
     get_word,
     iter_words,
     list_words,
@@ -63,6 +63,7 @@ from app.services.words import (
     restore_word,
     update_word,
     word_audio_file,
+    word_chinese_audio_file,
 )
 
 router = APIRouter(prefix="/api/v1/words", tags=["words"])
@@ -695,7 +696,7 @@ def batch_audio(
     actor: Annotated[Actor, Depends(require_scopes("words:write"))],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
-    """Enqueue selected words for background MP3 generation (fire-and-forget)."""
+    """Enqueue selected words for paired English/Chinese MP3 generation."""
     settings = get_settings()
     if not (settings.tts_enabled or settings.volc_enabled):
         raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
@@ -876,10 +877,10 @@ def generate_numbers_audio(
     actor: Annotated[Actor, Depends(require_scopes("words:write"))],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
-    """Generate the dictation number-announcement clips "number 1" .. "number 50".
+    """Generate paired English/Chinese number clips for positions 1 .. 50.
 
     豆包 preferred (provider defaults to volc); falls back to mimo via the worker.
-    ``force`` regenerates all 1..50, otherwise only missing clips up to ``limit``.
+    ``force`` regenerates all 1..50 pairs, otherwise pairs missing either language.
     Returns ``{queued, total, provider}``; progress via ``GET /words/audio/progress``.
     """
     idem = claim(
@@ -902,7 +903,7 @@ def generate_numbers_audio(
     if payload.force:
         nums = list(range(1, NUMBER_MAX + 1))
     else:
-        nums = missing_numbers(limit=payload.limit)
+        nums = missing_number_pairs(limit=payload.limit)
     queued = enqueue_number_generation(nums, force=payload.force, provider=provider) if nums else 0
     data = {"queued": queued, "total": len(nums), "provider": provider}
     complete(idem, data=data, status_code=200, resource_type="number_audio_batch")
@@ -924,11 +925,13 @@ def get_audio(
     word_id: int,
     db: Annotated[Session, Depends(get_db)],
     _actor: Annotated[Actor, Depends(require_scopes("words:read"))],
+    language: Annotated[str, Query(pattern="^(en|zh)$")] = "en",
 ):
     word = get_word(db, word_id)
-    audio = word_audio_file(word)
+    audio = word_chinese_audio_file(word) if language == "zh" else word_audio_file(word)
     if audio is None:
-        raise AppError(404, "AUDIO_NOT_FOUND", "音频尚未生成")
+        label = "中文" if language == "zh" else "英文"
+        raise AppError(404, "AUDIO_NOT_FOUND", f"{label}音频尚未生成")
     return FileResponse(
         audio,
         media_type="audio/mpeg",
@@ -961,7 +964,9 @@ def generate_audio(
             status_code=idem.replay_status or 200,
             headers={"Idempotency-Replayed": "true"},
         )
-    word = generate_word_audio(db, word_id, force=payload.force, provider=payload.provider)
+    word = generate_word_audio_pair(
+        db, word_id, force=payload.force, provider=payload.provider
+    )
     data = word_data(db, word)
     complete(idem, data=data, status_code=200, resource_type="word", resource_id=word.id)
     add_audit(

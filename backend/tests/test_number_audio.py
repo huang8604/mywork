@@ -24,8 +24,8 @@ def _mock_tts(monkeypatch, impl: Callable[..., bytes] | None = None) -> list[str
 
     calls: list[str] = []
 
-    def fake(text: str, *, provider=None, settings=None) -> tuple[bytes, str]:
-        calls.append(f"{text}|{provider}")
+    def fake(text: str, *, provider=None, settings=None, language="en") -> tuple[bytes, str]:
+        calls.append(f"{text}|{provider}|{language}")
         if impl is not None:
             return impl(text), "zh_female_yingyujiaoxue_uranus_bigtts"
         return MP3, "zh_female_yingyujiaoxue_uranus_bigtts"
@@ -42,7 +42,7 @@ def test_generate_number_audio_writes_file_and_is_idempotent(monkeypatch, tmp_pa
     path = generate_number_audio(1)
     assert path.is_file()
     assert path.read_bytes() == MP3
-    assert calls == ["number 1|volc"]  # provider defaults to volc (豆包 preferred)
+    assert calls == ["number 1|volc|en"]  # provider defaults to volc (豆包 preferred)
 
     # idempotent: second call without force does NOT re-synthesize.
     calls.clear()
@@ -53,7 +53,7 @@ def test_generate_number_audio_writes_file_and_is_idempotent(monkeypatch, tmp_pa
     # force regenerates.
     calls.clear()
     generate_number_audio(1, force=True)
-    assert calls == ["number 1|volc"]
+    assert calls == ["number 1|volc|en"]
     assert number_audio_file(1) is not None
 
 
@@ -63,6 +63,7 @@ def test_missing_numbers_and_bounds(monkeypatch, tmp_path):
     from app.services.number_audio import (
         NUMBER_MAX,
         generate_number_audio,
+        missing_number_pairs,
         missing_numbers,
         number_audio_file,
     )
@@ -72,6 +73,9 @@ def test_missing_numbers_and_bounds(monkeypatch, tmp_path):
     generate_number_audio(4)
     assert missing_numbers(limit=5) == [1, 3, 5]
     assert missing_numbers(limit=NUMBER_MAX)[:5] == [1, 3, 5, 6, 7]
+    assert missing_number_pairs(limit=5) == [1, 2, 3, 4, 5]
+    generate_number_audio(2, language="zh")
+    assert missing_number_pairs(limit=5) == [1, 3, 4, 5, 6]
 
     # out-of-range resolves to no file.
     assert number_audio_file(0) is None
@@ -187,7 +191,8 @@ def test_worker_generates_number_clips(monkeypatch, tmp_path):
     assert prog["completed"] == 3
     assert prog["failed"] == 0
     for n in (1, 2, 3):
-        assert number_audio_file(n) is not None
+        assert number_audio_file(n, language="en") is not None
+        assert number_audio_file(n, language="zh") is not None
 
 
 def test_student_can_read_number_audio_but_not_generate(

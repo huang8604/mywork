@@ -147,7 +147,7 @@ The `/system` route (`meta.roles: ['admin']`) is the admin console: API-client/t
 - Routing in `src/router/index.ts`; each nav route carries `meta` used for labels and document title. Responsive breakpoints in `src/styles/breakpoints.css`; print rules in `src/styles/print.css`.
 - `newEventId()` generates the `client_event_id` for each review submission; `formatPhonetic` (`@/utils/formatPhonetic`) wraps a raw phonetic string in `/ /` for display (shared across worksheet, review, and recitation views).
 - **Auth**: `useAuthStore` (`stores/auth.ts`) holds the logged-in identity (`username`/`role`); the router `beforeEach` awaits `fetchMe()` once, then enforces each route's `meta.roles` (`admin` sees everything, `student` only `/review`; `/system` is `['admin']`). `apiClient` uses `withCredentials` and, on a non-`/auth/*` 401, clears the store and redirects to `/login`. Login is a server-set session cookie — no token lives in JS.
-- **Audio**: word-library controls call `src/api/words.ts` to generate MP3s and play `/api/v1/words/{id}/audio`; `OnlineDictation.vue` passes practice-item audio URLs to `useDictationPlayer`, which tries server MP3 first and falls back to `speechSynthesis` without exposing any TTS key in JS.
+- **Audio**: every word-library generation action creates/caches an English word MP3 and a Chinese-meaning MP3 together; the UI plays `/api/v1/words/{id}/audio?language=en|zh`. Number-audio background jobs likewise generate both languages. `OnlineDictation.vue` passes practice-item audio URLs to `useDictationPlayer`, which tries server MP3 first and falls back to `speechSynthesis` without exposing any TTS key in JS.
 
 ## External Skills
 

@@ -4,7 +4,7 @@ import type { ApiEnvelope, AudioBatchResult, AudioProgress, AudioProvidersInfo, 
 
 export type { ImportResolved, ImportSummary, ImportProgress }
 export type ImportResult = ImportSummary
-export function wordAudioUrl(id: number) { return `/api/v1/words/${id}/audio` }
+export function wordAudioUrl(id: number, language: 'en' | 'zh' = 'en') { return `/api/v1/words/${id}/audio?language=${language}` }
 export async function generateWordAudio(id: number, force = false, provider?: 'mimo' | 'volc') { return unwrap((await apiClient.post<ApiEnvelope<Word>>(`/words/${id}/audio`, { force, ...(provider ? { provider } : {}) }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
 export async function generateMissingWordAudio(limit = 50, provider?: 'mimo' | 'volc') { return unwrap((await apiClient.post<ApiEnvelope<AudioBatchResult>>('/words/audio/generate-missing', { limit, ...(provider ? { provider } : {}) }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
 export async function regenerateAllAudio(provider?: 'mimo' | 'volc') { return unwrap((await apiClient.post<ApiEnvelope<AudioBatchResult>>('/words/audio/regenerate-all', { ...(provider ? { provider } : {}) }, { headers: { 'Idempotency-Key': newEventId() } })).data) }

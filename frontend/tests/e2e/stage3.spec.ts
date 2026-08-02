@@ -3,13 +3,15 @@ import { expect, test, type Page, type Route } from '@playwright/test'
 const stats = { known_count: 3, unknown_count: 1, skipped_count: 1, total_attempts: 5, accuracy: .75, reviewed_words: 2, due_words: 1 }
 const contributions = { from: '2025-07-21', to: '2026-07-20', timezone: 'Asia/Shanghai', total: 1, days: [{ date: '2026-07-20', count: 1, known: 1, unknown: 0, skipped: 0 }] }
 const wordStats = { known_count: 0, unknown_count: 0, skipped_count: 0, total_attempts: 0, accuracy: null, consecutive_known: 0, consecutive_unknown: 0, last_status: null, last_reviewed_at: null, last_effective_status: null, last_effective_reviewed_at: null, interval_days: 0, due_at: null }
-const word = { id: 1, en_word: 'serendipity', normalized_en_word: 'serendipity', phonetic: '/ˌserənˈdɪpəti/', cn_meaning: '意外发现美好事物的能力', example_sentence: 'A fortunate discovery.', is_custom: true, tags: ['灵感'], version: 1, created_at: '2026-07-20T01:00:00Z', updated_at: '2026-07-20T01:00:00Z', deleted_at: null, stats: wordStats }
+const word = { id: 1, en_word: 'serendipity', normalized_en_word: 'serendipity', phonetic: '/ˌserənˈdɪpəti/', cn_meaning: '意外发现美好事物的能力', example_sentence: 'A fortunate discovery.', audio_path: 'words/serendipity.mp3', cn_audio_ready: true, is_custom: true, tags: ['灵感'], version: 1, created_at: '2026-07-20T01:00:00Z', updated_at: '2026-07-20T01:00:00Z', deleted_at: null, stats: wordStats }
 const session = { session_id: 1, status: 'active', strategy_version: 'v1', seed: 7, strategy_params: {}, requested_counts: { new: 1 }, actual_counts: { new: 1 }, created_by_actor_type: 'api_client', created_by_actor_id: 'skill-1', skill_name: 'Family Review', skill_version: '1.0', version: 1, generated_at: '2026-07-20T03:00:00Z', printed_at: null, completed_at: null, archived_at: null, title: null, note: null, items: [{ item_id: 11, position: 1, word_id: 1, word: { en_word: word.en_word, phonetic: word.phonetic, cn_meaning: word.cn_meaning, example_sentence: word.example_sentence }, source_categories: ['new'], reason: 'new word', latest_review_log_id: null }], rounds: [] }
 const sessions = [session, { ...session, session_id: 2, title: '期末冲刺', generated_at: '2026-07-20T02:00:00Z' }, { ...session, session_id: 3, status: 'not_started', title: '周末巩固', generated_at: '2026-07-20T01:00:00Z' }]
 const envelope = <T>(data: T, meta: Record<string, unknown> = {}) => ({ code: 'OK', message: 'success', data, meta, request_id: 'e2e-request' })
 
 async function installApi(page: Page) {
   const words = [word]
+  const completedSessionIds = new Set<number>()
+  let roundSessionId = 1
   await page.route('**/api/v1/**', async (route: Route) => {
     const request = route.request(); const url = new URL(request.url()); const path = url.pathname; const method = request.method()
     if (path === '/api/v1/auth/me' && method === 'GET') return route.fulfill({ json: envelope({ username: 'admin', role: 'admin' }) })
@@ -17,10 +19,10 @@ async function installApi(page: Page) {
     if (path === '/api/v1/stats/contributions') return route.fulfill({ json: envelope(contributions) })
     if (path === '/api/v1/practice-sessions' && method === 'GET') return route.fulfill({ json: envelope(sessions, { page: 1, size: 3, total: 3 }) })
     const sessionDetail = path.match(/^\/api\/v1\/practice-sessions\/(\d+)$/)
-    if (sessionDetail && method === 'GET') return route.fulfill({ json: envelope(sessions.find(item => item.session_id === Number(sessionDetail[1])) || session) })
+    if (sessionDetail && method === 'GET') { const id = Number(sessionDetail[1]); const found = sessions.find(item => item.session_id === id) || session; return route.fulfill({ json: envelope(completedSessionIds.has(id) ? { ...found, status: 'completed', completed_at: '2026-07-20T02:10:00Z' } : found) }) }
     const roundCreate = path.match(/^\/api\/v1\/practice-sessions\/(\d+)\/review-rounds$/)
-    if (roundCreate) return route.fulfill({ status: 201, json: envelope({ round_id: 3, session_id: Number(roundCreate[1]), mode: 'online', status: 'active', version: 1, started_at: '2026-07-20T02:00:00Z', completed_at: null, item_total: 1, answered_count: 0 }) })
-    if (path === '/api/v1/practice-review-rounds/3/items/11/result') return route.fulfill({ status: 201, json: envelope({ id: 9, word_id: 1, session_item_id: 11, review_round_id: 3, status: JSON.parse(request.postData() || '{}').status, source: 'online_practice', actor_type: 'web_user', actor_id: 'local', client_event_id: JSON.parse(request.postData() || '{}').client_event_id, duration_ms: null, reviewed_at: '2026-07-20T02:00:00Z', version: 1, created_at: '2026-07-20T02:00:00Z', updated_at: '2026-07-20T02:00:00Z' }) })
+    if (roundCreate) { roundSessionId = Number(roundCreate[1]); return route.fulfill({ status: 201, json: envelope({ round_id: 3, session_id: roundSessionId, mode: 'online', status: 'active', version: 1, started_at: '2026-07-20T02:00:00Z', completed_at: null, item_total: 1, answered_count: 0 }) }) }
+    if (path === '/api/v1/practice-review-rounds/3/items/11/result') { completedSessionIds.add(roundSessionId); return route.fulfill({ status: 201, json: envelope({ id: 9, word_id: 1, session_item_id: 11, review_round_id: 3, status: JSON.parse(request.postData() || '{}').status, source: 'online_practice', actor_type: 'web_user', actor_id: 'local', client_event_id: JSON.parse(request.postData() || '{}').client_event_id, duration_ms: null, reviewed_at: '2026-07-20T02:00:00Z', version: 1, created_at: '2026-07-20T02:00:00Z', updated_at: '2026-07-20T02:00:00Z' }) }) }
     if (path === '/api/v1/reviews/today' && method === 'GET') return route.fulfill({ json: envelope({ date: '2026-07-20', timezone: 'Asia/Shanghai', counts: { known: 1, unknown: 0, skipped: 0, total: 1 }, items: [{ review_id: 9, round_id: 3, session_id: 2, session_title: '期末冲刺', word_id: 1, actor_id: 'student', en_word: word.en_word, phonetic: word.phonetic, cn_meaning: word.cn_meaning, status: 'known', reviewed_at: '2026-07-20T02:00:00Z' }] }) })
     if (path === '/api/v1/reviews' && method === 'GET') return route.fulfill({ json: envelope([{ id: 9, word_id: 1, session_item_id: 11, review_round_id: 3, status: 'known', source: 'online_practice', actor_type: 'web_user', actor_id: 'local', client_event_id: 'event-9', duration_ms: null, reviewed_at: '2026-07-20T02:00:00Z', version: 1, created_at: '2026-07-20T02:00:00Z', updated_at: '2026-07-20T02:00:00Z' }], { page: 1, size: 20, total: 1 }) })
     if (path === '/api/v1/reviews/9' && method === 'PATCH') return route.fulfill({ json: envelope({ id: 9, word_id: 1, status: JSON.parse(request.postData() || '{}').status, source: 'online_practice', actor_type: 'web_user', client_event_id: 'event-9', reviewed_at: '2026-07-20T02:00:00Z', duration_ms: null, version: 2, created_at: '2026-07-20T02:00:00Z', updated_at: '2026-07-20T02:10:00Z', session_item_id: 11, review_round_id: 3, actor_id: 'local' }) })
@@ -74,12 +76,12 @@ test('activity heatmap and dictation defaults expose the new interaction model',
   await expect(page.locator('.day-detail')).toContainText('复习 1 次')
 
   await page.goto('/review')
-  await page.getByRole('radio', { name: '在线默写' }).click()
+  await page.locator('.mode-toggle').getByText('在线默写', { exact: true }).click()
   await expect(page.getByText('间隔 · 6 秒')).toBeVisible()
   await expect(page.getByRole('radio', { name: '英文' })).toBeChecked()
   await expect(page.getByRole('radio', { name: '中文' })).toBeVisible()
   await expect(page.getByText('口音', { exact: true })).toHaveCount(0)
-  await page.getByLabel('切换复习表').click()
+  await page.locator('.dictation .head-right .el-select').click()
   await expect(page.locator('.el-select-dropdown:visible .el-select-dropdown__item')).toHaveCount(2)
   await expect(page.locator('.el-select-dropdown:visible')).not.toContainText('周末巩固')
   await page.keyboard.press('Escape')
@@ -96,8 +98,19 @@ test('word CRUD autofill and English-only import remain usable', async ({ page }
   await page.getByRole('button', { name: '导入 / 导出' }).click(); await expect(page.getByRole('radio', { name: '更新重复' })).toBeChecked(); await expect(page.getByRole('radio', { name: 'AI 补充' })).toBeChecked(); await page.getByRole('button', { name: '查看 JSON 字段模板' }).click(); await expect(page.getByRole('heading', { name: 'JSON 导入字段模板' })).toBeVisible(); await expect(page.locator('.json-template')).toContainText('example_sentence'); await page.getByRole('button', { name: '使用此模板' }).click(); await expect(page.getByLabel('英文单词列表或 JSON 模板')).toHaveValue(/^\[/); await page.getByRole('button', { name: '开始导入' }).click(); await expect(page.getByText(/导入完成:新增 1/)).toBeVisible()
 })
 
-test('online review hides results while answering and shows a separate result page when complete', async ({ page }) => {
-  await page.goto('/review'); await expect(page.locator('.session-choice')).toHaveCount(3); await expect(page.getByRole('heading', { name: '今日已完成' })).toBeVisible(); await expect(page.getByText(/期末冲刺.*\d{2}:\d{2}/)).toBeVisible(); await page.getByRole('button', { name: /期末冲刺/ }).click(); await page.getByRole('button', { name: '开始在线复习' }).click(); await expect(page.getByRole('heading', { name: '今日已完成' })).toHaveCount(0); await page.getByRole('button', { name: /^认识/ }).click(); await expect(page.locator('.finish-summary')).toContainText('本轮已完成'); await expect(page.locator('.flash-card')).toHaveCount(0); await expect(page.getByRole('heading', { name: '今日已完成' })).toBeVisible(); await expect(page.getByText('学员：student')).toBeVisible()
+test('practice sheet editor exposes all four statuses', async ({ page }) => {
+  await page.goto('/daily/generate')
+  await page.getByRole('button', { name: '编辑' }).first().click()
+  await page.getByRole('dialog').locator('.el-form-item').filter({ hasText: '状态' }).locator('.el-select').click()
+  const dropdown = page.locator('.el-select-dropdown:visible')
+  await expect(dropdown).toContainText('未开始')
+  await expect(dropdown).toContainText('正在进行')
+  await expect(dropdown).toContainText('已完成')
+  await expect(dropdown).toContainText('已归档')
+})
+
+test('online review hides non-active sessions and shows a separate result page when complete', async ({ page }) => {
+  await page.goto('/review'); await expect(page.locator('.session-choice')).toHaveCount(2); await expect(page.getByText('周末巩固')).toHaveCount(0); await expect(page.getByRole('heading', { name: '今日已完成' })).toBeVisible(); await expect(page.getByText(/期末冲刺.*\d{2}:\d{2}/)).toBeVisible(); await page.getByRole('button', { name: /期末冲刺/ }).click(); await page.getByRole('button', { name: '开始在线复习' }).click(); await expect(page.getByRole('heading', { name: '今日已完成' })).toHaveCount(0); await page.getByRole('button', { name: /^认识/ }).click(); await expect(page.locator('.finish-summary')).toContainText('本轮已完成'); await expect(page.locator('.flash-card')).toHaveCount(0); await expect(page.getByRole('heading', { name: '今日已完成' })).toBeVisible(); await expect(page.getByText('学员：student')).toBeVisible()
   await page.goto('/history'); await page.getByRole('button', { name: /认识.*修改|认识.*点按修改/ }).first().click(); await page.getByRole('button', { name: /^不认识/ }).first().click(); await expect(page.locator('.status-badge.unknown:visible')).toBeVisible()
 })
 

@@ -27,13 +27,13 @@ def _enable_volc(monkeypatch) -> None:
     get_settings.cache_clear()
 
 
-def _mock_tts(monkeypatch, impl: Callable[..., bytes] | None = None) -> list[str]:
+def _mock_tts(monkeypatch, impl: Callable[..., bytes] | None = None) -> list[tuple[str, str]]:
     import app.services.tts as tts
 
-    calls: list[str] = []
+    calls: list[tuple[str, str]] = []
 
-    def fake(text: str, *, provider=None, settings=None) -> tuple[bytes, str]:
-        calls.append(text)
+    def fake(text: str, *, provider=None, settings=None, language="en") -> tuple[bytes, str]:
+        calls.append((text, language))
         if impl is not None:
             return impl(text, settings=settings), "Chloe"
         return MP3, "Chloe"
@@ -76,14 +76,19 @@ def test_generate_and_get_word_audio(client, monkeypatch, tmp_path):
     assert data["audio_voice"] == "Chloe"
     assert data["audio_generated_at"] is not None
     assert data["audio_bytes"] == len(MP3)
+    assert data["cn_audio_ready"] is True
     assert data["version"] == word["version"] + 1
-    assert calls == ["camera"]
+    assert calls == [("相机", "zh"), ("camera", "en")]
 
     audio = client.get(f"/api/v1/words/{word['id']}/audio")
     assert audio.status_code == 200
     assert audio.headers["content-type"].startswith("audio/mpeg")
     assert audio.headers["content-disposition"] == "inline"
     assert audio.content == MP3
+
+    chinese_audio = client.get(f"/api/v1/words/{word['id']}/audio?language=zh")
+    assert chinese_audio.status_code == 200
+    assert chinese_audio.content == MP3
 
 
 def test_generate_word_audio_is_idempotent_without_force(client, monkeypatch, tmp_path):
@@ -102,7 +107,7 @@ def test_generate_word_audio_is_idempotent_without_force(client, monkeypatch, tm
         json={"force": False},
     )
     assert first.status_code == second.status_code == 200
-    assert calls == ["focus"]
+    assert calls == [("焦点", "zh"), ("focus", "en")]
     assert second.json()["data"]["version"] == first.json()["data"]["version"]
 
 
@@ -121,16 +126,30 @@ def test_force_regenerates_word_audio(client, monkeypatch, tmp_path):
         headers={"Idempotency-Key": "audio-again-2"},
         json={"force": True},
     ).json()["data"]
-    assert calls == ["again", "again"]
+    assert calls == [
+        ("再次", "zh"),
+        ("again", "en"),
+        ("再次", "zh"),
+        ("again", "en"),
+    ]
     assert second["version"] == first["version"] + 1
     assert second["audio_bytes"] == len(MP3)
 
 
-def test_generate_missing_enqueues_audio_less_words_in_id_order(client, monkeypatch, tmp_path):
+def test_generate_missing_enqueues_words_missing_either_language(
+    client, db_session, monkeypatch, tmp_path
+):
     _enable_tts(monkeypatch, tmp_path)
+    _mock_tts(monkeypatch)
     w1 = create_word(client, {"en_word": "alpha", "cn_meaning": "阿尔法", "tags": []})
     w2 = create_word(client, {"en_word": "beta", "cn_meaning": "贝塔", "tags": []})
     w3 = create_word(client, {"en_word": "gamma", "cn_meaning": "伽马", "tags": []})
+
+    from app.services.words import generate_word_audio, generate_word_audio_pair
+
+    generate_word_audio(db_session, w1["id"])  # English exists, Chinese is missing.
+    generate_word_audio_pair(db_session, w2["id"])  # Both exist, so skip this word.
+    db_session.commit()
 
     recorded: dict = {}
     import app.services.audio_worker as aw
@@ -145,15 +164,14 @@ def test_generate_missing_enqueues_audio_less_words_in_id_order(client, monkeypa
     response = client.post(
         "/api/v1/words/audio/generate-missing",
         headers={"Idempotency-Key": "audio-batch-1"},
-        json={"limit": 2},
+        json={"limit": 10},
     )
     assert response.status_code == 200, response.text
     data = response.json()["data"]
     assert data["queued"] == 2
     assert data["total"] == 2
     assert recorded["force"] is False
-    # only the first 2 (by id) of the 3 audio-less words enqueued, ascending id order
-    assert recorded["ids"] == sorted([w1["id"], w2["id"], w3["id"]])[:2]
+    assert recorded["ids"] == sorted([w1["id"], w3["id"]])
 
 
 def test_student_cannot_use_word_audio_routes_but_can_read_session_item_audio(
@@ -348,6 +366,7 @@ def test_audio_worker_run_job_generates_and_skips_deleted(db_session, monkeypatc
     _mock_tts(monkeypatch)
     from app.services import audio_worker
     from app.models import Word
+    from app.services.words import word_chinese_audio_file
 
     word = Word(
         en_word="ghost",
@@ -371,6 +390,7 @@ def test_audio_worker_run_job_generates_and_skips_deleted(db_session, monkeypatc
 
     assert audio_worker.run_audio_job(db_session, word.id, force=False) is True
     assert db_session.get(Word, word.id).audio_path is not None
+    assert word_chinese_audio_file(word) is not None
     assert audio_worker.run_audio_job(db_session, deleted.id, force=False) is False
 
 

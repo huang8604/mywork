@@ -272,6 +272,14 @@ def word_audio_file(word: Word, settings: Settings | None = None) -> Path | None
     return candidate if candidate.is_file() else None
 
 
+def word_chinese_audio_file(
+    word: Word, settings: Settings | None = None
+) -> Path | None:
+    from app.services.dictation_audio import chinese_audio_file
+
+    return chinese_audio_file(word.cn_meaning, settings)
+
+
 def generate_word_audio(
     db: Session, word_id: int, *, force: bool = False, provider: str | None = None
 ) -> Word:
@@ -322,6 +330,23 @@ def generate_word_audio(
     return word
 
 
+def generate_word_audio_pair(
+    db: Session, word_id: int, *, force: bool = False, provider: str | None = None
+) -> Word:
+    """Generate/cache both the English word and its Chinese meaning audio."""
+    from app.services.dictation_audio import generate_chinese_audio
+
+    word = get_word(db, word_id, include_deleted=False)
+    settings = get_settings()
+    generate_chinese_audio(
+        word.cn_meaning,
+        force=force,
+        provider=provider,
+        settings=settings,
+    )
+    return generate_word_audio(db, word_id, force=force, provider=provider)
+
+
 def enqueue_missing_word_audio(
     db: Session, *, limit: int, provider: str | None = None
 ) -> dict[str, object]:
@@ -335,14 +360,14 @@ def enqueue_missing_word_audio(
     settings = get_settings()
     if not (settings.tts_enabled or settings.volc_enabled):
         raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
-    ids = list(
-        db.scalars(
-            select(Word.id)
-            .where(Word.deleted_at.is_(None), Word.audio_path.is_(None))
-            .order_by(asc(Word.id))
-            .limit(limit)
-        )
-    )
+    words = db.scalars(
+        select(Word).where(Word.deleted_at.is_(None)).order_by(asc(Word.id))
+    ).all()
+    ids = [
+        word.id
+        for word in words
+        if word_audio_file(word) is None or word_chinese_audio_file(word) is None
+    ][:limit]
     queued = enqueue_audio_generation(ids, force=False, provider=provider) if ids else 0
     return {"queued": queued, "total": len(ids), "provider": provider}
 

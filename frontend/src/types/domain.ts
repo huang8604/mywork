@@ -21,6 +21,7 @@ export interface Word {
   cn_meaning: string; example_sentence: string | null
   audio_path?: string | null; audio_format?: string | null; audio_voice?: string | null
   audio_generated_at?: string | null; audio_bytes?: number | null
+  cn_audio_ready?: boolean
   is_custom: boolean; tags: string[]
   version: number; created_at: string; updated_at: string; deleted_at: string | null; stats: WordStats
 }

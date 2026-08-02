@@ -38,7 +38,11 @@ def chinese_audio_file(text: str, settings: Settings | None = None) -> Path | No
 
 
 def generate_chinese_audio(
-    text: str, *, provider: str | None = None, settings: Settings | None = None
+    text: str,
+    *,
+    force: bool = False,
+    provider: str | None = None,
+    settings: Settings | None = None,
 ) -> Path:
     cleaned = text.strip()
     if not cleaned:
@@ -46,7 +50,7 @@ def generate_chinese_audio(
     settings = settings or get_settings()
     with _lock:
         existing = chinese_audio_file(cleaned, settings)
-        if existing:
+        if existing and not force:
             return existing
         audio, _voice = tts_service.synthesize_word_mp3(
             cleaned, provider=provider, settings=settings, language="zh"
