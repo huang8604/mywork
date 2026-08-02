@@ -5,6 +5,7 @@ Revises: 0004
 """
 
 from alembic import op
+import sqlalchemy as sa
 
 
 revision = "0005"
@@ -13,7 +14,22 @@ branch_labels = None
 depends_on = None
 
 
+def _recover_stale_batch_table() -> None:
+    """Recover from an interrupted SQLite batch-table rebuild."""
+    bind = op.get_bind()
+    if bind.dialect.name != "sqlite":
+        return
+    tables = set(sa.inspect(bind).get_table_names())
+    temporary = "_alembic_tmp_practice_sessions"
+    original = "practice_sessions"
+    if temporary in tables and original in tables:
+        op.execute("DROP TABLE IF EXISTS _alembic_tmp_practice_sessions")
+    elif temporary in tables:
+        op.rename_table(temporary, original)
+
+
 def upgrade() -> None:
+    _recover_stale_batch_table()
     with op.batch_alter_table("practice_sessions") as batch:
         batch.drop_constraint("ck_sessions_status", type_="check")
         batch.create_check_constraint(
@@ -33,6 +49,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    _recover_stale_batch_table()
     op.execute(
         "UPDATE practice_sessions SET status = 'active' "
         "WHERE status IN ('not_started','completed')"

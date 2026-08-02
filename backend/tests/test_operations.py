@@ -9,6 +9,17 @@ from pathlib import Path
 from sqlalchemy import text
 
 
+def _run_alembic(backend: Path, environment: dict[str, str], *args: str):
+    return subprocess.run(
+        [sys.executable, "-m", "alembic", *args],
+        cwd=backend,
+        env=environment,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
 def test_real_alembic_upgrade_creates_current_consistent_schema(tmp_path):
     database = tmp_path / "migrated.db"
     backend = Path(__file__).resolve().parents[1]
@@ -17,14 +28,7 @@ def test_real_alembic_upgrade_creates_current_consistent_schema(tmp_path):
         "DATABASE_URL": f"sqlite:///{database}",
         "API_TOKEN_PEPPER": "migration-test-pepper-at-least-16",
     }
-    result = subprocess.run(
-        [sys.executable, "-m", "alembic", "upgrade", "head"],
-        cwd=backend,
-        env=environment,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    result = _run_alembic(backend, environment, "upgrade", "head")
     assert result.returncode == 0, result.stderr
     with sqlite3.connect(database) as db:
         assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0005"
@@ -37,6 +41,60 @@ def test_real_alembic_upgrade_creates_current_consistent_schema(tmp_path):
             ).fetchall()
         }
     assert {"words", "review_logs", "practice_sessions", "audit_logs"} <= tables
+
+
+def test_alembic_upgrade_recovers_from_stale_sqlite_batch_table(tmp_path):
+    database = tmp_path / "interrupted-migration.db"
+    backend = Path(__file__).resolve().parents[1]
+    environment = {
+        **os.environ,
+        "DATABASE_URL": f"sqlite:///{database}",
+        "API_TOKEN_PEPPER": "migration-test-pepper-at-least-16",
+    }
+
+    initial = _run_alembic(backend, environment, "upgrade", "head")
+    assert initial.returncode == 0, initial.stderr
+    downgrade = _run_alembic(backend, environment, "downgrade", "0004")
+    assert downgrade.returncode == 0, downgrade.stderr
+
+    with sqlite3.connect(database) as db:
+        db.execute(
+            "INSERT INTO words "
+            "(id, en_word, normalized_en_word, cn_meaning, is_custom, version, created_at, updated_at) "
+            "VALUES (1, 'test', 'test', '测试', 0, 1, "
+            "'2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')"
+        )
+        db.execute(
+            "INSERT INTO practice_sessions "
+            "(id, status, strategy_version, strategy_params_json, strategy_hash, seed, "
+            "requested_counts_json, actual_counts_json, created_by_actor_type, "
+            "created_by_actor_id, version, generated_at) "
+            "VALUES (1, 'active', 'v1', '{}', 'hash', 1, '{}', '{}', "
+            "'web_user', 'admin', 1, '2026-01-01T00:00:00Z')"
+        )
+        db.execute(
+            "INSERT INTO practice_session_items "
+            "(id, session_id, word_id, position, snapshot_en_word, snapshot_cn_meaning, "
+            "source_categories_json, reason, created_at) "
+            "VALUES (1, 1, 1, 1, 'test', '测试', '[]', 'test', '2026-01-01T00:00:00Z')"
+        )
+        db.execute(
+            "CREATE TABLE _alembic_tmp_practice_sessions "
+            "AS SELECT * FROM practice_sessions"
+        )
+
+    retry = _run_alembic(backend, environment, "upgrade", "head")
+    assert retry.returncode == 0, retry.stderr
+    with sqlite3.connect(database) as db:
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0005"
+        assert db.execute(
+            "SELECT 1 FROM sqlite_master "
+            "WHERE type = 'table' AND name = '_alembic_tmp_practice_sessions'"
+        ).fetchone() is None
+        assert db.execute("SELECT status FROM practice_sessions WHERE id = 1").fetchone()[0] == "not_started"
+        assert db.execute("SELECT session_id, word_id FROM practice_session_items").fetchall() == [(1, 1)]
+        assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
 
 
 def test_health_readiness_requires_current_migration(client, db_session):
