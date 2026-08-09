@@ -19,19 +19,24 @@ const texts = () => props.session.items?.map(i => settings.value.language === 'z
 const audioUrls = () => props.session.items?.map(i => practiceItemAudioUrl(props.session.session_id, i.item_id, settings.value.language)) ?? []
 const player = useDictationPlayer({ texts, audioUrls, numberAudioUrl: (pos: number) => numberAudioUrl(pos, settings.value.language) })
 
-const draft = ref('')
+const drafts = ref<Record<number, string>>({})
 const startedAt = ref<number | null>(null)
 const finishedAt = ref<number | null>(null)
 
 const total = computed(() => props.session.items?.length ?? 0)
+const currentItem = computed(() => props.session.items?.[player.index.value])
+const draft = computed({
+  get: () => currentItem.value ? (drafts.value[currentItem.value.item_id] ?? '') : '',
+  set: (value: string) => {
+    if (currentItem.value) drafts.value = { ...drafts.value, [currentItem.value.item_id]: value }
+  },
+})
 
 // 切换复习表：停播放、回到设置态（保留用户已调好的设置）。
 watch(() => props.session?.session_id, () => {
   player.stop()
-  draft.value = ''
+  drafts.value = {}
 })
-// 换词：清空草稿（草稿不判对错、不提交）。
-watch(() => player.index.value, () => { draft.value = '' })
 // 引擎跑完：记一个结束时刻用于算用时。
 watch(() => player.phase.value, phase => {
   if (phase === 'finished') finishedAt.value = Date.now()
@@ -40,6 +45,7 @@ watch(() => player.phase.value, phase => {
 function begin() {
   startedAt.value = Date.now()
   finishedAt.value = null
+  drafts.value = {}
   player.start(settings.value)
 }
 function onEnter() {
@@ -165,6 +171,16 @@ const speakingHint = computed(() => {
         <el-button @click="player.stop()">返回设置</el-button>
         <el-button @click="emit('back')">返回卡片</el-button>
       </div>
+      <section class="dictation-results" aria-label="本轮听写结果">
+        <div class="result-head"><h3>本轮听写结果</h3><span>已听写</span></div>
+        <ol>
+          <li v-for="item in session.items" :key="item.item_id">
+            <span class="result-position">{{ item.position }}</span>
+            <div><strong>{{ item.word.en_word }}</strong><small>{{ item.word.cn_meaning }}</small><p v-if="drafts[item.item_id]">草稿：{{ drafts[item.item_id] }}</p></div>
+            <el-tag type="success" effect="plain">已听写</el-tag>
+          </li>
+        </ol>
+      </section>
     </div>
   </section>
 </template>
@@ -204,6 +220,13 @@ const speakingHint = computed(() => {
 .finish-counts span { color: var(--muted); font-size: .9rem; }
 .finish-counts strong { display: block; font-size: 1.6rem; color: var(--ink); font-family: Georgia, serif; }
 .finish-actions { display: flex; justify-content: center; gap: 10px; flex-wrap: wrap; }
+.dictation-results { margin-top: 22px; text-align: left; border-top: 1px solid var(--line); padding-top: 16px; }
+.result-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.result-head h3 { margin: 0; }.result-head > span { color: var(--green-800); font-weight: 700; font-size: .82rem; }
+.dictation-results ol { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 7px; }
+.dictation-results li { display: grid; grid-template-columns: 30px minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.dictation-results li > div { display: grid; gap: 2px; }.dictation-results small { color: var(--muted); }.dictation-results p { margin: 2px 0 0; color: var(--green-800); font-size: .8rem; }
+.result-position { width: 28px; height: 28px; display: grid; place-items: center; border-radius: 50%; background: var(--green-100); color: var(--green-800); font-weight: 800; font-size: .75rem; }
 
 @media (max-width: 639px) {
   .dict-head { flex-direction: column; }

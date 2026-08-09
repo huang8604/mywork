@@ -31,7 +31,7 @@ def test_real_alembic_upgrade_creates_current_consistent_schema(tmp_path):
     result = _run_alembic(backend, environment, "upgrade", "head")
     assert result.returncode == 0, result.stderr
     with sqlite3.connect(database) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0005"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0006"
         assert db.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
         assert db.execute("PRAGMA foreign_key_check").fetchall() == []
         tables = {
@@ -40,7 +40,7 @@ def test_real_alembic_upgrade_creates_current_consistent_schema(tmp_path):
                 "SELECT name FROM sqlite_master WHERE type='table'"
             ).fetchall()
         }
-    assert {"words", "review_logs", "practice_sessions", "audit_logs"} <= tables
+    assert {"words", "review_logs", "practice_sessions", "audit_logs", "system_issue_notes"} <= tables
 
 
 def test_alembic_upgrade_recovers_from_stale_sqlite_batch_table(tmp_path):
@@ -86,7 +86,7 @@ def test_alembic_upgrade_recovers_from_stale_sqlite_batch_table(tmp_path):
     retry = _run_alembic(backend, environment, "upgrade", "head")
     assert retry.returncode == 0, retry.stderr
     with sqlite3.connect(database) as db:
-        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0005"
+        assert db.execute("SELECT version_num FROM alembic_version").fetchone()[0] == "0006"
         assert db.execute(
             "SELECT 1 FROM sqlite_master "
             "WHERE type = 'table' AND name = '_alembic_tmp_practice_sessions'"
@@ -102,7 +102,7 @@ def test_health_readiness_requires_current_migration(client, db_session):
     unavailable = client.get("/healthz/ready")
     assert unavailable.status_code == 503
     db_session.execute(text("CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL)"))
-    db_session.execute(text("INSERT INTO alembic_version VALUES ('0005')"))
+    db_session.execute(text("INSERT INTO alembic_version VALUES ('0006')"))
     db_session.commit()
     ready = client.get("/healthz/ready")
     assert ready.status_code == 200

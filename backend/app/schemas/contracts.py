@@ -331,6 +331,11 @@ class SessionItemsUpdate(StrictModel):
         return values
 
 
+class SystemIssueNoteUpdate(StrictModel):
+    content: str = Field(max_length=50_000)
+    expected_version: int = Field(gt=0)
+
+
 WebRole = Literal["admin", "student"]
 
 

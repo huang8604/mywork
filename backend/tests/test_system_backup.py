@@ -60,6 +60,30 @@ def test_unauthenticated_is_401(client, login_mode):
     assert client.get("/api/v1/system/backup").status_code == 401
 
 
+def test_admin_issue_notes_persist_and_use_optimistic_lock(client, db_session, login_mode):
+    seed_credential(db_session, "admin", "supersecret")
+    _login(client, "admin", "supersecret")
+
+    initial = client.get("/api/v1/system/issue-notes")
+    assert initial.status_code == 200
+    assert initial.json()["data"]["content"] == ""
+
+    saved = client.put(
+        "/api/v1/system/issue-notes",
+        json={"content": "问题：打印标题不正确\n需求：保留错词", "expected_version": 1},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["version"] == 2
+    assert client.get("/api/v1/system/issue-notes").json()["data"]["content"].startswith("问题：")
+
+    stale = client.put(
+        "/api/v1/system/issue-notes",
+        json={"content": "覆盖", "expected_version": 1},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "VERSION_CONFLICT"
+
+
 def test_openapi_skips_security_for_system(client, db_session, login_mode):
     seed_credential(db_session, "admin", "supersecret")
     _login(client, "admin", "supersecret")

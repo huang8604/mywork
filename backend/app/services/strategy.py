@@ -220,7 +220,11 @@ def _reason(
     word: Word, stats: WordStats | None, categories: list[str], recent_unknown: int
 ) -> str:
     if "error" in categories and stats:
-        return f"最近7天不认识{recent_unknown}次，连续不认识{stats.consecutive_unknown}次"
+        if stats.last_effective_status == "known":
+            return f"历史不认识{stats.unknown_count}次；后来答对后仍保留为错题巩固"
+        if recent_unknown or stats.consecutive_unknown:
+            return f"历史不认识{stats.unknown_count}次，最近7天{recent_unknown}次，连续不认识{stats.consecutive_unknown}次"
+        return f"历史不认识{stats.unknown_count}次；后来答对后仍保留为错题巩固"
     if "due" in categories and stats:
         return f"已到期：{stats.due_at or stats.last_effective_reviewed_at}"
     if "custom" in categories:

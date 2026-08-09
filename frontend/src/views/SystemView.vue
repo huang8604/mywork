@@ -11,13 +11,51 @@ import {
   rotateApiToken,
   updateApiClient,
 } from '@/api/apiClients'
-import { apiClient } from '@/api/client'
+import { apiClient, unwrap } from '@/api/client'
+import type { ApiEnvelope } from '@/types/domain'
 import { scopeLabel } from '@/utils/apiScopes'
 import { ALL_API_SCOPES } from '@/types/domain'
 import type { ApiClient, ApiClientCreatePayload, ApiScope } from '@/types/domain'
 
 const clients = ref<ApiClient[]>([])
 const loading = ref(false)
+
+interface IssueNote { content: string; version: number; updated_at: string; updated_by: string | null }
+const issueNote = ref<IssueNote | null>(null)
+const issueContent = ref('')
+const issueLoading = ref(false)
+const issueSaving = ref(false)
+
+async function loadIssueNote() {
+  issueLoading.value = true
+  try {
+    issueNote.value = unwrap((await apiClient.get<ApiEnvelope<IssueNote>>('/system/issue-notes')).data)
+    issueContent.value = issueNote.value.content
+  } catch (error) {
+    ElMessage.error(normalizeApiError(error).message)
+  } finally {
+    issueLoading.value = false
+  }
+}
+
+async function saveIssueNote() {
+  if (!issueNote.value) return
+  issueSaving.value = true
+  try {
+    issueNote.value = unwrap((await apiClient.put<ApiEnvelope<IssueNote>>('/system/issue-notes', {
+      content: issueContent.value,
+      expected_version: issueNote.value.version,
+    })).data)
+    issueContent.value = issueNote.value.content
+    ElMessage.success('问题与需求记录已保存')
+  } catch (error) {
+    const normalized = normalizeApiError(error)
+    if (normalized.isConflict) await loadIssueNote()
+    ElMessage.error(normalized.isConflict ? '记录已被其他管理员修改，已加载最新内容' : normalized.message)
+  } finally {
+    issueSaving.value = false
+  }
+}
 
 // ---- Create-dialog state ----
 const createOpen = ref(false)
@@ -57,7 +95,7 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(load)
+onMounted(() => { void load(); void loadIssueNote() })
 
 function openCreate() {
   createForm.name = ''
@@ -306,8 +344,24 @@ async function downloadPreRestore() {
       <RouterLink to="/history"><span aria-hidden="true">↺</span><div><strong>复习历史</strong><small>查看流水并纠正复习结果</small></div></RouterLink>
       <RouterLink to="/users"><span aria-hidden="true">◐</span><div><strong>用户管理</strong><small>创建用户并维护访问角色</small></div></RouterLink>
       <a href="#api-clients"><span aria-hidden="true">⌁</span><div><strong>API 客户端</strong><small>管理外部 Skill 令牌</small></div></a>
+      <a href="#issue-notes"><span aria-hidden="true">✎</span><div><strong>问题与需求</strong><small>随时记录待修复事项</small></div></a>
       <a href="#backup"><span aria-hidden="true">↓</span><div><strong>数据备份</strong><small>下载可恢复的 SQLite 整库</small></div></a>
     </nav>
+
+    <div id="issue-notes" class="panel issue-notes" v-loading="issueLoading">
+      <div class="section-head">
+        <div>
+          <h2>问题与需求记录</h2>
+          <p class="muted">管理员可把待修复问题、复现步骤和新需求集中记录在这里，内容会随整库一起备份。</p>
+        </div>
+        <el-button type="primary" :loading="issueSaving" :disabled="!issueNote" @click="saveIssueNote">保存记录</el-button>
+      </div>
+      <el-input v-model="issueContent" type="textarea" :rows="12" maxlength="50000" show-word-limit placeholder="例如：&#10;【问题】……&#10;【复现步骤】……&#10;【需求】……" aria-label="问题与需求记录" />
+      <div class="issue-note-meta">
+        <span v-if="issueNote">最后保存：{{ new Date(issueNote.updated_at).toLocaleString('zh-CN') }}<template v-if="issueNote.updated_by"> · {{ issueNote.updated_by }}</template></span>
+        <span v-if="issueNote && issueContent !== issueNote.content" class="unsaved">有未保存修改</span>
+      </div>
+    </div>
 
     <!-- Section A: API tokens -->
     <div id="api-clients" class="panel">
@@ -478,11 +532,14 @@ async function downloadPreRestore() {
 
 <style scoped>
 .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
-.system-sections { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.system-sections { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
 .system-sections a { min-height: 76px; display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); text-decoration: none; background: #fff; }
 .system-sections a:hover { border-color: var(--green-800); background: var(--green-100); }
 .system-sections a > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--green-800); background: var(--green-100); font-weight: 800; }
 .system-sections a div { display: grid; gap: 3px; }.system-sections a small { color: var(--muted); }
+.issue-notes { scroll-margin-top: 18px; }
+.issue-note-meta { min-height: 22px; margin-top: 8px; display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: .78rem; }
+.issue-note-meta .unsaved { color: #987226; font-weight: 700; }
 .section-head h2 { margin: 0 0 4px; }
 .section-head .muted { margin: 0; }
 .field { display: grid; gap: 6px; font-size: .85rem; color: var(--muted); margin-bottom: 14px; }

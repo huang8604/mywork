@@ -832,6 +832,27 @@
         "title": "StrategyRequest",
         "type": "object"
       },
+      "SystemIssueNoteUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 50000,
+            "title": "Content",
+            "type": "string"
+          },
+          "expected_version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "content",
+          "expected_version"
+        ],
+        "title": "SystemIssueNoteUpdate",
+        "type": "object"
+      },
       "TodayReviewCounts": {
         "additionalProperties": false,
         "properties": {
@@ -3483,6 +3504,72 @@
           }
         ],
         "summary": "Download Backup",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/system/issue-notes": {
+      "get": {
+        "operationId": "get_issue_notes_api_v1_system_issue_notes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Issue Notes",
+        "tags": [
+          "system"
+        ]
+      },
+      "put": {
+        "operationId": "update_issue_notes_api_v1_system_issue_notes_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemIssueNoteUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Issue Notes",
         "tags": [
           "system"
         ]
