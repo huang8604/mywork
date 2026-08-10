@@ -99,11 +99,4 @@ describe('PracticeWorksheet', () => {
     expect(w.text()).not.toContain('会话')
     expect(w.text()).not.toContain('#1')
   })
-
-  it('uses the custom session title on the printable recitation sheet', () => {
-    const titled = { ...session, title: '暑假重点单词' }
-    const w = mount(PracticeWorksheet, { props: { session: titled, answer: true, mode: 'cn-to-en' } })
-    expect(w.get('.ws-hero-title h2').text()).toBe('暑假重点单词')
-    expect(w.get('.repeat-print-header').text()).toContain('暑假重点单词')
-  })
 })

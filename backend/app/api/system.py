@@ -17,9 +17,13 @@ from app.core.auth import Actor, require_web_admin
 from app.core.database import engine, get_db
 from app.core.errors import AppError
 from app.core.responses import envelope
-from app.models import SystemIssueNote
-from app.models.entities import utc_now_text
-from app.schemas.contracts import SystemIssueNoteUpdate
+from app.schemas import DictionaryAudioStartRequest
+from app.services.dictionary_audio import (
+    dictionary_audio_progress,
+    pause_dictionary_audio,
+    resume_dictionary_audio,
+    start_dictionary_audio,
+)
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
 
@@ -30,74 +34,67 @@ REQUIRED_TABLES = {
     "word_stats",
     "review_logs",
     "practice_sessions",
-    "system_issue_notes",
     "alembic_version",
 }
 
 
-def _issue_note_data(note: SystemIssueNote) -> dict[str, object]:
-    return {
-        "content": note.content,
-        "version": note.version,
-        "updated_at": note.updated_at,
-        "updated_by": note.updated_by,
-    }
-
-
-@router.get("/issue-notes")
-def get_issue_notes(
-    request: Request,
-    _actor: Annotated[Actor, Depends(require_web_admin)],
-    db: Annotated[Session, Depends(get_db)],
-):
-    note = db.get(SystemIssueNote, 1)
-    if note is None:
-        return envelope(
-            request,
-            {"content": "", "version": 1, "updated_at": utc_now_text(), "updated_by": None},
-        )
-    return envelope(request, _issue_note_data(note))
-
-
-@router.put("/issue-notes")
-def update_issue_notes(
-    payload: SystemIssueNoteUpdate,
-    request: Request,
-    actor: Annotated[Actor, Depends(require_web_admin)],
-    db: Annotated[Session, Depends(get_db)],
-):
-    note = db.get(SystemIssueNote, 1)
-    if note is None:
-        if payload.expected_version != 1:
-            raise AppError(409, "VERSION_CONFLICT", "问题记录已被修改，请刷新后重试")
-        note = SystemIssueNote(
-            id=1,
-            content=payload.content,
-            version=2,
-            updated_at=utc_now_text(),
-            updated_by=actor.actor_id,
-        )
-        db.add(note)
-    else:
-        if note.version != payload.expected_version:
-            raise AppError(409, "VERSION_CONFLICT", "问题记录已被修改，请刷新后重试")
-        note.content = payload.content
-        note.version += 1
-        note.updated_at = utc_now_text()
-        note.updated_by = actor.actor_id
+def _record_dictionary_audio_action(
+    db: Session, request: Request, actor: Actor, action: str, data: dict[str, object]
+) -> None:
     add_audit(
         db,
         request_id=request.state.request_id,
         actor=actor,
-        action="system.issue_notes.update",
+        action=action,
         outcome="success",
         http_status=200,
-        target_type="system_issue_notes",
-        target_id="1",
+        target_type="dictionary_audio",
+        target_id=None,
+        metadata={"state": data.get("state"), "generated": data.get("generated"), "total": data.get("total")},
     )
     db.commit()
-    db.refresh(note)
-    return envelope(request, _issue_note_data(note))
+
+
+@router.get("/dictionary-audio/progress")
+def get_dictionary_audio_progress(
+    request: Request,
+    _actor: Annotated[Actor, Depends(require_web_admin)],
+):
+    return envelope(request, dictionary_audio_progress())
+
+
+@router.post("/dictionary-audio/start")
+def start_dictionary_audio_route(
+    request: Request,
+    payload: DictionaryAudioStartRequest,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_web_admin)],
+):
+    data = start_dictionary_audio(payload.provider)
+    _record_dictionary_audio_action(db, request, actor, "system.dictionary_audio.start", data)
+    return envelope(request, data)
+
+
+@router.post("/dictionary-audio/pause")
+def pause_dictionary_audio_route(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_web_admin)],
+):
+    data = pause_dictionary_audio()
+    _record_dictionary_audio_action(db, request, actor, "system.dictionary_audio.pause", data)
+    return envelope(request, data)
+
+
+@router.post("/dictionary-audio/resume")
+def resume_dictionary_audio_route(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_web_admin)],
+):
+    data = resume_dictionary_audio()
+    _record_dictionary_audio_action(db, request, actor, "system.dictionary_audio.resume", data)
+    return envelope(request, data)
 
 
 def _driver_connection(db: Session) -> sqlite3.Connection:

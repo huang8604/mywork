@@ -17,8 +17,7 @@ const worksheetStyle = computed<Record<string, string>>(() => ({
   '--ws-deep': theme.value.deep,
   '--ws-accent': theme.value.accent,
 }))
-const defaultTitle = computed(() => props.answer ? '单词背诵表' : '单词默写练习')
-const title = computed(() => props.session.title?.trim() || defaultTitle.value)
+const title = computed(() => props.answer ? '单词背诵表' : '单词默写练习')
 const count = computed(() => props.session.items?.length ?? 0)
 const dateText = computed(() => {
   const d = new Date(props.session.generated_at)
@@ -68,7 +67,7 @@ function example(item: PracticeItem): string {
     <p class="worksheet-fit-hint no-print">标准字号已按「约 20 词 / 一页 A4」校准；主题色按复习表日期(周{{ theme.weekdayName.replace('周','') }})变化。词多或例句较长时浏览器会自动续页。</p>
     <table class="worksheet-table">
       <colgroup><col class="number-col"><col class="word-col"><col class="phonetic-col"><col class="meaning-col"><col class="example-col"></colgroup>
-      <thead><tr class="repeat-print-header"><th colspan="5">{{ title }}<template v-if="!answer"> · {{ modeLabel }}</template> · {{ dateText }} · {{ theme.weekdayName }} · 第 ____ 页</th></tr><tr><th class="number-cell">序号</th><th>单词</th><th>音标</th><th>中文释义</th><th>例句</th></tr></thead>
+      <thead><tr class="repeat-print-header"><th colspan="5">{{ answer?'单词背诵表':`单词默写练习 · ${modeLabel}` }} · {{ dateText }} · {{ theme.weekdayName }} · 第 ____ 页</th></tr><tr><th class="number-cell">序号</th><th>单词</th><th>音标</th><th>中文释义</th><th>例句</th></tr></thead>
       <tbody><tr v-for="item in session.items" :key="item.item_id"><td class="number-cell">{{ item.position }}</td><td class="word-cell">{{ english(item) }}</td><td class="phonetic-cell">{{ phonetic(item) }}</td><td class="meaning-cell">{{ chinese(item) }}</td><td class="example-cell">{{ example(item) }}</td></tr></tbody>
     </table>
     <div class="worksheet-mobile"><article v-for="item in session.items" :key="item.item_id"><span class="number-cell">{{ item.position }}</span><p class="word-cell">{{ english(item) }}</p><p class="phonetic-cell">{{ phonetic(item) }}</p><strong>{{ chinese(item) }}</strong><p class="example-cell">{{ example(item) }}</p></article></div>

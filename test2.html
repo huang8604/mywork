@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>核心词汇背诵表</title>
+    <style>
+        :root {
+            --ink: #1f2d3d;
+            --muted: #66758a;
+            --primary: #2457a6;
+            --primary-deep: #173d78;
+            --accent: #f4b942;
+            --line: #dce5f0;
+            --stripe: #f6f9fd;
+            --paper: #ffffff;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        @page {
+            size: A4 portrait;
+            margin: 9mm 10mm;
+        }
+
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            background: #eef3f8;
+            color: var(--ink);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft YaHei", "PingFang SC", Arial, sans-serif;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+        }
+
+        .page {
+            width: 190mm;
+            min-height: 279mm;
+            margin: 12px auto;
+            padding: 0;
+            background: var(--paper);
+            box-shadow: 0 8px 28px rgba(31, 45, 61, 0.12);
+            overflow: hidden;
+        }
+
+        .hero {
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            min-height: 24mm;
+            padding: 4.5mm 6mm;
+            color: #fff;
+            background: linear-gradient(120deg, var(--primary-deep), var(--primary));
+            border-bottom: 2.2mm solid var(--accent);
+        }
+
+        .hero::after {
+            content: "";
+            position: absolute;
+            right: 36mm;
+            top: -18mm;
+            width: 42mm;
+            height: 42mm;
+            border: 1.5mm solid rgba(255, 255, 255, 0.09);
+            border-radius: 50%;
+        }
+
+        .title-group {
+            position: relative;
+            z-index: 1;
+        }
+
+        .eyebrow {
+            margin-bottom: 1mm;
+            font-size: 7.5pt;
+            font-weight: 700;
+            letter-spacing: 2.1px;
+            opacity: 0.76;
+        }
+
+        h1 {
+            margin: 0;
+            font-size: 21pt;
+            line-height: 1.05;
+            letter-spacing: 1.2px;
+        }
+
+        .subtitle {
+            margin-top: 1.4mm;
+            font-size: 8.5pt;
+            opacity: 0.86;
+        }
+
+        .date-card {
+            position: relative;
+            z-index: 1;
+            min-width: 40mm;
+            padding: 2.5mm 3.5mm;
+            text-align: center;
+            color: var(--primary-deep);
+            background: rgba(255, 255, 255, 0.94);
+            border-radius: 2.5mm;
+            box-shadow: 0 1.5mm 4mm rgba(0, 0, 0, 0.12);
+        }
+
+        .date-label {
+            display: block;
+            margin-bottom: 0.6mm;
+            color: var(--muted);
+            font-size: 7pt;
+            font-weight: 700;
+            letter-spacing: 1.4px;
+        }
+
+        #print-date {
+            font-size: 10.5pt;
+            font-weight: 800;
+            white-space: nowrap;
+        }
+
+        .content {
+            padding: 4mm 5mm 0;
+        }
+
+        table {
+            width: 100%;
+            table-layout: fixed;
+            border-spacing: 0;
+            border-collapse: separate;
+            overflow: hidden;
+            border: 0.35mm solid var(--line);
+            border-radius: 2.2mm;
+            background: #fff;
+        }
+
+        thead {
+            display: table-header-group;
+        }
+
+        tr {
+            break-inside: avoid;
+            page-break-inside: avoid;
+        }
+
+        th,
+        td {
+            border-right: 0.25mm solid var(--line);
+            border-bottom: 0.25mm solid var(--line);
+            vertical-align: middle;
+        }
+
+        th:last-child,
+        td:last-child {
+            border-right: 0;
+        }
+
+        tbody tr:last-child td {
+            border-bottom: 0;
+        }
+
+        th {
+            height: 9.4mm;
+            padding: 1.8mm 2mm;
+            color: #fff;
+            background: var(--primary);
+            font-size: 9.2pt;
+            font-weight: 750;
+            letter-spacing: 0.4px;
+            text-align: left;
+        }
+
+        td {
+            height: 11.25mm;
+            padding: 1.35mm 2mm;
+            font-size: 9.2pt;
+            line-height: 1.16;
+        }
+
+        tbody tr:nth-child(even) td {
+            background: var(--stripe);
+        }
+
+        .col-no {
+            width: 7%;
+            text-align: center;
+        }
+
+        th.col-no {
+            text-align: center;
+        }
+
+        td.col-no {
+            color: var(--primary);
+            font-size: 8.5pt;
+            font-weight: 800;
+            font-variant-numeric: tabular-nums;
+        }
+
+        .col-word-width { width: 20%; }
+        .col-phonetic-width { width: 20%; }
+        .col-zh-width { width: 19%; }
+        .col-eg-width { width: 34%; }
+
+        .col-word {
+            color: var(--primary-deep);
+            font-size: 10.3pt;
+            font-weight: 800;
+            letter-spacing: 0.15px;
+            white-space: nowrap;
+        }
+
+        .col-phonetic {
+            color: #59687b;
+            font-family: "Lucida Sans Unicode", "Arial Unicode MS", "Segoe UI", sans-serif;
+            white-space: nowrap;
+        }
+
+        .col-zh {
+            color: #2e4055;
+            font-weight: 700;
+        }
+
+        .col-eg {
+            color: #4f5d6d;
+            font-family: Georgia, "Times New Roman", serif;
+            font-size: 8.9pt;
+            font-style: italic;
+        }
+
+        .footer-note {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 2.4mm 0 0;
+            color: #7a8798;
+            font-size: 7.3pt;
+        }
+
+        .footer-note strong {
+            color: var(--primary);
+        }
+
+        @media print {
+            html,
+            body {
+                background: #fff;
+            }
+
+            .page {
+                width: auto;
+                min-height: 0;
+                margin: 0;
+                box-shadow: none;
+            }
+        }
+    </style>
+</head>
+<body>
+    <main class="page">
+        <header class="hero">
+            <div class="title-group">
+                <div class="eyebrow">VOCABULARY REVIEW</div>
+                <h1>核心词汇背诵表</h1>
+                <div class="subtitle">每天积累一点点 · 18 个单词一页完成</div>
+            </div>
+            <div class="date-card">
+                <span class="date-label">DATE / 日期</span>
+                <span id="print-date">2026年07月24日</span>
+            </div>
+        </header>
+
+        <section class="content">
+            <table aria-label="核心词汇背诵表">
+                <thead>
+                    <tr>
+                        <th class="col-no">序号</th>
+                        <th class="col-word-width">单词</th>
+                        <th class="col-phonetic-width">音标</th>
+                        <th class="col-zh-width">中文</th>
+                        <th class="col-eg-width">例句</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr><td class="col-no">01</td><td class="col-word">vegetable</td><td class="col-phonetic">/ˈvedʒtəbl/</td><td class="col-zh">蔬菜</td><td class="col-eg">Eat more vegetables, please.</td></tr>
+                    <tr><td class="col-no">02</td><td class="col-word">soup</td><td class="col-phonetic">/suːp/</td><td class="col-zh">汤</td><td class="col-eg">The soup is hot.</td></tr>
+                    <tr><td class="col-no">03</td><td class="col-word">apple</td><td class="col-phonetic">/ˈæpl/</td><td class="col-zh">苹果</td><td class="col-eg">I eat an apple every day.</td></tr>
+                    <tr><td class="col-no">04</td><td class="col-word">colour</td><td class="col-phonetic">/ˈkʌlər/</td><td class="col-zh">颜色</td><td class="col-eg">What colour is it?</td></tr>
+                    <tr><td class="col-no">05</td><td class="col-word">yellow</td><td class="col-phonetic">/ˈjeləʊ/</td><td class="col-zh">黄色的</td><td class="col-eg">The banana is yellow.</td></tr>
+                    <tr><td class="col-no">06</td><td class="col-word">red</td><td class="col-phonetic">/red/</td><td class="col-zh">红色的</td><td class="col-eg">The apple is red.</td></tr>
+                    <tr><td class="col-no">07</td><td class="col-word">blue</td><td class="col-phonetic">/bluː/</td><td class="col-zh">蓝色的</td><td class="col-eg">The sky is blue.</td></tr>
+                    <tr><td class="col-no">08</td><td class="col-word">green</td><td class="col-phonetic">/ɡriːn/</td><td class="col-zh">绿色的</td><td class="col-eg">The grass is green.</td></tr>
+                    <tr><td class="col-no">09</td><td class="col-word">playground</td><td class="col-phonetic">/ˈpleɪɡraʊnd/</td><td class="col-zh">操场，游乐场</td><td class="col-eg">We play on the playground.</td></tr>
+                    <tr><td class="col-no">10</td><td class="col-word">slide</td><td class="col-phonetic">/slaɪd/</td><td class="col-zh">滑梯</td><td class="col-eg">I love going down the slide.</td></tr>
+                    <tr><td class="col-no">11</td><td class="col-word">swing</td><td class="col-phonetic">/swɪŋ/</td><td class="col-zh">秋千</td><td class="col-eg">The children are on the swing.</td></tr>
+                    <tr><td class="col-no">12</td><td class="col-word">school</td><td class="col-phonetic">/skuːl/</td><td class="col-zh">学校</td><td class="col-eg">I go to school from Monday to Friday.</td></tr>
+                    <tr><td class="col-no">13</td><td class="col-word">teacher</td><td class="col-phonetic">/ˈtiːtʃər/</td><td class="col-zh">老师</td><td class="col-eg">Our English teacher is very nice.</td></tr>
+                    <tr><td class="col-no">14</td><td class="col-word">student</td><td class="col-phonetic">/ˈstjuːdnt/</td><td class="col-zh">学生</td><td class="col-eg">She is a good student.</td></tr>
+                    <tr><td class="col-no">15</td><td class="col-word">friend</td><td class="col-phonetic">/frend/</td><td class="col-zh">朋友</td><td class="col-eg">He is my best friend.</td></tr>
+                    <tr><td class="col-no">16</td><td class="col-word">family</td><td class="col-phonetic">/ˈfæməli/</td><td class="col-zh">家庭，家人</td><td class="col-eg">I have a big family.</td></tr>
+                    <tr><td class="col-no">17</td><td class="col-word">happy</td><td class="col-phonetic">/ˈhæpi/</td><td class="col-zh">快乐的</td><td class="col-eg">We are very happy today.</td></tr>
+                    <tr><td class="col-no">18</td><td class="col-word">read</td><td class="col-phonetic">/riːd/</td><td class="col-zh">阅读</td><td class="col-eg">I like to read books.</td></tr>
+                </tbody>
+            </table>
+
+            <div class="footer-note">
+                <span><strong>Tip:</strong> 遮住中文释义，再尝试读出单词和例句。</span>
+                <span>18 / 18 WORDS</span>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        // 打开或打印页面时自动显示本机当天日期。
+        const now = new Date();
+        const formattedDate = new Intl.DateTimeFormat('zh-CN', {
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit'
+        }).format(now).replaceAll('/', '年').replace(/年(\d{2})年/, '年$1月') + '日';
+        document.getElementById('print-date').textContent = formattedDate;
+    </script>
+</body>
+</html>

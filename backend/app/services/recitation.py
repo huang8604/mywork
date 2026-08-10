@@ -56,11 +56,9 @@ def _theme(generated_at: str | None) -> tuple[str, str, str, str]:
 
 def _date_text(generated_at: str | None) -> str:
     if not generated_at:
-        value = _dt.datetime.now()
-        return f"{value.year:04d}年{value.month:02d}月{value.day:02d}日"
+        return _dt.datetime.now().strftime("%Y年%m月%d日")
     try:
-        value = _dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
-        return f"{value.year:04d}年{value.month:02d}月{value.day:02d}日"
+        return _dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00")).strftime("%Y年%m月%d日")
     except ValueError:
         return generated_at[:10]
 

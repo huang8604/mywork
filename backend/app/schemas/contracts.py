@@ -121,6 +121,10 @@ class WordAudioRegenerateAllRequest(StrictModel):
     provider: AudioProvider | None = None
 
 
+class DictionaryAudioStartRequest(StrictModel):
+    provider: AudioProvider | None = None
+
+
 class NumberAudioGenerateRequest(StrictModel):
     """Generate the dictation number-announcement clips ("number 1" .. "number 50")."""
 
@@ -329,11 +333,6 @@ class SessionItemsUpdate(StrictModel):
         if len(values) != len(set(values)):
             raise ValueError("word_ids must be unique")
         return values
-
-
-class SystemIssueNoteUpdate(StrictModel):
-    content: str = Field(max_length=50_000)
-    expected_version: int = Field(gt=0)
 
 
 WebRole = Literal["admin", "student"]

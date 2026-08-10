@@ -49,6 +49,8 @@ EOF
 
 chmod +x "$fake_bin/git" "$fake_bin/gh"
 
+"$script" --help | grep -q -- '--delay SECONDS    Wait before looking for the run (default: 60).'
+
 run_case() {
   local scenario="$1"
   local expected_status="$2"

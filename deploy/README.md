@@ -77,7 +77,7 @@ Docker 端口发布后，Lucky 请求在容器内通常来自 `172.x` 网桥网�
    ```bash
    ./scripts/push-and-monitor-actions.sh
    ```
-   脚本默认先执行 `git push`，等待 15 秒，然后按完整 commit SHA 查找 `ci.yml` 的 push run，并持续轮询到成功或失败；失败或 30 分钟超时会返回非零状态。需要向 `git push` 传参时放在 `--` 后，例如 `./scripts/push-and-monitor-actions.sh -- --set-upstream origin main`。只监控已经 push 的提交时使用 `--skip-push --sha <commit>`。
+   脚本默认先执行 `git push`，等待 60 秒，然后按完整 commit SHA 查找 `ci.yml` 的 push run，并持续轮询到成功或失败；失败或 30 分钟超时会返回非零状态。需要向 `git push` 传参时放在 `--` 后，例如 `./scripts/push-and-monitor-actions.sh -- --set-upstream origin main`。只监控已经 push 的提交时使用 `--skip-push --sha <commit>`。
 2. 确认目标提交的测试与镜像发布**成功**,记录对应 `sha-<commit>`。
 3. **更新前备份**(见 §2)。
 4. 进入 Portainer 的 `vocab-app` 容器/服务。

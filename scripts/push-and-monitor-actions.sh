@@ -3,7 +3,7 @@
 set -uo pipefail
 
 workflow="ci.yml"
-delay_seconds=15
+delay_seconds=60
 timeout_seconds=1800
 poll_seconds=10
 skip_push=0
@@ -21,7 +21,7 @@ Monitor options:
   --skip-push        Monitor an already-pushed commit without running git push.
   --sha SHA          Commit to monitor (default: HEAD).
   --workflow FILE    Workflow file/name passed to gh (default: ci.yml).
-  --delay SECONDS    Wait before looking for the run (default: 15).
+  --delay SECONDS    Wait before looking for the run (default: 60).
   --timeout SECONDS  Maximum discovery/monitoring time (default: 1800).
   --poll SECONDS     Poll interval after the initial delay (default: 10).
   -h, --help         Show this help.

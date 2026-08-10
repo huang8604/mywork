@@ -120,6 +120,9 @@ def create_word(db: Session, payload: WordCreate) -> Word:
     )
     db.add(word)
     db.flush()
+    from app.services.dictionary_audio import attach_cached_dictionary_audio
+
+    attach_cached_dictionary_audio(word)
     _set_tags(db, word, payload.tags)
     return word
 
@@ -237,6 +240,9 @@ def reimport_word(db: Session, word_id: int, payload: WordCreate) -> Word:
     word.deleted_at = None
     word.version += 1
     word.updated_at = utc_text()
+    from app.services.dictionary_audio import attach_cached_dictionary_audio
+
+    attach_cached_dictionary_audio(word)
     _set_tags(db, word, payload.tags)
     db.flush()
     return word
@@ -270,14 +276,6 @@ def word_audio_file(word: Word, settings: Settings | None = None) -> Path | None
     except ValueError:
         return None
     return candidate if candidate.is_file() else None
-
-
-def word_chinese_audio_file(
-    word: Word, settings: Settings | None = None
-) -> Path | None:
-    from app.services.dictation_audio import chinese_audio_file
-
-    return chinese_audio_file(word.cn_meaning, settings)
 
 
 def generate_word_audio(
@@ -318,7 +316,7 @@ def generate_word_audio(
     word.audio_bytes = len(audio)
     word.version += 1
     word.updated_at = utc_text()
-    if old_path and old_path != filename:
+    if old_path and old_path != filename and not old_path.startswith("dictionary/"):
         try:
             old_file = (root / old_path).resolve()
             old_file.relative_to(root.resolve())
@@ -328,23 +326,6 @@ def generate_word_audio(
             pass
     db.flush()
     return word
-
-
-def generate_word_audio_pair(
-    db: Session, word_id: int, *, force: bool = False, provider: str | None = None
-) -> Word:
-    """Generate/cache both the English word and its Chinese meaning audio."""
-    from app.services.dictation_audio import generate_chinese_audio
-
-    word = get_word(db, word_id, include_deleted=False)
-    settings = get_settings()
-    generate_chinese_audio(
-        word.cn_meaning,
-        force=force,
-        provider=provider,
-        settings=settings,
-    )
-    return generate_word_audio(db, word_id, force=force, provider=provider)
 
 
 def enqueue_missing_word_audio(
@@ -360,14 +341,14 @@ def enqueue_missing_word_audio(
     settings = get_settings()
     if not (settings.tts_enabled or settings.volc_enabled):
         raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
-    words = db.scalars(
-        select(Word).where(Word.deleted_at.is_(None)).order_by(asc(Word.id))
-    ).all()
-    ids = [
-        word.id
-        for word in words
-        if word_audio_file(word) is None or word_chinese_audio_file(word) is None
-    ][:limit]
+    ids = list(
+        db.scalars(
+            select(Word.id)
+            .where(Word.deleted_at.is_(None), Word.audio_path.is_(None))
+            .order_by(asc(Word.id))
+            .limit(limit)
+        )
+    )
     queued = enqueue_audio_generation(ids, force=False, provider=provider) if ids else 0
     return {"queued": queued, "total": len(ids), "provider": provider}
 

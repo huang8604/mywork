@@ -119,18 +119,6 @@ def missing_numbers(
     ]
 
 
-def missing_number_pairs(
-    settings: Settings | None = None, *, limit: int = NUMBER_MAX
-) -> list[int]:
-    """Numbers missing either their English or Chinese clip, in ascending order."""
-    return [
-        n
-        for n in range(NUMBER_MIN, NUMBER_MAX + 1)
-        if number_audio_file(n, settings, language="en") is None
-        or number_audio_file(n, settings, language="zh") is None
-    ][:limit]
-
-
 def _chinese_number(n: int) -> str:
     digits = "零一二三四五六七八九"
     if n < 10:

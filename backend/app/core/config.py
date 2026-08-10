@@ -52,6 +52,9 @@ class Settings:
     tts_timeout_seconds: float
     tts_provider: str
     tts_auto_generate_on_import: bool
+    dictionary_audio_retry_seconds: int
+    dictionary_audio_scan_seconds: int
+    dictionary_audio_quota_wait_seconds: int
     volc_base_url: str
     volc_api_key_file: str | None
     volc_api_key: str
@@ -131,6 +134,9 @@ class Settings:
             tts_timeout_seconds=float(os.getenv("TTS_TIMEOUT_SECONDS", "60")),
             tts_provider=os.getenv("TTS_PROVIDER", "mimo").strip().lower() or "mimo",
             tts_auto_generate_on_import=_boolean("TTS_AUTO_GENERATE_ON_IMPORT", True),
+            dictionary_audio_retry_seconds=int(os.getenv("DICTIONARY_AUDIO_RETRY_SECONDS", "300")),
+            dictionary_audio_scan_seconds=int(os.getenv("DICTIONARY_AUDIO_SCAN_SECONDS", "3600")),
+            dictionary_audio_quota_wait_seconds=int(os.getenv("DICTIONARY_AUDIO_QUOTA_WAIT_SECONDS", "18000")),
             volc_base_url=os.getenv("VOLC_TTS_BASE_URL", "https://openspeech.bytedance.com").rstrip("/"),
             volc_api_key_file=volc_api_key_file,
             volc_api_key=volc_api_key,
@@ -175,6 +181,12 @@ class Settings:
             raise ValueError("VOLC_TTS_SILENCE_MS must be between 0 and 30000")
         if self.tts_provider not in {"mimo", "volc"}:
             raise ValueError("TTS_PROVIDER must be 'mimo' or 'volc'")
+        if min(
+            self.dictionary_audio_retry_seconds,
+            self.dictionary_audio_scan_seconds,
+            self.dictionary_audio_quota_wait_seconds,
+        ) <= 0:
+            raise ValueError("dictionary audio intervals must be positive")
         if min(
             self.api_rate_limit_per_minute,
             self.max_import_bytes,

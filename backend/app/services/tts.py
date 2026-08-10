@@ -24,6 +24,15 @@ CHINESE_PROMPT = (
     "朗读前后稍作停顿，不要添加任何解释。"
 )
 
+_QUOTA_MARKERS = ("quota", "rate limit", "rate_limit", "too many requests", "额度", "余额不足", "超限")
+
+
+def _provider_error(message: object = "") -> AppError:
+    text = str(message or "")
+    if any(marker in text.casefold() for marker in _QUOTA_MARKERS):
+        return AppError(429, "TTS_QUOTA_EXHAUSTED", "TTS 额度已用完，请稍后重试")
+    return AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商调用失败")
+
 # Volc tuning defaults: speech_rate<0 = slower (patient/steady), loudness_rate>0 = louder
 # (forceful/clear), silence_ms = trailing silence so the end isn't clipped. Leading silence
 # comes from the MP3 encoder delay (~100ms, documented) plus the dictation engine's per-word gap.
@@ -55,6 +64,9 @@ def _synthesize_mimo(text: str, settings: Settings) -> bytes:
         data = json.loads(raw)
         encoded = data["choices"][0]["message"]["audio"]["data"]
         audio = base64.b64decode(encoded)
+    except urllib.error.HTTPError as exc:
+        log.warning("mimo TTS HTTP error: %s", exc.code)
+        raise _provider_error("quota" if exc.code == 429 else exc.reason) from exc
     except (urllib.error.URLError, TimeoutError, KeyError, IndexError, TypeError, ValueError) as exc:
         log.warning("mimo TTS provider failed: %s", exc.__class__.__name__)
         raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商调用失败") from exc
@@ -88,6 +100,9 @@ def _synthesize_mimo_chinese(text: str, settings: Settings) -> bytes:
             raw = response.read()
         data = json.loads(raw)
         audio = base64.b64decode(data["choices"][0]["message"]["audio"]["data"])
+    except urllib.error.HTTPError as exc:
+        log.warning("mimo Chinese TTS HTTP error: %s", exc.code)
+        raise _provider_error("quota" if exc.code == 429 else exc.reason) from exc
     except (urllib.error.URLError, TimeoutError, KeyError, IndexError, TypeError, ValueError) as exc:
         log.warning("mimo Chinese TTS provider failed: %s", exc.__class__.__name__)
         raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商调用失败") from exc
@@ -140,7 +155,7 @@ def _decode_audio(raw: bytes) -> bytes:
         return bytes(audio)
     if saw_event and error_msg is not None:
         log.warning("TTS provider JSON error: %s", error_msg)
-        raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商调用失败")
+        raise _provider_error(error_msg)
     # Single-object envelope (mimo nested, or top-level data/audio base64).
     try:
         data = json.loads(text)
@@ -149,7 +164,7 @@ def _decode_audio(raw: bytes) -> bytes:
     if isinstance(data, dict):
         if data.get("code") not in (None, 0, "0"):
             log.warning("TTS provider JSON error: %s", data.get("message"))
-            raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商调用失败")
+            raise _provider_error(data.get("message") or data.get("code"))
         for key in ("data", "audio"):
             value = data.get(key)
             if isinstance(value, str) and value:
@@ -218,6 +233,9 @@ def _synthesize_volc(text: str, settings: Settings) -> bytes:
         with urllib.request.urlopen(req, timeout=settings.volc_timeout_seconds) as response:
             ct = response.headers.get("Content-Type", "")
             raw = response.read()
+    except urllib.error.HTTPError as exc:
+        log.warning("volc TTS HTTP error: %s", exc.code)
+        raise _provider_error("quota" if exc.code == 429 else exc.reason) from exc
     except (urllib.error.URLError, TimeoutError) as exc:
         log.warning("volc TTS provider failed: %s", exc.__class__.__name__)
         raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商调用失败") from exc

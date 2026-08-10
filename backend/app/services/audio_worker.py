@@ -27,7 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import SessionLocal
 from app.models import Word
-from app.services.words import generate_word_audio_pair
+from app.services.words import generate_word_audio
 
 log = logging.getLogger(__name__)
 
@@ -44,20 +44,19 @@ def run_audio_job(
     word = db.scalar(select(Word).where(Word.id == word_id))
     if word is None or word.deleted_at is not None:
         return False
-    generate_word_audio_pair(db, word_id, force=force, provider=provider)
+    generate_word_audio(db, word_id, force=force, provider=provider)
     return True
 
 
 def run_number_job(n: int, *, force: bool = False, provider: str | None = None) -> None:
-    """Generate English and Chinese number clips (no DB record — file only).
+    """Generate the "number {n}" announcement clip (no DB record — file only).
 
     Imported lazily so unit tests that monkeypatch ``run_audio_job`` don't need the
     number-audio module loaded, and so a missing TTS config only errors at run time.
     """
     from app.services.number_audio import generate_number_audio
 
-    generate_number_audio(n, force=force, provider=provider, language="en")
-    generate_number_audio(n, force=force, provider=provider, language="zh")
+    generate_number_audio(n, force=force, provider=provider)
 
 
 # A queued unit of audio work. ``kind`` ∈ {"word","number"}; ``key`` is the word_id

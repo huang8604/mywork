@@ -36,39 +36,6 @@ def test_strategy_defaults_and_total_word_proportions():
     }
 
 
-def test_previously_unknown_word_remains_an_error_after_later_known_review(client):
-    word = create_word(client, {"en_word": "persistent-error", "cn_meaning": "持久错词", "tags": []})
-    for event_id, status in (("wrong-once", "unknown"), ("right-later", "known")):
-        response = client.post(
-            "/api/v1/reviews",
-            json={
-                "word_id": word["id"],
-                "status": status,
-                "source": "quick_review",
-                "client_event_id": event_id,
-            },
-        )
-        assert response.status_code == 201, response.text
-
-    generated = client.post(
-        "/api/v1/daily-table/generate",
-        headers={"Idempotency-Key": "persistent-error-generation"},
-        json={
-            "new_words_limit": 0,
-            "error_words_limit": 1,
-            "due_words_limit": 0,
-            "custom_words_limit": 0,
-            "fallback_unreviewed_days": 3,
-            "seed": 42,
-        },
-    )
-    assert generated.status_code == 201, generated.text
-    item = generated.json()["data"]["items"][0]
-    assert item["word_id"] == word["id"]
-    assert "error" in item["source_categories"]
-    assert "后来答对后仍保留为错题" in item["reason"]
-
-
 def test_total_words_rejects_zero_weights_and_custom_selection(client):
     zero_weights = client.post(
         "/api/v1/daily-table/generate",

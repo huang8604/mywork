@@ -4,6 +4,7 @@ import logging
 import sqlite3
 import time
 import uuid
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -30,15 +31,24 @@ from app.core.database import SessionLocal
 import app.models  # noqa: F401
 from app.models import AuditLog
 from app.services.domain import canonical_json
+from app.services.dictionary_audio import resume_persisted_dictionary_audio_worker
 
 settings = get_settings()
 logging.basicConfig(level=settings.log_level)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    resume_persisted_dictionary_audio_worker()
+    yield
+
 
 app = FastAPI(
     title="Word Memory Assistant API",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc",
+    lifespan=lifespan,
 )
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=list(settings.trusted_hosts))
 app.add_middleware(

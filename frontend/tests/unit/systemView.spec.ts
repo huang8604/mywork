@@ -14,6 +14,17 @@ vi.mock('@/api/apiClients', () => ({
   revokeApiToken: vi.fn(),
 }))
 
+vi.mock('@/api/system', () => ({
+  getDictionaryAudioProgress: vi.fn().mockResolvedValue({
+    state: 'paused', total: 100, generated: 25, failed: 2, remaining: 75,
+    provider: 'mimo', next_run_at: null, last_error: null, updated_at: null,
+    dictionary_available: true,
+  }),
+  startDictionaryAudio: vi.fn(),
+  pauseDictionaryAudio: vi.fn(),
+  resumeDictionaryAudio: vi.fn(),
+}))
+
 // client is only used directly for the backup download; stub its network call.
 vi.mock('@/api/client', async () => {
   const actual = await vi.importActual<typeof import('@/api/client')>('@/api/client')
@@ -53,6 +64,8 @@ describe('SystemView', () => {
     const text = wrapper.text()
     expect(text).toContain('API 令牌')
     expect(text).toContain('数据备份')
+    expect(text).toContain('本地词库语音导入')
+    expect(text).toContain('已生成 25 / 100')
     // The 「新增客户端」 and 「下载整库备份」 buttons render as el-button stubs
     expect(wrapper.findAll('el-button-stub').length).toBeGreaterThanOrEqual(2)
     // The page calls listApiClients() on mount (mocked); no crash.

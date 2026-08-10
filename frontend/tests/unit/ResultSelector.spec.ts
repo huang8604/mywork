@@ -19,4 +19,11 @@ describe('ResultSelector', () => {
     expect(selected.attributes('disabled')).toBeDefined()
     expect(wrapper.findAll('button').every((button) => button.attributes('disabled') !== undefined)).toBe(true)
   })
+
+  it('emits null when the selected result is clicked again so an unsaved entry can be cancelled', async () => {
+    const wrapper = mount(ResultSelector, { props: { modelValue: 'unknown' } })
+    await wrapper.get('button.unknown').trigger('click')
+    expect(wrapper.emitted('select')).toEqual([[null]])
+    expect(wrapper.emitted('update:modelValue')).toEqual([[null]])
+  })
 })

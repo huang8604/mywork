@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { normalizeApiError } from '@/api/client'
 import {
@@ -11,51 +11,14 @@ import {
   rotateApiToken,
   updateApiClient,
 } from '@/api/apiClients'
-import { apiClient, unwrap } from '@/api/client'
-import type { ApiEnvelope } from '@/types/domain'
+import { apiClient } from '@/api/client'
+import { getDictionaryAudioProgress, pauseDictionaryAudio, resumeDictionaryAudio, startDictionaryAudio } from '@/api/system'
 import { scopeLabel } from '@/utils/apiScopes'
 import { ALL_API_SCOPES } from '@/types/domain'
-import type { ApiClient, ApiClientCreatePayload, ApiScope } from '@/types/domain'
+import type { ApiClient, ApiClientCreatePayload, ApiScope, DictionaryAudioProgress, DictionaryAudioState } from '@/types/domain'
 
 const clients = ref<ApiClient[]>([])
 const loading = ref(false)
-
-interface IssueNote { content: string; version: number; updated_at: string; updated_by: string | null }
-const issueNote = ref<IssueNote | null>(null)
-const issueContent = ref('')
-const issueLoading = ref(false)
-const issueSaving = ref(false)
-
-async function loadIssueNote() {
-  issueLoading.value = true
-  try {
-    issueNote.value = unwrap((await apiClient.get<ApiEnvelope<IssueNote>>('/system/issue-notes')).data)
-    issueContent.value = issueNote.value.content
-  } catch (error) {
-    ElMessage.error(normalizeApiError(error).message)
-  } finally {
-    issueLoading.value = false
-  }
-}
-
-async function saveIssueNote() {
-  if (!issueNote.value) return
-  issueSaving.value = true
-  try {
-    issueNote.value = unwrap((await apiClient.put<ApiEnvelope<IssueNote>>('/system/issue-notes', {
-      content: issueContent.value,
-      expected_version: issueNote.value.version,
-    })).data)
-    issueContent.value = issueNote.value.content
-    ElMessage.success('问题与需求记录已保存')
-  } catch (error) {
-    const normalized = normalizeApiError(error)
-    if (normalized.isConflict) await loadIssueNote()
-    ElMessage.error(normalized.isConflict ? '记录已被其他管理员修改，已加载最新内容' : normalized.message)
-  } finally {
-    issueSaving.value = false
-  }
-}
 
 // ---- Create-dialog state ----
 const createOpen = ref(false)
@@ -85,6 +48,34 @@ const tokenContext = ref('')
 // ---- Backup ----
 const backupLoading = ref(false)
 
+// ---- Local dictionary shared audio cache ----
+const dictionaryAudio = ref<DictionaryAudioProgress | null>(null)
+const dictionaryAudioBusy = ref(false)
+let dictionaryAudioTimer: number | null = null
+const dictionaryAudioPercent = computed(() => dictionaryAudio.value?.total ? Math.round(dictionaryAudio.value.generated / dictionaryAudio.value.total * 100) : 0)
+const dictionaryAudioStateLabels: Record<DictionaryAudioState, string> = {
+  idle: '尚未启动', running: '后台生成中', paused: '已暂停', waiting_retry: '失败后等待重试',
+  waiting_quota: '额度恢复等待中', completed: '已完成，定时扫描新增词',
+}
+function scheduleDictionaryAudioPoll() {
+  if (dictionaryAudioTimer !== null) window.clearTimeout(dictionaryAudioTimer)
+  const active = dictionaryAudio.value && ['running', 'waiting_retry', 'waiting_quota'].includes(dictionaryAudio.value.state)
+  dictionaryAudioTimer = active ? window.setTimeout(loadDictionaryAudio, 1000) : null
+}
+async function loadDictionaryAudio() {
+  try { dictionaryAudio.value = await getDictionaryAudioProgress() }
+  catch (error) { ElMessage.error(normalizeApiError(error).message) }
+  finally { scheduleDictionaryAudioPoll() }
+}
+async function runDictionaryAudioAction(action: 'start'|'pause'|'resume') {
+  dictionaryAudioBusy.value = true
+  try {
+    dictionaryAudio.value = action === 'start' ? await startDictionaryAudio() : action === 'pause' ? await pauseDictionaryAudio() : await resumeDictionaryAudio()
+    ElMessage.success(action === 'pause' ? '本地词库语音生成已暂停' : '本地词库语音生成已在后台运行')
+  } catch (error) { ElMessage.error(normalizeApiError(error).message) }
+  finally { dictionaryAudioBusy.value = false; scheduleDictionaryAudioPoll() }
+}
+
 async function load() {
   loading.value = true
   try {
@@ -95,7 +86,8 @@ async function load() {
     loading.value = false
   }
 }
-onMounted(() => { void load(); void loadIssueNote() })
+onMounted(() => { void load(); void loadDictionaryAudio() })
+onBeforeUnmount(() => { if (dictionaryAudioTimer !== null) window.clearTimeout(dictionaryAudioTimer) })
 
 function openCreate() {
   createForm.name = ''
@@ -343,23 +335,33 @@ async function downloadPreRestore() {
     <nav class="system-sections panel" aria-label="系统管理分类">
       <RouterLink to="/history"><span aria-hidden="true">↺</span><div><strong>复习历史</strong><small>查看流水并纠正复习结果</small></div></RouterLink>
       <RouterLink to="/users"><span aria-hidden="true">◐</span><div><strong>用户管理</strong><small>创建用户并维护访问角色</small></div></RouterLink>
+      <a href="#dictionary-audio"><span aria-hidden="true">♫</span><div><strong>本地词库语音</strong><small>生成可复用的单词音频</small></div></a>
       <a href="#api-clients"><span aria-hidden="true">⌁</span><div><strong>API 客户端</strong><small>管理外部 Skill 令牌</small></div></a>
-      <a href="#issue-notes"><span aria-hidden="true">✎</span><div><strong>问题与需求</strong><small>随时记录待修复事项</small></div></a>
       <a href="#backup"><span aria-hidden="true">↓</span><div><strong>数据备份</strong><small>下载可恢复的 SQLite 整库</small></div></a>
     </nav>
 
-    <div id="issue-notes" class="panel issue-notes" v-loading="issueLoading">
+    <div id="dictionary-audio" class="panel">
       <div class="section-head">
         <div>
-          <h2>问题与需求记录</h2>
-          <p class="muted">管理员可把待修复问题、复现步骤和新需求集中记录在这里，内容会随整库一起备份。</p>
+          <h2>本地词库语音导入</h2>
+          <p class="muted">按本地词库逐词调用语音模型并保存为共享缓存。以后新增且命中本地词库的单词会直接复用，无需再次生成。</p>
         </div>
-        <el-button type="primary" :loading="issueSaving" :disabled="!issueNote" @click="saveIssueNote">保存记录</el-button>
+        <div class="button-row">
+          <el-button type="primary" :loading="dictionaryAudioBusy" :disabled="dictionaryAudio?.dictionary_available===false" @click="runDictionaryAudioAction('start')">扫描并生成缺失音频</el-button>
+          <el-button v-if="dictionaryAudio&&dictionaryAudio.state!=='paused'&&dictionaryAudio.state!=='idle'" :loading="dictionaryAudioBusy" @click="runDictionaryAudioAction('pause')">暂停</el-button>
+          <el-button v-if="dictionaryAudio?.state==='paused'" type="success" :loading="dictionaryAudioBusy" @click="runDictionaryAudioAction('resume')">恢复</el-button>
+        </div>
       </div>
-      <el-input v-model="issueContent" type="textarea" :rows="12" maxlength="50000" show-word-limit placeholder="例如：&#10;【问题】……&#10;【复现步骤】……&#10;【需求】……" aria-label="问题与需求记录" />
-      <div class="issue-note-meta">
-        <span v-if="issueNote">最后保存：{{ new Date(issueNote.updated_at).toLocaleString('zh-CN') }}<template v-if="issueNote.updated_by"> · {{ issueNote.updated_by }}</template></span>
-        <span v-if="issueNote && issueContent !== issueNote.content" class="unsaved">有未保存修改</span>
+      <div v-if="dictionaryAudio" class="dictionary-audio-progress" aria-live="polite">
+        <div class="dictionary-audio-summary"><strong>{{ dictionaryAudioStateLabels[dictionaryAudio.state] }}</strong><span>已生成 {{ dictionaryAudio.generated }} / {{ dictionaryAudio.total }}</span></div>
+        <el-progress :percentage="dictionaryAudioPercent" :status="dictionaryAudio.state==='completed'?'success':undefined" />
+        <div class="dictionary-audio-meta">
+          <span>剩余 {{ dictionaryAudio.remaining }}</span><span v-if="dictionaryAudio.failed">本轮失败 {{ dictionaryAudio.failed }}</span><span v-if="dictionaryAudio.provider">模型 {{ dictionaryAudio.provider }}</span>
+          <span v-if="dictionaryAudio.next_run_at">下次运行 {{ new Date(dictionaryAudio.next_run_at).toLocaleString('zh-CN') }}</span>
+        </div>
+        <p v-if="dictionaryAudio.state==='waiting_quota'" class="quota-note">已达到模型额度限制，系统将在 5 小时后自动继续；也可先暂停，额度恢复后手动恢复。</p>
+        <p v-else-if="dictionaryAudio.last_error" class="error-box">{{ dictionaryAudio.last_error }}</p>
+        <p v-if="!dictionaryAudio.dictionary_available" class="error-box">未找到本地词库文件，请检查 DICTIONARY_INDEX_PATH。</p>
       </div>
     </div>
 
@@ -532,14 +534,11 @@ async function downloadPreRestore() {
 
 <style scoped>
 .section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 16px; flex-wrap: wrap; }
-.system-sections { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.system-sections { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .system-sections a { min-height: 76px; display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--ink); text-decoration: none; background: #fff; }
 .system-sections a:hover { border-color: var(--green-800); background: var(--green-100); }
 .system-sections a > span { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; color: var(--green-800); background: var(--green-100); font-weight: 800; }
 .system-sections a div { display: grid; gap: 3px; }.system-sections a small { color: var(--muted); }
-.issue-notes { scroll-margin-top: 18px; }
-.issue-note-meta { min-height: 22px; margin-top: 8px; display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: .78rem; }
-.issue-note-meta .unsaved { color: #987226; font-weight: 700; }
 .section-head h2 { margin: 0 0 4px; }
 .section-head .muted { margin: 0; }
 .field { display: grid; gap: 6px; font-size: .85rem; color: var(--muted); margin-bottom: 14px; }
@@ -564,6 +563,10 @@ async function downloadPreRestore() {
 .file-input { display: block; width: 100%; min-height: 48px; margin: 10px 0; }
 .restore-block h3 { margin: 0 0 4px; }
 .restore-result { margin-top: 10px; padding: 10px 12px; background: var(--green-100); border-radius: 8px; font-size: .88rem; color: #2f855a; }
+.dictionary-audio-progress { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: #f7faf8; }
+.dictionary-audio-summary,.dictionary-audio-meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.dictionary-audio-summary span,.dictionary-audio-meta { color: var(--muted); font-size: .85rem; }.dictionary-audio-meta { justify-content: flex-start; }
+.quota-note { margin: 0; padding: 10px 12px; border-radius: 8px; background: #fff8e6; color: #76540e; }
 @media (min-width: 480px) {
   .scope-grid { grid-template-columns: 1fr 1fr; }
 }

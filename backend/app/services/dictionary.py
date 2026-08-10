@@ -43,6 +43,11 @@ def clear_dictionary_cache() -> None:
     _load_index.cache_clear()
 
 
+def dictionary_words() -> tuple[str, ...]:
+    """Return stable normalized keys for the locally-mounted dictionary index."""
+    return tuple(sorted(_load_index(get_settings().dictionary_index_path)))
+
+
 def enrich_word(
     payload: WordCreate,
     *,
