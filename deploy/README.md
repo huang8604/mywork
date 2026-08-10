@@ -178,7 +178,7 @@ docker exec vocab-app python -c "import sqlite3; c=sqlite3.connect('/app/data/vo
 ```
 
 - 至少保留最近若干版本,并复制到**不同物理存储**。
-- 记录当前运行镜像 SHA 与数据库 schema 版本（`SELECT version_num FROM alembic_version`，当前应为 `0004`）。
+- 记录当前运行镜像 SHA 与数据库 schema 版本（`SELECT version_num FROM alembic_version`，当前应为 `0006`）。
 - 定期在临时目录恢复一份备份,用同版本镜像起一个临时容器,验证单词数、流水数与 `word_stats` 重建一致性(恢复演练)。建议 RPO/RTO 至少做到「更新前备份 + 周期备份」。
 
 ---

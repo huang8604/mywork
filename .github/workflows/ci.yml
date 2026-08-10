@@ -136,7 +136,7 @@ jobs:
             -e TRUSTED_HOSTS=localhost,127.0.0.1 \
             -e CORS_ORIGINS=http://localhost:18000 \
             "$SMOKE_IMAGE"
-          # Wait for migrations + readiness (DB migrated, schema == 0002).
+          # Wait for migrations + readiness at the current Alembic head.
           ready=0
           for i in $(seq 1 60); do
             if curl -sf http://localhost:18000/healthz/ready >/dev/null; then ready=1; break; fi
