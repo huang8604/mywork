@@ -1,5 +1,17 @@
 import { describe, expect, it } from 'vitest'
-import { allItemsAnswered, nextButtonLabel, nextButtonDisabled, summarize } from '@/views/reviewLogic'
+import { activePracticeSessions, allItemsAnswered, nextButtonLabel, nextButtonDisabled, summarize } from '@/views/reviewLogic'
+
+describe('activePracticeSessions', () => {
+  it('keeps only active worksheets for both online review modes', () => {
+    const sessions = [
+      { session_id: 1, status: 'not_started' },
+      { session_id: 2, status: 'active' },
+      { session_id: 3, status: 'completed' },
+      { session_id: 4, status: 'archived' },
+    ]
+    expect(activePracticeSessions(sessions)).toEqual([{ session_id: 2, status: 'active' }])
+  })
+})
 
 describe('nextButtonLabel / nextButtonDisabled', () => {
   it('shows 下一题 when more cards remain', () => {

@@ -191,6 +191,42 @@ class PracticeSessionItem(Base):
     created_at: Mapped[str] = mapped_column(String(32), nullable=False, default=utc_now_text)
 
 
+class SystemIssueNote(Base):
+    """Singleton administrator notebook for operational issues and requirements."""
+
+    __tablename__ = "system_issue_notes"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_system_issue_notes_singleton"),
+        CheckConstraint("version > 0", name="ck_system_issue_notes_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    content: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False, default=utc_now_text)
+    updated_by: Mapped[str | None] = mapped_column(String(128))
+
+
+class SystemAudioSetting(Base):
+    """Singleton persistent default for server-side audio generation."""
+
+    __tablename__ = "system_audio_settings"
+    __table_args__ = (
+        CheckConstraint("id = 1", name="ck_system_audio_settings_singleton"),
+        CheckConstraint(
+            "default_provider IN ('mimo','volc')",
+            name="ck_system_audio_settings_provider",
+        ),
+        CheckConstraint("version > 0", name="ck_system_audio_settings_version"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    default_provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    updated_at: Mapped[str] = mapped_column(String(32), nullable=False, default=utc_now_text)
+    updated_by: Mapped[str | None] = mapped_column(String(128))
+
+
 class PracticeReviewRound(Base):
     __tablename__ = "practice_review_rounds"
     __table_args__ = (

@@ -37,9 +37,9 @@ from app.services.sessions import (
 from app.services.reviews import batch_round_results, put_round_result
 from app.services.serializers import review_data, round_data, session_data
 from app.services.strategy import generate_session
-from app.services.number_audio import number_audio_file
 from app.services.dictation_audio import generate_chinese_audio
-from app.services.number_audio import generate_number_audio
+from app.services.number_audio import generate_number_audio, number_audio_file
+from app.services.system_settings import resolve_audio_provider
 from app.services.words import word_audio_file
 
 router = APIRouter(prefix="/api/v1", tags=["practice"])
@@ -217,6 +217,7 @@ def get_session_item_audio(
 @router.get("/dictation/numbers/{n}/audio")
 def get_number_audio(
     n: int,
+    db: Annotated[Session, Depends(get_db)],
     _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
     language: Annotated[str, Query(pattern="^(en|zh)$")] = "en",
 ):
@@ -227,7 +228,11 @@ def get_number_audio(
     """
     audio = number_audio_file(n, language=language)
     if audio is None and language == "zh" and 1 <= n <= 50:
-        audio = generate_number_audio(n, language="zh")
+        audio = generate_number_audio(
+            n,
+            language="zh",
+            provider=resolve_audio_provider(db),
+        )
     if audio is None:
         raise AppError(404, "AUDIO_NOT_FOUND", "序号音频尚未生成")
     return FileResponse(

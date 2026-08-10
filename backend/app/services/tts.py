@@ -252,7 +252,9 @@ _CHINESE_PROVIDERS = {"mimo": _synthesize_mimo_chinese, "volc": _synthesize_volc
 _PROVIDER_LABELS = {"mimo": "mimo", "volc": "豆包 seed-tts-2.0"}
 
 
-def audio_providers_info(settings: Settings | None = None) -> dict[str, object]:
+def audio_providers_info(
+    settings: Settings | None = None, *, default_provider: str | None = None
+) -> dict[str, object]:
     """Describe the configured TTS providers for the word-library picker."""
     settings = settings or get_settings()
     providers = []
@@ -267,7 +269,9 @@ def audio_providers_info(settings: Settings | None = None) -> dict[str, object]:
                 "model": settings.tts_model if pid == "mimo" else settings.volc_model,
             }
         )
-    default = settings.tts_provider
+    default = default_provider or settings.tts_provider
+    if default not in _PROVIDERS:
+        default = settings.tts_provider
     if not settings.provider_enabled(default):
         default = next((p["id"] for p in providers if p["enabled"]), default)
     return {"default": default, "current": default, "providers": providers}

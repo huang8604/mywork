@@ -5,6 +5,10 @@ export interface ReviewSummary {
   total: number
 }
 
+export function activePracticeSessions<T extends { status: string }>(sessions: T[]): T[] {
+  return sessions.filter(session => session.status === 'active')
+}
+
 /**
  * Label for the primary 下一题 button in the locked (revealed) state.
  * On the last card (or when there are no cards) it becomes a 已完成 ✓ marker.

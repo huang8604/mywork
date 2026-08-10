@@ -854,6 +854,51 @@
         "title": "StrategyRequest",
         "type": "object"
       },
+      "SystemAudioSettingsUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "default_provider": {
+            "enum": [
+              "mimo",
+              "volc"
+            ],
+            "title": "Default Provider",
+            "type": "string"
+          },
+          "expected_version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "default_provider",
+          "expected_version"
+        ],
+        "title": "SystemAudioSettingsUpdate",
+        "type": "object"
+      },
+      "SystemIssueNoteUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "maxLength": 50000,
+            "title": "Content",
+            "type": "string"
+          },
+          "expected_version": {
+            "exclusiveMinimum": 0.0,
+            "title": "Expected Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "content",
+          "expected_version"
+        ],
+        "title": "SystemIssueNoteUpdate",
+        "type": "object"
+      },
       "TodayReviewCounts": {
         "additionalProperties": false,
         "properties": {
@@ -3486,6 +3531,72 @@
         ]
       }
     },
+    "/api/v1/system/audio-settings": {
+      "get": {
+        "operationId": "get_audio_settings_api_v1_system_audio_settings_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Audio Settings",
+        "tags": [
+          "system"
+        ]
+      },
+      "put": {
+        "operationId": "save_audio_settings_api_v1_system_audio_settings_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemAudioSettingsUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Save Audio Settings",
+        "tags": [
+          "system"
+        ]
+      }
+    },
     "/api/v1/system/backup": {
       "get": {
         "operationId": "download_backup_api_v1_system_backup_get",
@@ -3621,6 +3732,72 @@
           }
         ],
         "summary": "Start Dictionary Audio Route",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/system/issue-notes": {
+      "get": {
+        "operationId": "get_issue_notes_api_v1_system_issue_notes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Issue Notes",
+        "tags": [
+          "system"
+        ]
+      },
+      "put": {
+        "operationId": "update_issue_notes_api_v1_system_issue_notes_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemIssueNoteUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Update Issue Notes",
         "tags": [
           "system"
         ]
@@ -4222,7 +4399,7 @@
     },
     "/api/v1/words/audio/generate-numbers": {
       "post": {
-        "description": "Generate the dictation number-announcement clips \"number 1\" .. \"number 50\".\n\n豆包 preferred (provider defaults to volc); falls back to mimo via the worker.\n``force`` regenerates all 1..50, otherwise only missing clips up to ``limit``.\nReturns ``{queued, total, provider}``; progress via ``GET /words/audio/progress``.",
+        "description": "Generate the dictation number-announcement clips \"number 1\" .. \"number 50\".\n\nUses the persistent default provider unless this request selects one explicitly.\n``force`` regenerates all 1..50, otherwise only missing clips up to ``limit``.\nReturns ``{queued, total, provider}``; progress via ``GET /words/audio/progress``.",
         "operationId": "generate_numbers_audio_api_v1_words_audio_generate_numbers_post",
         "parameters": [
           {

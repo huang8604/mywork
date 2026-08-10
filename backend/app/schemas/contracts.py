@@ -125,6 +125,11 @@ class DictionaryAudioStartRequest(StrictModel):
     provider: AudioProvider | None = None
 
 
+class SystemAudioSettingsUpdate(StrictModel):
+    default_provider: AudioProvider
+    expected_version: int = Field(gt=0)
+
+
 class NumberAudioGenerateRequest(StrictModel):
     """Generate the dictation number-announcement clips ("number 1" .. "number 50")."""
 
@@ -384,6 +389,11 @@ class UserUpdateRequest(StrictModel):
 
 class UserPasswordResetRequest(StrictModel):
     new_password: str = Field(min_length=6, max_length=256)
+
+
+class SystemIssueNoteUpdate(StrictModel):
+    content: str = Field(max_length=50_000)
+    expected_version: int = Field(gt=0)
 
 
 class ApiClientCreateRequest(StrictModel):

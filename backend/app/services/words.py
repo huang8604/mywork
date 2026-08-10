@@ -281,10 +281,13 @@ def word_audio_file(word: Word, settings: Settings | None = None) -> Path | None
 def generate_word_audio(
     db: Session, word_id: int, *, force: bool = False, provider: str | None = None
 ) -> Word:
+    from app.services.system_settings import resolve_audio_provider
+
     word = get_word(db, word_id, include_deleted=False)
     if word.audio_path and not force and word_audio_file(word):
         return word
     settings = get_settings()
+    provider = resolve_audio_provider(db, provider)
     audio, voice = tts_service.synthesize_word_mp3(
         word.en_word, provider=provider, settings=settings
     )
@@ -337,10 +340,12 @@ def enqueue_missing_word_audio(
     ``GET /api/v1/words/audio/progress`` (see ``services/audio_worker.py``).
     """
     from app.services.audio_worker import enqueue_audio_generation
+    from app.services.system_settings import resolve_audio_provider
 
     settings = get_settings()
     if not (settings.tts_enabled or settings.volc_enabled):
         raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
+    provider = resolve_audio_provider(db, provider)
     ids = list(
         db.scalars(
             select(Word.id)

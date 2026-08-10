@@ -11,6 +11,10 @@ Local setup:
     .venv/bin/python scripts/export_openapi.py
     .venv/bin/uvicorn app.main:app --reload
 
+Alembic 迁移随镜像发布后不可删除、重编号或改写，只能新增更高 revision。
+`migrations/released-migrations.sha256.json` 锁定全部已发布迁移，后端测试会校验
+内容哈希、连续单链和唯一 head；新增迁移时必须同步更新清单并补充从上一版本升级的测试。
+
 Production must set DATABASE_URL, PUBLIC_BASE_URL, TRUSTED_HOSTS,
 TRUSTED_PROXY_CIDRS and API_TOKEN_PEPPER_FILE. TRUSTED_LOCAL_WEB defaults to
 false; enable it only for loopback-only local development. `FRONTEND_DIST` may

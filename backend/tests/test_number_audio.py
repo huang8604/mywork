@@ -214,3 +214,30 @@ def test_student_can_read_number_audio_but_not_generate(
         json={"limit": 5},
     )
     assert gen.status_code == 403
+
+
+def test_chinese_number_uses_persistent_default_provider(
+    client, monkeypatch, tmp_path
+):
+    _audio_dir(monkeypatch, tmp_path)
+    monkeypatch.setenv("TTS_BASE_URL", "https://mimo.example.invalid/v1")
+    monkeypatch.setenv("TTS_API_KEY", "mimo-key")
+    get_settings.cache_clear()
+    selected: list[str | None] = []
+    import app.services.tts as tts
+
+    def fake(text: str, *, provider=None, settings=None, language="en"):
+        selected.append(provider)
+        return MP3, "Chloe"
+
+    monkeypatch.setattr(tts, "synthesize_word_mp3", fake)
+    saved = client.put(
+        "/api/v1/system/audio-settings",
+        json={"default_provider": "mimo", "expected_version": 1},
+    )
+    assert saved.status_code == 200, saved.text
+
+    response = client.get("/api/v1/dictation/numbers/1/audio?language=zh")
+
+    assert response.status_code == 200, response.text
+    assert selected == ["mimo"]

@@ -8,6 +8,8 @@ Single-user, NAS-deployed vocabulary practice system (单词记忆辅助系统).
 
 Development is staged into six phases with frozen decisions under `docs/design/`; implementation plans and execution records live under `docs/superpowers/`. Phases 1–6 are implemented. Each phase doc or enhancement spec defines the completion gates for its scope.
 
+The `/review` page has two modes, online cards and online dictation. Both must load and display only practice sessions whose lifecycle status is `active`; never broaden either picker to `not_started`, `completed`, or `archived`. This invariant is covered by `activePracticeSessions` tests.
+
 ### Production image, CI, and NAS deploy (phase 5)
 
 - **Image**: repo-root `Dockerfile` is multi-stage — `node:22-alpine` builds the Vue SPA (`npm ci` + `npm run build`), `python:3.12-slim` runs FastAPI serving API + the built SPA. Base images are pinned to a version+digest. Runtime is non-root UID/GID 10001 (only `/app/data` writable). `backend/docker-entrypoint.sh` runs `alembic upgrade head` before `uvicorn`, so `/healthz/ready` passes on a fresh DB. The runtime stage installs weasyprint system libs + `fonts-noto-cjk` so the phase-4 `/recitation` PDF endpoint works.
@@ -140,7 +142,7 @@ In production the backend serves the built SPA from `FRONTEND_DIST` (default `fr
 
 ### Admin tooling (`/system` page)
 
-The `/system` route (`meta.roles: ['admin']`) is the admin console: local-dictionary shared audio generation (persistent progress, pause/resume, retry/quota wait), API-client/token management (create, rotate, revoke, adjust scopes — the plaintext token is shown only on create/rotate), and one-click SQLite full-backup download (`GET /api/v1/system/backup` streams a `.db` snapshot). It replaces the CLI lifecycle scripts for day-to-day admin.
+The `/system` route (`meta.roles: ['admin']`) is the admin console: the persistent issue/requirement notebook, local-dictionary shared audio generation (model selection, persistent default provider, progress, pause/resume, retry/quota wait), API-client/token management (create, rotate, revoke, adjust scopes — the plaintext token is shown only on create/rotate), and one-click SQLite full-backup download (`GET /api/v1/system/backup` streams a `.db` snapshot). It replaces the CLI lifecycle scripts for day-to-day admin.
 
 ## Frontend conventions
 
@@ -167,6 +169,7 @@ The repo ships four self-contained Skills under `skills/`: `add-words` (`words:w
 - New mutable resource? Add a `version` column and require `expected_version` on writes.
 - New write route? Decide on `Idempotency-Key` (header, for whole-request replay) vs `client_event_id` (per-item dedup), wire `claim()`/`complete()`, and **add the entry to `REQUIRED_SCOPES` in `main.py`**.
 - New enum value or constraint? Add it in `models/entities.py` (DB-level `CheckConstraint`), `schemas/contracts.py` (Pydantic `Literal`), and `src/types/domain.ts`.
+- Never delete, renumber, or edit a released Alembic migration. Add a new revision only, keep `migrations/released-migrations.sha256.json` in sync, and add a real upgrade test from the previous released revision. This rule protects databases already stamped with historical revisions.
 - After touching any request/response shape or scope, regenerate `backend/contracts/openapi.yaml` with `export_openapi.py`.
 - The deployment is single-tenant (one owner): all web logins share one word library — `admin` owns it, `student` accounts can only do online review. There is no per-user data isolation; don't add multi-tenant assumptions.
 - New web role? Add it to `ROLE_SCOPES` in `core/auth.py`, declare it in `WebRole` (`schemas/contracts.py` + `src/types/domain.ts`), and gate routes with `meta.roles` in `frontend/src/router/index.ts`.

@@ -132,6 +132,8 @@ services:
 ### 4.2 启动迁移
 
 - 新容器先执行版本化迁移；失败则 readiness 不通过。
+- 迁移一经随镜像发布即视为不可变：禁止删除、重编号、修改 `revision/down_revision` 或改写内容；任何 schema 变化只能新增更高 revision。仓库维护已发布迁移 SHA-256 清单，CI 校验文件完整性、内容哈希和唯一单链，避免已部署数据库出现无法解析的 revision。
+- 新迁移必须提供“上一已发布 revision → 当前 head”的真实 SQLite 升级测试，并校验 `alembic_version`、`integrity_check` 和外键完整性。
 - 破坏性迁移必须拆成向前兼容的多步发布。
 - 回滚旧镜像前检查其是否兼容当前 schema；不兼容时先恢复更新前备份。
 

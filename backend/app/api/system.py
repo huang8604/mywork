@@ -17,12 +17,24 @@ from app.core.auth import Actor, require_web_admin
 from app.core.database import engine, get_db
 from app.core.errors import AppError
 from app.core.responses import envelope
-from app.schemas import DictionaryAudioStartRequest
+from app.schemas import (
+    DictionaryAudioStartRequest,
+    SystemAudioSettingsUpdate,
+    SystemIssueNoteUpdate,
+)
 from app.services.dictionary_audio import (
     dictionary_audio_progress,
     pause_dictionary_audio,
     resume_dictionary_audio,
     start_dictionary_audio,
+)
+from app.services.system_settings import (
+    audio_settings_data,
+    get_issue_note_data,
+    issue_note_data,
+    resolve_audio_provider,
+    update_audio_settings,
+    update_issue_note,
 )
 
 router = APIRouter(prefix="/api/v1/system", tags=["system"])
@@ -34,6 +46,8 @@ REQUIRED_TABLES = {
     "word_stats",
     "review_logs",
     "practice_sessions",
+    "system_issue_notes",
+    "system_audio_settings",
     "alembic_version",
 }
 
@@ -55,6 +69,81 @@ def _record_dictionary_audio_action(
     db.commit()
 
 
+@router.get("/issue-notes")
+def get_issue_notes(
+    request: Request,
+    _actor: Annotated[Actor, Depends(require_web_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    return envelope(request, get_issue_note_data(db))
+
+
+@router.put("/issue-notes")
+def update_issue_notes(
+    payload: SystemIssueNoteUpdate,
+    request: Request,
+    actor: Annotated[Actor, Depends(require_web_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    note = update_issue_note(
+        db,
+        content=payload.content,
+        expected_version=payload.expected_version,
+        actor_id=actor.actor_id,
+    )
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="system.issue_notes.update",
+        outcome="success",
+        http_status=200,
+        target_type="system_issue_notes",
+        target_id="1",
+    )
+    db.commit()
+    db.refresh(note)
+    return envelope(request, issue_note_data(note))
+
+
+@router.get("/audio-settings")
+def get_audio_settings(
+    request: Request,
+    _actor: Annotated[Actor, Depends(require_web_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    return envelope(request, audio_settings_data(db))
+
+
+@router.put("/audio-settings")
+def save_audio_settings(
+    payload: SystemAudioSettingsUpdate,
+    request: Request,
+    actor: Annotated[Actor, Depends(require_web_admin)],
+    db: Annotated[Session, Depends(get_db)],
+):
+    setting = update_audio_settings(
+        db,
+        default_provider=payload.default_provider,
+        expected_version=payload.expected_version,
+        actor_id=actor.actor_id,
+    )
+    add_audit(
+        db,
+        request_id=request.state.request_id,
+        actor=actor,
+        action="system.audio_settings.update",
+        outcome="success",
+        http_status=200,
+        target_type="system_audio_settings",
+        target_id="1",
+        metadata={"default_provider": payload.default_provider},
+    )
+    db.commit()
+    db.refresh(setting)
+    return envelope(request, audio_settings_data(db))
+
+
 @router.get("/dictionary-audio/progress")
 def get_dictionary_audio_progress(
     request: Request,
@@ -70,7 +159,8 @@ def start_dictionary_audio_route(
     db: Annotated[Session, Depends(get_db)],
     actor: Annotated[Actor, Depends(require_web_admin)],
 ):
-    data = start_dictionary_audio(payload.provider)
+    provider = resolve_audio_provider(db, payload.provider)
+    data = start_dictionary_audio(provider)
     _record_dictionary_audio_action(db, request, actor, "system.dictionary_audio.start", data)
     return envelope(request, data)
 

@@ -44,7 +44,7 @@ from app.services.idempotency import claim, complete
 from app.services.import_worker import enqueue_import, import_progress, run_import_row
 from app.services.number_audio import NUMBER_MAX, missing_numbers
 from app.services.serializers import word_data
-from app.services.tts import audio_providers_info
+from app.services.system_settings import audio_provider_catalog, resolve_audio_provider
 from app.services.words import (
     SORTS,
     batch_add_tags,
@@ -715,8 +715,9 @@ def batch_audio(
             status_code=idem.replay_status or 200,
             headers={"Idempotency-Replayed": "true"},
         )
-    queued = enqueue_audio_generation(payload.word_ids, force=False, provider=payload.provider)
-    data = {"queued": queued, "total": len(payload.word_ids), "provider": payload.provider}
+    provider = resolve_audio_provider(db, payload.provider)
+    queued = enqueue_audio_generation(payload.word_ids, force=False, provider=provider)
+    data = {"queued": queued, "total": len(payload.word_ids), "provider": provider}
     complete(idem, data=data, status_code=200, resource_type="word_audio_batch")
     add_audit(
         db,
@@ -775,9 +776,10 @@ def batch_reset(
 @router.get("/audio/providers")
 def audio_providers(
     request: Request,
+    db: Annotated[Session, Depends(get_db)],
     _actor: Annotated[Actor, Depends(require_scopes("words:read"))],
 ):
-    return envelope(request, audio_providers_info())
+    return envelope(request, audio_provider_catalog(db))
 
 
 @router.get("/audio/progress")
@@ -812,7 +814,8 @@ def generate_missing_audio(
             status_code=idem.replay_status or 200,
             headers={"Idempotency-Replayed": "true"},
         )
-    data = enqueue_missing_word_audio(db, limit=payload.limit, provider=payload.provider)
+    provider = resolve_audio_provider(db, payload.provider)
+    data = enqueue_missing_word_audio(db, limit=payload.limit, provider=provider)
     complete(idem, data=data, status_code=200, resource_type="word_audio_batch")
     add_audit(
         db,
@@ -852,8 +855,9 @@ def regenerate_all_audio(
             headers={"Idempotency-Replayed": "true"},
         )
     word_ids = non_deleted_word_ids(db)
-    queued = enqueue_audio_generation(word_ids, force=True, provider=payload.provider)
-    data = {"queued": queued, "total": len(word_ids), "provider": payload.provider}
+    provider = resolve_audio_provider(db, payload.provider)
+    queued = enqueue_audio_generation(word_ids, force=True, provider=provider)
+    data = {"queued": queued, "total": len(word_ids), "provider": provider}
     complete(idem, data=data, status_code=200, resource_type="word_audio_batch")
     add_audit(
         db,
@@ -878,7 +882,7 @@ def generate_numbers_audio(
 ):
     """Generate the dictation number-announcement clips "number 1" .. "number 50".
 
-    豆包 preferred (provider defaults to volc); falls back to mimo via the worker.
+    Uses the persistent default provider unless this request selects one explicitly.
     ``force`` regenerates all 1..50, otherwise only missing clips up to ``limit``.
     Returns ``{queued, total, provider}``; progress via ``GET /words/audio/progress``.
     """
@@ -898,7 +902,7 @@ def generate_numbers_audio(
             status_code=idem.replay_status or 200,
             headers={"Idempotency-Replayed": "true"},
         )
-    provider = payload.provider or "volc"
+    provider = resolve_audio_provider(db, payload.provider)
     if payload.force:
         nums = list(range(1, NUMBER_MAX + 1))
     else:
@@ -961,7 +965,8 @@ def generate_audio(
             status_code=idem.replay_status or 200,
             headers={"Idempotency-Replayed": "true"},
         )
-    word = generate_word_audio(db, word_id, force=payload.force, provider=payload.provider)
+    provider = resolve_audio_provider(db, payload.provider)
+    word = generate_word_audio(db, word_id, force=payload.force, provider=provider)
     data = word_data(db, word)
     complete(idem, data=data, status_code=200, resource_type="word", resource_id=word.id)
     add_audit(
@@ -973,7 +978,7 @@ def generate_audio(
         http_status=200,
         target_type="word",
         target_id=word.id,
-        metadata={"force": payload.force, "provider": payload.provider},
+        metadata={"force": payload.force, "provider": provider},
     )
     _commit(db)
     return envelope(request, data)

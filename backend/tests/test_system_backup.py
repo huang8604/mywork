@@ -6,6 +6,7 @@ import sqlite3
 import tempfile
 
 from conftest import create_word, seed_credential
+from app.core.config import get_settings
 
 
 def _login(client, username: str, password: str) -> None:
@@ -58,6 +59,94 @@ def test_student_forbidden(client, db_session, login_mode):
 def test_unauthenticated_is_401(client, login_mode):
     # No cookie login -> WEB_LOGIN_REQUIRED=true -> 401 (not the trusted-proxy fallback).
     assert client.get("/api/v1/system/backup").status_code == 401
+
+
+def test_admin_issue_notes_persist_and_use_optimistic_lock(client, db_session, login_mode):
+    seed_credential(db_session, "admin", "supersecret")
+    _login(client, "admin", "supersecret")
+
+    initial = client.get("/api/v1/system/issue-notes")
+    assert initial.status_code == 200
+    assert initial.json()["data"]["content"] == ""
+
+    saved = client.put(
+        "/api/v1/system/issue-notes",
+        json={"content": "问题：打印标题不正确\n需求：保留错词", "expected_version": 1},
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["data"]["version"] == 2
+    assert client.get("/api/v1/system/issue-notes").json()["data"]["content"].startswith("问题：")
+
+    stale = client.put(
+        "/api/v1/system/issue-notes",
+        json={"content": "覆盖", "expected_version": 1},
+    )
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "VERSION_CONFLICT"
+
+
+def test_admin_sets_persistent_default_audio_provider(
+    client, db_session, login_mode, monkeypatch
+):
+    monkeypatch.setenv("TTS_BASE_URL", "https://mimo.example.invalid/v1")
+    monkeypatch.setenv("TTS_API_KEY", "mimo-key")
+    monkeypatch.setenv("VOLC_TTS_BASE_URL", "https://volc.example.invalid")
+    monkeypatch.setenv("VOLC_TTS_API_KEY", "volc-key")
+    get_settings.cache_clear()
+    seed_credential(db_session, "admin", "supersecret")
+    _login(client, "admin", "supersecret")
+    try:
+        initial = client.get("/api/v1/system/audio-settings")
+        assert initial.status_code == 200, initial.text
+        assert {item["id"] for item in initial.json()["data"]["providers"]} == {
+            "mimo",
+            "volc",
+        }
+
+        saved = client.put(
+            "/api/v1/system/audio-settings",
+            json={"default_provider": "volc", "expected_version": 1},
+        )
+        assert saved.status_code == 200, saved.text
+        assert saved.json()["data"]["default_provider"] == "volc"
+        assert saved.json()["data"]["version"] == 2
+
+        providers = client.get("/api/v1/words/audio/providers")
+        assert providers.status_code == 200
+        assert providers.json()["data"]["current"] == "volc"
+
+        from app.api import system as system_api
+
+        selected: list[str | None] = []
+
+        def fake_start(provider=None):
+            selected.append(provider)
+            return {
+                "state": "running",
+                "total": 1,
+                "generated": 0,
+                "failed": 0,
+                "remaining": 1,
+                "provider": provider,
+                "next_run_at": None,
+                "last_error": None,
+                "updated_at": None,
+                "dictionary_available": True,
+            }
+
+        monkeypatch.setattr(system_api, "start_dictionary_audio", fake_start)
+        started = client.post("/api/v1/system/dictionary-audio/start", json={})
+        assert started.status_code == 200, started.text
+        assert selected == ["volc"]
+
+        stale = client.put(
+            "/api/v1/system/audio-settings",
+            json={"default_provider": "mimo", "expected_version": 1},
+        )
+        assert stale.status_code == 409
+        assert stale.json()["code"] == "VERSION_CONFLICT"
+    finally:
+        get_settings.cache_clear()
 
 
 def test_openapi_skips_security_for_system(client, db_session, login_mode):

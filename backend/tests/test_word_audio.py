@@ -86,6 +86,34 @@ def test_generate_and_get_word_audio(client, monkeypatch, tmp_path):
     assert audio.content == MP3
 
 
+def test_persistent_default_provider_is_used_for_word_audio(client, monkeypatch, tmp_path):
+    _enable_tts(monkeypatch, tmp_path)
+    _enable_volc(monkeypatch)
+    selected: list[str | None] = []
+    import app.services.tts as tts
+
+    def fake(text: str, *, provider=None, settings=None) -> tuple[bytes, str]:
+        selected.append(provider)
+        return MP3, "zh_female_yingyujiaoxue_uranus_bigtts"
+
+    monkeypatch.setattr(tts, "synthesize_word_mp3", fake)
+    saved = client.put(
+        "/api/v1/system/audio-settings",
+        json={"default_provider": "volc", "expected_version": 1},
+    )
+    assert saved.status_code == 200, saved.text
+    word = create_word(client, {"en_word": "defaultvoice", "cn_meaning": "默认声音", "tags": []})
+
+    response = client.post(
+        f"/api/v1/words/{word['id']}/audio",
+        headers={"Idempotency-Key": "audio-default-provider"},
+        json={},
+    )
+
+    assert response.status_code == 200, response.text
+    assert selected == ["volc"]
+
+
 def test_generate_word_audio_is_idempotent_without_force(client, monkeypatch, tmp_path):
     _enable_tts(monkeypatch, tmp_path)
     calls = _mock_tts(monkeypatch)

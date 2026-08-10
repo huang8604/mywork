@@ -107,6 +107,18 @@ export interface AudioProviderInfo {
 export interface AudioProvidersInfo {
   default: AudioProvider; current: AudioProvider; providers: AudioProviderInfo[]
 }
+export interface SystemAudioSettings extends AudioProvidersInfo {
+  default_provider: AudioProvider
+  version: number
+  updated_at: string | null
+  updated_by: string | null
+}
+export interface SystemIssueNote {
+  content: string
+  version: number
+  updated_at: string
+  updated_by: string | null
+}
 export type DictionaryAudioState = 'idle' | 'running' | 'paused' | 'waiting_retry' | 'waiting_quota' | 'completed'
 export interface DictionaryAudioProgress {
   state: DictionaryAudioState
