@@ -178,7 +178,7 @@ docker exec vocab-app python -c "import sqlite3; c=sqlite3.connect('/app/data/vo
 ```
 
 - 至少保留最近若干版本,并复制到**不同物理存储**。
-- 记录当前运行镜像 SHA 与数据库 schema 版本（`SELECT version_num FROM alembic_version`，当前应为 `0007`）。
+- 记录当前运行镜像 SHA 与数据库 schema 版本（`SELECT version_num FROM alembic_version`，当前应为 `0008`）。
 - 定期在临时目录恢复一份备份,用同版本镜像起一个临时容器,验证单词数、流水数与 `word_stats` 重建一致性(恢复演练)。建议 RPO/RTO 至少做到「更新前备份 + 周期备份」。
 
 ---
@@ -216,7 +216,7 @@ CI 的 Trivy 门禁扫到、但经评估**在本系统威胁模型下不可利�
 **角色**
 
 - **admin**:全部权限,并在「用户管理」页增删用户、改口令、启用/禁用。
-- **student**:只能使用「在线复习」(`/review`)。后端按 scope 自动挡住词库 CRUD、导出、复习表等管理操作(`ROLE_SCOPES` 里 student = `{practice:generate, practice:read, reviews:write}`)。
+- **student**:可查看「概览」并使用「在线复习」(`/review`)，但不显示词库、复习表、历史等管理入口。后端按 scope 自动挡住词库 CRUD、导出、复习表等管理操作(`ROLE_SCOPES` 里 student = `{practice:read, reviews:write}`)，概览统计按本人复习记录隔离。
 
 **启用(Portainer)**:在 `environment` 加(并**撤销**此前为反代方案加的 `command:` 覆盖;Lucky 反代**移除** `X-Forwarded-User` 注入、只保留 HTTPS):
 
@@ -227,7 +227,7 @@ WEB_ADMIN_PASSWORD: "<初始口令,≥6 位>"  # 或 WEB_ADMIN_PASSWORD_FILE 挂
 # 可选:SESSION_SECRET(_FILE)(默认复用 token pepper)、SESSION_MAX_AGE(默认 7 天)
 ```
 
-镜像启动会自动跑迁移到当前版本 + `app.bootstrap`(用上面 env 建首个 admin,幂等)。流程:Pull latest → Recreate → 等 healthy → 浏览器开域名跳 `/login` → 初始口令登录 → admin 在「用户管理」新增学生 → 学生登录默认进 `/review`。
+镜像启动会自动跑迁移到当前版本 + `app.bootstrap`(用上面 env 建首个 admin,幂等)。流程:Pull latest → Recreate → 等 healthy → 浏览器开域名跳 `/login` → 初始口令登录 → admin 在「用户管理」新增学生 → 学生登录默认进 `/dashboard`。
 
 **运维**
 

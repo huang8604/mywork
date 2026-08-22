@@ -222,6 +222,16 @@ class SystemAudioSetting(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
     default_provider: Mapped[str] = mapped_column(String(16), nullable=False)
+    # Runtime overrides are administrator-managed.  Null means "use the
+    # corresponding environment setting" so existing deployments keep working.
+    mimo_base_url: Mapped[str | None] = mapped_column(String(500))
+    mimo_api_key: Mapped[str | None] = mapped_column(String(1000))
+    mimo_model: Mapped[str | None] = mapped_column(String(200))
+    mimo_voice: Mapped[str | None] = mapped_column(String(200))
+    volc_base_url: Mapped[str | None] = mapped_column(String(500))
+    volc_api_key: Mapped[str | None] = mapped_column(String(1000))
+    volc_model: Mapped[str | None] = mapped_column(String(200))
+    volc_voice: Mapped[str | None] = mapped_column(String(200))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False, default=utc_now_text)
     updated_by: Mapped[str | None] = mapped_column(String(128))

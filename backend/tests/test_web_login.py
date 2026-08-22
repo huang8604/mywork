@@ -113,7 +113,8 @@ def test_student_role_can_review_but_not_manage(client, db_session, login_mode):
     assert resp.status_code == 403
     # words:export not in student scopes -> 403
     assert client.get("/api/v1/words/export").status_code == 403
-    # practice:generate IS in student scopes -> a non-empty session can be created.
+    # Worksheet generation is an administrator operation; students cannot create
+    # or manage a shared review table.
     gen = client.post(
         "/api/v1/daily-table/generate",
         headers={"Idempotency-Key": "stu-generate"},
@@ -127,11 +128,9 @@ def test_student_role_can_review_but_not_manage(client, db_session, login_mode):
             "word_ids": [seeded_word.id],
         },
     )
-    assert gen.status_code == 201
-    assert [item["word_id"] for item in gen.json()["data"]["items"]] == [seeded_word.id]
+    assert gen.status_code == 403
 
-    # Reaching the same authorized endpoint with no candidates is a domain 409,
-    # not an empty persisted session.
+    # The permission check happens before strategy evaluation.
     empty = client.post(
         "/api/v1/daily-table/generate",
         headers={"Idempotency-Key": "stu-generate-empty"},
@@ -144,8 +143,7 @@ def test_student_role_can_review_but_not_manage(client, db_session, login_mode):
             "seed": 1,
         },
     )
-    assert empty.status_code == 409
-    assert empty.json()["code"] == "NO_PRACTICE_CANDIDATES"
+    assert empty.status_code == 403
 
 
 def test_unauthenticated_blocked_when_login_required(client, login_mode):

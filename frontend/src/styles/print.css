@@ -22,6 +22,7 @@
   .worksheet-table tbody { display: table-row-group; }
   .worksheet-table tr { break-inside: avoid; page-break-inside: avoid; }
   .worksheet-table th, .worksheet-table td { border: .6pt solid #8197b2 !important; padding: 6pt 5pt !important; font-size: var(--worksheet-font-size, 15pt) !important; line-height: 1.35; overflow-wrap: break-word; word-break: normal; }
+  .worksheet-table .word-cell { font-size: var(--worksheet-word-font-size, var(--worksheet-font-size, 15pt)) !important; }
   .worksheet-table .meaning-cell { font-weight: 600 !important; }
   .worksheet-table .example-cell { font-size: .9em !important; line-height: 1.3 !important; color: #44546a !important; }
   .worksheet-table th { color: #fff !important; background: var(--ws-primary) !important; }

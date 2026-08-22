@@ -128,6 +128,10 @@ def patch_review(
     actor: Annotated[Actor, Depends(require_scopes("reviews:write"))],
 ):
     old = db.get(ReviewLog, review_id)
+    if old is not None and actor.role == "student" and (
+        old.actor_type != actor.actor_type or old.actor_id != actor.actor_id
+    ):
+        raise AppError(403, "FORBIDDEN", "只能修改自己的复习记录")
     before = (
         {"status": old.status, "reviewed_at": old.reviewed_at, "version": old.version}
         if old
@@ -294,6 +298,92 @@ def stats_contributions(
             **statuses,
             "count": sum(statuses.values()),
         }
+        for date, statuses in counts.items()
+    ]
+    return envelope(
+        request,
+        {
+            "from": start_date.isoformat(),
+            "to": today.isoformat(),
+            "timezone": str(zone),
+            "total": sum(item["count"] for item in contribution_days),
+            "days": contribution_days,
+        },
+    )
+
+
+def _own_review_filters(actor: Actor) -> list[object]:
+    return [ReviewLog.actor_type == actor.actor_type, ReviewLog.actor_id == actor.actor_id]
+
+
+@router.get("/stats/my-summary")
+def own_stats_summary(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("practice:read", "reviews:write"))],
+):
+    """Personal dashboard totals; never reads the global WordStats aggregate."""
+    filters = _own_review_filters(actor)
+    grouped = db.execute(
+        select(ReviewLog.status, func.count())
+        .where(*filters)
+        .group_by(ReviewLog.status)
+    ).all()
+    counts = {"known": 0, "unknown": 0, "skipped": 0}
+    for status, count in grouped:
+        if status in counts:
+            counts[status] = int(count)
+    reviewed_words = int(
+        db.scalar(
+            select(func.count(func.distinct(ReviewLog.word_id))).where(*filters)
+        )
+        or 0
+    )
+    effective = counts["known"] + counts["unknown"]
+    return envelope(
+        request,
+        {
+            "known_count": counts["known"],
+            "unknown_count": counts["unknown"],
+            "skipped_count": counts["skipped"],
+            "total_attempts": effective + counts["skipped"],
+            "accuracy": counts["known"] / effective if effective else None,
+            "reviewed_words": reviewed_words,
+            "due_words": 0,
+        },
+    )
+
+
+@router.get("/stats/my-contributions")
+def own_stats_contributions(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("practice:read", "reviews:write"))],
+    days: Annotated[int, Query(ge=1, le=366)] = 365,
+):
+    """Personal activity heatmap, filtered by the authenticated actor."""
+    zone = ZoneInfo(get_settings().app_timezone)
+    today = datetime.now(UTC).astimezone(zone).date()
+    start_date = today - timedelta(days=days - 1)
+    start_local = datetime.combine(start_date, time.min, tzinfo=zone)
+    end_local = datetime.combine(today + timedelta(days=1), time.min, tzinfo=zone)
+    logs = db.scalars(
+        select(ReviewLog).where(
+            *_own_review_filters(actor),
+            ReviewLog.reviewed_at >= utc_text(start_local),
+            ReviewLog.reviewed_at < utc_text(end_local),
+        )
+    ).all()
+    counts = {
+        start_date + timedelta(days=offset): {"known": 0, "unknown": 0, "skipped": 0}
+        for offset in range(days)
+    }
+    for log in logs:
+        local_date = parse_utc(log.reviewed_at).astimezone(zone).date()
+        if local_date in counts:
+            counts[local_date][log.status] += 1
+    contribution_days = [
+        {"date": date.isoformat(), **statuses, "count": sum(statuses.values())}
         for date, statuses in counts.items()
     ]
     return envelope(

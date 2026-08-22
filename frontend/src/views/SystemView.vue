@@ -82,6 +82,10 @@ const audioSettings = ref<SystemAudioSettings | null>(null)
 const defaultAudioProvider = ref<AudioProvider>('mimo')
 const dictionaryAudioProvider = ref<AudioProvider>('mimo')
 const audioSettingsBusy = ref(false)
+const audioDraft = reactive<Record<AudioProvider, { base_url: string; api_key: string; model: string; voice: string }>>({
+  mimo: { base_url: '', api_key: '', model: '', voice: '' },
+  volc: { base_url: '', api_key: '', model: '', voice: '' },
+})
 let dictionaryAudioTimer: number | null = null
 const dictionaryAudioPercent = computed(() => dictionaryAudio.value?.total ? Math.round(dictionaryAudio.value.generated / dictionaryAudio.value.total * 100) : 0)
 const dictionaryAudioStateLabels: Record<DictionaryAudioState, string> = {
@@ -93,15 +97,31 @@ async function loadAudioSettings() {
     audioSettings.value = await getAudioSettings()
     defaultAudioProvider.value = audioSettings.value.default_provider
     dictionaryAudioProvider.value = audioSettings.value.default_provider
+    for (const provider of audioSettings.value.providers) {
+      audioDraft[provider.id].base_url = provider.base_url
+      audioDraft[provider.id].model = provider.model
+      audioDraft[provider.id].voice = provider.voice
+      audioDraft[provider.id].api_key = ''
+    }
   } catch (error) { ElMessage.error(normalizeApiError(error).message) }
 }
 async function persistAudioSettings() {
   if (!audioSettings.value) return
   audioSettingsBusy.value = true
   try {
-    audioSettings.value = await saveAudioSettings(defaultAudioProvider.value, audioSettings.value.version)
+    audioSettings.value = await saveAudioSettings(
+      defaultAudioProvider.value,
+      audioSettings.value.version,
+      { mimo: { ...audioDraft.mimo }, volc: { ...audioDraft.volc } },
+    )
     defaultAudioProvider.value = audioSettings.value.default_provider
-    ElMessage.success('默认音频模型已保存')
+    for (const provider of audioSettings.value.providers) {
+      audioDraft[provider.id].base_url = provider.base_url
+      audioDraft[provider.id].model = provider.model
+      audioDraft[provider.id].voice = provider.voice
+      audioDraft[provider.id].api_key = ''
+    }
+    ElMessage.success('音频模型与连接设置已保存')
   } catch (error) {
     const normalized = normalizeApiError(error)
     if (normalized.isConflict) await loadAudioSettings()
@@ -417,6 +437,18 @@ async function downloadPreRestore() {
             <el-button data-testid="save-audio-settings" type="primary" :loading="audioSettingsBusy" @click="persistAudioSettings">保存默认模型</el-button>
           </span>
         </label>
+        <div v-for="provider in audioSettings.providers" :key="provider.id" class="audio-provider-config">
+          <div class="audio-provider-config-head">
+            <strong>{{ provider.label }} 连接设置</strong>
+            <small>{{ provider.api_key_configured ? `当前 Key：${provider.api_key_masked}` : '尚未配置 Key' }}</small>
+          </div>
+          <div class="audio-provider-fields">
+            <el-input v-model="audioDraft[provider.id].base_url" :aria-label="`${provider.label}端点`" placeholder="端点 URL" />
+            <el-input v-model="audioDraft[provider.id].api_key" :aria-label="`${provider.label}Key`" type="password" show-password placeholder="Key（留空保留现有 Key）" />
+            <el-input v-model="audioDraft[provider.id].model" :aria-label="`${provider.label}模型`" placeholder="模型" />
+            <el-input v-model="audioDraft[provider.id].voice" :aria-label="`${provider.label}音色`" placeholder="音色" />
+          </div>
+        </div>
         <label class="audio-model-field">
           <span><strong>本次词库生成模型</strong><small>只影响下次“扫描并生成缺失音频”任务</small></span>
           <el-select v-model="dictionaryAudioProvider" aria-label="本次词库生成模型">
@@ -662,6 +694,9 @@ async function downloadPreRestore() {
 .audio-model-field { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fafcfb; }
 .audio-model-field > span:first-child { display: grid; gap: 3px; }.audio-model-field small { color: var(--muted); }
 .audio-model-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+.audio-provider-config { grid-column: 1 / -1; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.audio-provider-config-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }.audio-provider-config-head small { color: var(--muted); }
+.audio-provider-fields { display: grid; grid-template-columns: 1.3fr 1.3fr 1fr 1fr; gap: 8px; }
 .audio-model-catalog { grid-column: 1 / -1; display: flex; gap: 8px 14px; flex-wrap: wrap; margin: 0; color: var(--muted); font-size: .82rem; }
 .dictionary-audio-summary,.dictionary-audio-meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .dictionary-audio-summary span,.dictionary-audio-meta { color: var(--muted); font-size: .85rem; }.dictionary-audio-meta { justify-content: flex-start; }
@@ -671,5 +706,6 @@ async function downloadPreRestore() {
 }
 @media (max-width: 900px) { .system-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .audio-model-settings { grid-template-columns: 1fr; } }
-@media (max-width: 479px) { .system-sections { grid-template-columns: 1fr; }.audio-model-control { grid-template-columns: 1fr; } }
+@media (max-width: 700px) { .audio-provider-fields { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 479px) { .system-sections { grid-template-columns: 1fr; }.audio-model-control { grid-template-columns: 1fr; }.audio-provider-fields { grid-template-columns: 1fr; }.audio-provider-config-head { display: grid; } }
 </style>

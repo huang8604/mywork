@@ -36,11 +36,11 @@ ALL_SCOPES = {
     "reviews:read",
 }
 
-# Web login roles map to scope sets. admin = everything; student = the online
-# review flow only (practice-session generate/read + review writes), which is
-# exactly what ReviewView.vue calls. ALL_SCOPES (the API-client scope universe)
-# is intentionally left unchanged.
-STUDENT_SCOPES = frozenset({"practice:generate", "practice:read", "reviews:write"})
+# Web login roles map to scope sets. Students can inspect and review shared
+# worksheets; their review history/statistics are isolated by actor, while
+# vocabulary and worksheet generation/management stay admin-only.
+# ALL_SCOPES (the API-client scope universe) remains unchanged.
+STUDENT_SCOPES = frozenset({"practice:read", "reviews:write"})
 ROLE_SCOPES: dict[str, frozenset[str]] = {
     "admin": frozenset(ALL_SCOPES),
     "student": STUDENT_SCOPES,

@@ -2,13 +2,14 @@
 import { computed } from 'vue'
 import { formatPhonetic } from '@/utils/formatPhonetic'
 import { worksheetTheme } from '@/utils/worksheetTheme'
+import WeekdayDeerIcon from '@/components/WeekdayDeerIcon.vue'
 import type { PracticeItem, PracticeSession } from '@/types/domain'
 
 export type WorksheetMode = 'cn-to-en' | 'en-to-cn'
 export type WorksheetFontSize = 'small' | 'medium' | 'large'
 const props = withDefaults(defineProps<{ session: PracticeSession; mode: WorksheetMode; answer?: boolean; fontSize?: WorksheetFontSize }>(), { answer: false, fontSize: 'medium' })
-const fontPoints: Record<WorksheetFontSize, number> = { small: 13, medium: 15, large: 17 }
-const wordFontPoints: Record<WorksheetFontSize, number> = { small: 17, medium: 19, large: 21 }
+const fontPoints: Record<WorksheetFontSize, number> = { small: 11, medium: 13, large: 15 }
+const wordFontPoints: Record<WorksheetFontSize, number> = { small: 15, medium: 17, large: 19 }
 const theme = computed(() => worksheetTheme(props.session.generated_at))
 const worksheetStyle = computed<Record<string, string>>(() => ({
   '--worksheet-font-size': `${fontPoints[props.fontSize]}pt`,
@@ -17,7 +18,7 @@ const worksheetStyle = computed<Record<string, string>>(() => ({
   '--ws-deep': theme.value.deep,
   '--ws-accent': theme.value.accent,
 }))
-const title = computed(() => props.answer ? '单词背诵表' : '单词默写练习')
+const title = computed(() => props.session.title?.trim() || (props.answer ? '单词背诵表' : '单词默写练习'))
 const count = computed(() => props.session.items?.length ?? 0)
 const dateText = computed(() => {
   const d = new Date(props.session.generated_at)
@@ -54,6 +55,7 @@ function example(item: PracticeItem): string {
         <p class="ws-subtitle"><template v-if="!answer">{{ modeLabel }} · </template>共 {{ count }} 词 · {{ theme.weekdayName }}</p>
       </div>
       <div class="ws-date-card">
+        <WeekdayDeerIcon :variant="theme.icon" :size="34" />
         <span class="ws-date-label">DATE / 日期</span>
         <span class="ws-date-value">{{ dateText }}</span>
         <span class="ws-weekday">{{ theme.weekdayName }}</span>
@@ -67,7 +69,7 @@ function example(item: PracticeItem): string {
     <p class="worksheet-fit-hint no-print">标准字号已按「约 20 词 / 一页 A4」校准；主题色按复习表日期(周{{ theme.weekdayName.replace('周','') }})变化。词多或例句较长时浏览器会自动续页。</p>
     <table class="worksheet-table">
       <colgroup><col class="number-col"><col class="word-col"><col class="phonetic-col"><col class="meaning-col"><col class="example-col"></colgroup>
-      <thead><tr class="repeat-print-header"><th colspan="5">{{ answer?'单词背诵表':`单词默写练习 · ${modeLabel}` }} · {{ dateText }} · {{ theme.weekdayName }} · 第 ____ 页</th></tr><tr><th class="number-cell">序号</th><th>单词</th><th>音标</th><th>中文释义</th><th>例句</th></tr></thead>
+      <thead><tr class="repeat-print-header"><th colspan="5">{{ title }}<template v-if="!answer"> · {{ modeLabel }}</template> · {{ dateText }} · {{ theme.weekdayName }} · 第 ____ 页</th></tr><tr><th class="number-cell">序号</th><th>单词</th><th>音标</th><th>中文释义</th><th>例句</th></tr></thead>
       <tbody><tr v-for="item in session.items" :key="item.item_id"><td class="number-cell">{{ item.position }}</td><td class="word-cell">{{ english(item) }}</td><td class="phonetic-cell">{{ phonetic(item) }}</td><td class="meaning-cell">{{ chinese(item) }}</td><td class="example-cell">{{ example(item) }}</td></tr></tbody>
     </table>
     <div class="worksheet-mobile"><article v-for="item in session.items" :key="item.item_id"><span class="number-cell">{{ item.position }}</span><p class="word-cell">{{ english(item) }}</p><p class="phonetic-cell">{{ phonetic(item) }}</p><strong>{{ chinese(item) }}</strong><p class="example-cell">{{ example(item) }}</p></article></div>
@@ -80,7 +82,8 @@ function example(item: PracticeItem): string {
 .ws-hero-title .ws-eyebrow{margin:0;color:#fff;opacity:.78;font-size:.62rem;font-weight:700;letter-spacing:.14em}
 .ws-hero-title h2{margin:2px 0;font:700 1.35rem Georgia,"Noto Serif SC",serif;color:#fff}
 .ws-hero-title .ws-subtitle{margin:0;color:#fff;opacity:.88;font-size:.76rem}
-.ws-date-card{flex:0 0 auto;min-width:96px;padding:6px 12px;text-align:center;color:var(--ws-deep);background:rgba(255,255,255,.94);border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.12);display:grid;gap:1px}
+.ws-date-card{flex:0 0 auto;min-width:96px;padding:6px 12px;text-align:center;color:var(--ws-deep);background:rgba(255,255,255,.94);border-radius:8px;box-shadow:0 2px 6px rgba(0,0,0,.12);display:grid;place-items:center;gap:1px}
+.weekday-deer-icon{display:block;color:var(--ws-primary)}
 .ws-date-card .ws-date-label{color:var(--muted);font-size:.6rem;font-weight:700;letter-spacing:1.2px}
 .ws-date-card .ws-date-value{font-size:.82rem;font-weight:800;white-space:nowrap}
 .ws-date-card .ws-weekday{font-size:.68rem;font-weight:700;color:var(--ws-primary)}
@@ -94,7 +97,7 @@ function example(item: PracticeItem): string {
 .worksheet-table th{background:var(--ws-primary);color:#fff;letter-spacing:.03em}
 .worksheet-table tbody tr:nth-child(even){background:#f6f9fd}
 .number-cell{text-align:center!important}
-.word-cell{font-family:Georgia,serif;font-weight:700;white-space:nowrap}
+.word-cell{font-family:Georgia,serif;font-weight:700;font-size:var(--worksheet-word-font-size);white-space:nowrap}
 .phonetic-cell{color:#4a6075;white-space:nowrap}
 .meaning-cell{font-weight:600}
 .example-cell{color:#44546a;font-size:.92em;line-height:1.2}

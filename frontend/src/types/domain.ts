@@ -102,7 +102,8 @@ export interface AudioProgress {
 }
 export type AudioProvider = 'mimo' | 'volc'
 export interface AudioProviderInfo {
-  id: AudioProvider; label: string; enabled: boolean; voice: string; model: string
+  id: AudioProvider; label: string; enabled: boolean; base_url: string
+  api_key_configured: boolean; api_key_masked: string; voice: string; model: string
 }
 export interface AudioProvidersInfo {
   default: AudioProvider; current: AudioProvider; providers: AudioProviderInfo[]
@@ -167,7 +168,7 @@ export interface BatchRoundResponse { round: PracticeRound; items: ReviewLog[] }
 export type DictationLanguage = 'en' | 'zh'
 export interface DictationSettings {
   intervalSec: number      // 自动模式下「上一词播放结束 → 下一词」的间隔,2..30,默认 6
-  autoAdvance: boolean     // 自动播放下一词,默认 true
+  autoAdvance: boolean     // 自动播放下一词,默认 false
   language: DictationLanguage // 英文（英音）或中文（普通话）
   rate: number             // 语速 0.7..1.2,默认 1.0
   repeat: number           // 每词播放次数 1..3,默认 1

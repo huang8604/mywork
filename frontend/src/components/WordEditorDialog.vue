@@ -12,7 +12,7 @@ const enriching = ref(false)
 const enrichError = ref('')
 const form = reactive({ en_word:'', phonetic:'', cn_meaning:'', example_sentence:'', is_custom:false, tags:'' })
 const rules: FormRules = {
-  en_word:[{required:true,message:'请输入英文单词',trigger:'blur'},{pattern:/^[A-Za-z][A-Za-z '\-]*$/,message:'仅支持字母、空格、撇号和连字符',trigger:'blur'}],
+  en_word:[{required:true,message:'请输入英文单词',trigger:'blur'},{pattern:/^[A-Za-z](?:(?:[A-Za-z '\-])|(?:\.[A-Za-z]))*\.?$/,message:'支持字母、空格、撇号、连字符及缩写中的句点',trigger:'blur'}],
   cn_meaning:[{required:true,message:'请输入中文释义',trigger:'blur'}],
 }
 watch(() => [props.modelValue, props.word] as const, () => {

@@ -81,14 +81,14 @@ describe('PracticeWorksheet', () => {
 
   it('applies the selected worksheet font size to screen and print content', () => {
     const w = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn', fontSize: 'large' } })
-    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-font-size: 17pt')
-    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-word-font-size: 21pt')
-  })
-
-  it('uses the retuned medium preset (slightly larger, tuned for ~20 words/page)', () => {
-    const w = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn', fontSize: 'medium' } })
     expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-font-size: 15pt')
     expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-word-font-size: 19pt')
+  })
+
+  it('uses the compact medium preset', () => {
+    const w = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn', fontSize: 'medium' } })
+    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-font-size: 13pt')
+    expect(w.get('.worksheet').attributes('style')).toContain('--worksheet-word-font-size: 17pt')
   })
 
   it('labels the paper without exposing an internal session id', () => {
@@ -98,5 +98,13 @@ describe('PracticeWorksheet', () => {
     expect(w.text()).not.toContain('看中文写英文')
     expect(w.text()).not.toContain('会话')
     expect(w.text()).not.toContain('#1')
+  })
+
+  it('uses the session title in the answer and repeating print header', () => {
+    const titled = { ...session, title: '周一重点词' }
+    const w = mount(PracticeWorksheet, { props: { session: titled, answer: true, mode: 'cn-to-en' } })
+    expect(w.get('h2').text()).toBe('周一重点词')
+    expect(w.get('.repeat-print-header').text()).toContain('周一重点词')
+    expect(w.find('.weekday-deer-icon').exists()).toBe(true)
   })
 })

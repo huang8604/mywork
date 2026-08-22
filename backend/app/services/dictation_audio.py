@@ -8,7 +8,7 @@ import tempfile
 import threading
 from pathlib import Path
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.core.errors import AppError
 from app.services import tts as tts_service
 from app.services.words import audio_dir
@@ -43,7 +43,10 @@ def generate_chinese_audio(
     cleaned = text.strip()
     if not cleaned:
         raise AppError(422, "VALIDATION_ERROR", "中文默写内容不能为空")
-    settings = settings or get_settings()
+    if settings is None:
+        from app.services.system_settings import audio_runtime_settings
+
+        settings = audio_runtime_settings()
     with _lock:
         existing = chinese_audio_file(cleaned, settings)
         if existing:

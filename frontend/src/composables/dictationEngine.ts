@@ -43,6 +43,7 @@ export interface DictationEngine {
   start(): void
   replay(): void
   skip(): void
+  previousAndPlay(): void
   nextAndPlay(): void
   pause(): void
   stop(): void
@@ -186,6 +187,14 @@ export function createDictationEngine(opts: DictationEngineOptions): DictationEn
       if (phase !== 'running') return
       clearAll()
       leaveCurrent('skipped')
+    },
+    previousAndPlay() {
+      if (phase !== 'running' || index <= 0) return
+      clearAll()
+      index -= 1
+      // 回看不撤销已听/跳过计数，也不重复记当前词的进度；只把它作为
+      // 当前播放位置重新念一遍，下一次「下一个」仍按正常顺序前进。
+      speakCurrent()
     },
     nextAndPlay() {
       if (phase !== 'running') return

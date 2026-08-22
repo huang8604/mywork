@@ -9,7 +9,7 @@ const emit = defineEmits<{ select: [sessionId: number]; back: [] }>()
 
 const settings = ref<DictationSettings>({
   intervalSec: 6,
-  autoAdvance: true,
+  autoAdvance: false,
   language: 'en',
   rate: 1.0,
   repeat: 2,
@@ -30,6 +30,9 @@ watch(() => props.session?.session_id, () => {
   player.stop()
   draft.value = ''
 })
+// 页面打开时只预热前两题的网络缓存，不触发播放；真正的第一题仍由
+// “开始默写”的点击手势启动，避免浏览器自动播放拦截并减少第一题卡顿。
+watch(() => [props.session?.session_id, settings.value.language], () => player.preload(), { immediate: true })
 // 换词：清空草稿（草稿不判对错、不提交）。
 watch(() => player.index.value, () => { draft.value = '' })
 // 引擎跑完：记一个结束时刻用于算用时。
@@ -138,9 +141,10 @@ const speakingHint = computed(() => {
       <div class="runner-controls">
         <el-button v-if="!player.paused.value" size="large" type="warning" plain @click="player.pause()">暂停</el-button>
         <el-button v-else size="large" type="success" plain @click="player.resume()">继续</el-button>
+        <el-button size="large" :disabled="player.index.value <= 0" @click="player.previousAndPlay()">上一个并播放</el-button>
         <el-button size="large" @click="player.replay()">重播</el-button>
         <el-button size="large" @click="player.skip()">跳过</el-button>
-        <el-button class="primary-action" type="primary" size="large" @click="player.nextAndPlay()">下一个并播放</el-button>
+        <el-button class="primary-action" type="primary" size="large" @click="player.nextAndPlay()">{{ player.index.value >= player.total.value - 1 ? '完成默写' : '下一个并播放' }}</el-button>
       </div>
       <div class="runner-meta">
         <span>已听 {{ player.counts.value.played }} · 跳过 {{ player.counts.value.skipped }}</span>

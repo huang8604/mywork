@@ -44,7 +44,7 @@ from app.services.idempotency import claim, complete
 from app.services.import_worker import enqueue_import, import_progress, run_import_row
 from app.services.number_audio import NUMBER_MAX, missing_numbers
 from app.services.serializers import word_data
-from app.services.system_settings import audio_provider_catalog, resolve_audio_provider
+from app.services.system_settings import audio_provider_catalog, audio_runtime_settings, resolve_audio_provider
 from app.services.words import (
     SORTS,
     batch_add_tags,
@@ -696,7 +696,7 @@ def batch_audio(
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ):
     """Enqueue selected words for background MP3 generation (fire-and-forget)."""
-    settings = get_settings()
+    settings = audio_runtime_settings(db)
     if not (settings.tts_enabled or settings.volc_enabled):
         raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
     idem = claim(

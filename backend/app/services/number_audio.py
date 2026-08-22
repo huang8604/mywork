@@ -13,7 +13,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from app.core.config import Settings, get_settings
+from app.core.config import Settings
 from app.core.errors import AppError
 from app.services import tts as tts_service
 from app.services.words import audio_dir
@@ -75,7 +75,10 @@ def generate_number_audio(
         raise AppError(400, "VALIDATION_ERROR", f"序号必须在 {NUMBER_MIN}..{NUMBER_MAX} 之间")
     if language not in {"en", "zh"}:
         raise AppError(422, "VALIDATION_ERROR", "不支持的语音语言")
-    settings = settings or get_settings()
+    if settings is None:
+        from app.services.system_settings import audio_runtime_settings
+
+        settings = audio_runtime_settings()
     existing = number_audio_file(n, settings, language=language)
     if existing and not force:
         return existing

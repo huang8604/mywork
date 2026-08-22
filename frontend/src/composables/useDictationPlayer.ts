@@ -25,7 +25,9 @@ export interface DictationPlayer {
   start(settings: DictationSettings): void
   replay(): void
   skip(): void
+  previousAndPlay(): void
   nextAndPlay(): void
+  preload(): void
   pause(): void
   resume(): void
   stop(): void
@@ -74,6 +76,28 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
   // 部分 Android 上会被自动播放策略静默拦截 → 自动到下一词没声音。
   const sharedAudio: HTMLAudioElement | null = hasAudio ? new Audio() : null
   if (sharedAudio) sharedAudio.preload = 'auto'
+  const preloadedAudio = new Map<string, HTMLAudioElement>()
+
+  function preloadUrl(url: string | undefined) {
+    if (!hasAudio || !url || preloadedAudio.has(url)) return
+    try {
+      const audio = new Audio()
+      audio.preload = 'auto'
+      audio.src = url
+      audio.load()
+      preloadedAudio.set(url, audio)
+    } catch { /* 预加载失败不影响点击开始时的正常播放/兜底 */ }
+  }
+
+  function preload() {
+    if (!hasAudio) return
+    const urls = opts.audioUrls?.() ?? []
+    urls.slice(0, 2).forEach(preloadUrl)
+    if (opts.numberAudioUrl) {
+      preloadUrl(opts.numberAudioUrl(1))
+      preloadUrl(opts.numberAudioUrl(2))
+    }
+  }
 
   function loadVoices() {
     if (!hasSpeech) return
@@ -240,7 +264,7 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
   const engine = createDictationEngine({
     texts: opts.texts,
     settings: () => ({
-      autoAdvance: current.value?.autoAdvance ?? true,
+      autoAdvance: current.value?.autoAdvance ?? false,
       intervalSec: current.value?.intervalSec ?? 6,
       repeat: current.value?.repeat ?? 1,
     }),
@@ -256,6 +280,7 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
     current.value = { ...settings }
     paused.value = false
     voiceWarning.value = null
+    preload()
     // 若音色尚未异步加载完成，这里 voices 为空 → pickVoice 返回 null → 用 lang 兜底，不阻塞。
     const [, exact] = pickVoice(voices.value, settings.language)
     voiceWarning.value = (!exact && voices.value.length)
@@ -281,6 +306,10 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
 
   onScopeDispose(() => {
     try { if (sharedAudio) { sharedAudio.pause(); sharedAudio.removeAttribute('src') } } catch { /* 忽略 */ }
+    for (const audio of preloadedAudio.values()) {
+      try { audio.pause(); audio.removeAttribute('src') } catch { /* 忽略 */ }
+    }
+    preloadedAudio.clear()
     try { engine.dispose() } catch { /* 忽略 */ }
   })
 
@@ -289,7 +318,9 @@ export function useDictationPlayer(opts: { texts: () => string[]; audioUrls?: ()
     start,
     replay: () => { paused.value = false; announcedWordIndex = -1; return engine.replay() },
     skip: () => { paused.value = false; return engine.skip() },
+    previousAndPlay: () => { paused.value = false; return engine.previousAndPlay() },
     nextAndPlay: () => { paused.value = false; return engine.nextAndPlay() },
+    preload,
     pause: () => { engine.pause(); paused.value = true },
     resume: () => { paused.value = false; announcedWordIndex = -1; engine.replay() },
     stop: () => { paused.value = false; engine.stop() },

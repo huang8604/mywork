@@ -2,22 +2,23 @@ import { describe, expect, it } from 'vitest'
 import { worksheetTheme } from '@/utils/worksheetTheme'
 
 describe('worksheetTheme', () => {
-  it('maps Monday (2026-07-20) to the red palette', () => {
+  it('maps Monday (2026-07-20) to the vivid red palette', () => {
     const t = worksheetTheme('2026-07-20T00:00:00Z')
     expect(t.weekdayName).toBe('周一')
-    expect(t.primary).toBe('#a85a5a')
-    expect(t.accent).toBe('#c2a370')
+    expect(t.primary).toBe('#e11d48')
+    expect(t.accent).toBe('#fbbf24')
+    expect(t.icon).toBe('mon')
   })
 
-  it('maps Saturday (2026-07-25) to the dusty-blue palette', () => {
+  it('maps Saturday (2026-07-25) to the vivid blue palette', () => {
     const t = worksheetTheme('2026-07-25T00:00:00Z')
     expect(t.weekdayName).toBe('周六')
-    expect(t.primary).toBe('#5e7691')
+    expect(t.primary).toBe('#2563eb')
   })
 
-  it('maps Sunday (2026-07-26) to the mauve palette', () => {
+  it('maps Sunday (2026-07-26) to the vivid purple palette', () => {
     expect(worksheetTheme('2026-07-26T00:00:00Z').weekdayName).toBe('周日')
-    expect(worksheetTheme('2026-07-26T00:00:00Z').primary).toBe('#856b94')
+    expect(worksheetTheme('2026-07-26T00:00:00Z').primary).toBe('#7c3aed')
   })
 
   it('cycles through all seven distinct primaries over a week', () => {

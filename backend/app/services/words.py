@@ -152,6 +152,16 @@ def update_word(db: Session, word_id: int, payload: WordUpdate) -> Word:
     )
     if duplicate is not None:
         raise _duplicate_error(duplicate)
+    spelling_changed = word.normalized_en_word != normalized
+    if spelling_changed and word.audio_path:
+        # A cached clip is keyed by the spelling. Never let an edit of a word
+        # silently keep the old pronunciation (notably for short tokens such as
+        # "on" and "like"). The next request regenerates it with the new token.
+        word.audio_path = None
+        word.audio_format = None
+        word.audio_voice = None
+        word.audio_generated_at = None
+        word.audio_bytes = None
     word.en_word = display
     word.normalized_en_word = normalized
     word.phonetic = payload.phonetic
@@ -231,6 +241,12 @@ def reimport_word(db: Session, word_id: int, payload: WordCreate) -> Word:
     if word is None:
         raise not_found("word")
     display, normalized = normalize_word(payload.en_word)
+    if word.normalized_en_word != normalized:
+        word.audio_path = None
+        word.audio_format = None
+        word.audio_voice = None
+        word.audio_generated_at = None
+        word.audio_bytes = None
     word.en_word = display
     word.normalized_en_word = normalized
     word.phonetic = payload.phonetic
@@ -259,9 +275,12 @@ def audio_dir(settings: Settings | None = None) -> Path:
     return Path("data/audio").resolve()
 
 
-def _audio_filename(word: Word, settings: Settings) -> str:
+def _audio_filename(word: Word, settings: Settings, provider: str | None = None) -> str:
+    selected_provider = provider or settings.tts_provider
+    model = settings.volc_model if selected_provider == "volc" else settings.tts_model
+    voice = settings.volc_voice if selected_provider == "volc" else settings.tts_voice
     digest = hashlib.sha256(
-        f"{word.en_word}|{settings.tts_model}|{settings.tts_voice}".encode("utf-8")
+        f"isolated-token-v2|{word.en_word}|{selected_provider}|{model}|{voice}".encode("utf-8")
     ).hexdigest()[:12]
     return f"word-{word.id}-{digest}.mp3"
 
@@ -283,18 +302,24 @@ def generate_word_audio(
 ) -> Word:
     from app.services.system_settings import resolve_audio_provider
 
+    from app.services.system_settings import audio_runtime_settings
+
     word = get_word(db, word_id, include_deleted=False)
-    if word.audio_path and not force and word_audio_file(word):
-        return word
-    settings = get_settings()
+    settings = audio_runtime_settings(db)
     provider = resolve_audio_provider(db, provider)
+    expected_filename = _audio_filename(word, settings, provider)
+    if word.audio_path and not force and (
+        word.audio_path.startswith("dictionary/")
+        or (word.audio_path == expected_filename and word_audio_file(word, settings))
+    ):
+        return word
     audio, voice = tts_service.synthesize_word_mp3(
         word.en_word, provider=provider, settings=settings
     )
     root = audio_dir(settings)
     try:
         root.mkdir(parents=True, exist_ok=True)
-        filename = _audio_filename(word, settings)
+        filename = _audio_filename(word, settings, provider)
         final = root / filename
         fd, tmp_name = tempfile.mkstemp(prefix=f".{filename}.", suffix=".tmp", dir=root)
         try:
@@ -342,7 +367,9 @@ def enqueue_missing_word_audio(
     from app.services.audio_worker import enqueue_audio_generation
     from app.services.system_settings import resolve_audio_provider
 
-    settings = get_settings()
+    from app.services.system_settings import audio_runtime_settings
+
+    settings = audio_runtime_settings(db)
     if not (settings.tts_enabled or settings.volc_enabled):
         raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
     provider = resolve_audio_provider(db, provider)

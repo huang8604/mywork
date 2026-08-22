@@ -1,6 +1,6 @@
 """Recitation handout: render a practice session as a 单词背诵表 handout.
 
-Two outputs, both driven by the same Morandi weekday theme (keyed off the
+Two outputs, both driven by the same vivid weekday theme (keyed off the
 session ``generated_at``):
 
 * ``build_recitation_md`` — a 4-column markdown table (单词 | 音标 | 中文 | 例句)
@@ -22,16 +22,16 @@ from typing import Iterable, Protocol
 
 from app.models import PracticeSessionItem
 
-_ACCENT = "#c2a370"
-# isoweekday (1=Mon … 7=Sun) -> (primary, deep, weekday name)
-_MORANDI: dict[int, tuple[str, str, str]] = {
-    1: ("#a85a5a", "#874a4a", "周一"),
-    2: ("#a9744f", "#855c3d", "周二"),
-    3: ("#9c8a4e", "#7c6d3b", "周三"),
-    4: ("#6f8a66", "#556d4f", "周四"),
-    5: ("#5e8787", "#476a6a", "周五"),
-    6: ("#5e7691", "#475d74", "周六"),
-    7: ("#856b94", "#685276", "周日"),
+_ACCENT = "#fbbf24"
+# isoweekday (1=Mon … 7=Sun) -> (primary, deep, weekday name, deer mark)
+_VIVID: dict[int, tuple[str, str, str, str]] = {
+    1: ("#e11d48", "#9f1239", "周一", "🦌✦"),
+    2: ("#ea580c", "#9a3412", "周二", "🦌◆"),
+    3: ("#ca8a04", "#854d0e", "周三", "🦌●"),
+    4: ("#16a34a", "#166534", "周四", "🦌♥"),
+    5: ("#0891b2", "#155e75", "周五", "🦌≈"),
+    6: ("#2563eb", "#1e3a8a", "周六", "🦌✚"),
+    7: ("#7c3aed", "#5b21b6", "周日", "🦌☀"),
 }
 
 
@@ -49,9 +49,9 @@ def _weekday(generated_at: str | None) -> int:
         return _dt.datetime.now().isoweekday()
 
 
-def _theme(generated_at: str | None) -> tuple[str, str, str, str]:
-    primary, deep, name = _MORANDI.get(_weekday(generated_at), _MORANDI[1])
-    return primary, deep, _ACCENT, name
+def _theme(generated_at: str | None) -> tuple[str, str, str, str, str]:
+    primary, deep, name, icon = _VIVID.get(_weekday(generated_at), _VIVID[1])
+    return primary, deep, _ACCENT, name, icon
 
 
 def _date_text(generated_at: str | None) -> str:
@@ -79,13 +79,13 @@ def _format_phonetic(p: str | None) -> str:
 
 
 def build_recitation_md(session: _SessionLike, items: Iterable[PracticeSessionItem]) -> str:
-    _primary, _deep, _accent, weekday = _theme(getattr(session, "generated_at", None))
+    _primary, _deep, _accent, weekday, icon = _theme(getattr(session, "generated_at", None))
     date_text = _date_text(getattr(session, "generated_at", None))
     title = (getattr(session, "title", None) or "单词背诵表").strip()
     lines = [
         f"# 📚 {title}",
         "",
-        f"> 日期：{date_text} {weekday}",
+        f"> 日期：{date_text} {weekday} {icon}",
         "",
         "| 序号 | 单词 | 音标 | 中文 | 例句 |",
         "| :---: | :--- | :--- | :--- | :--- |",
@@ -100,7 +100,7 @@ def build_recitation_md(session: _SessionLike, items: Iterable[PracticeSessionIt
 
 
 def _pdf_html(session: _SessionLike, items: list[PracticeSessionItem]) -> str:
-    primary, deep, accent, weekday = _theme(getattr(session, "generated_at", None))
+    primary, deep, accent, weekday, icon = _theme(getattr(session, "generated_at", None))
     date_text = _date_text(getattr(session, "generated_at", None))
     title = html.escape((getattr(session, "title", None) or "单词背诵表").strip())
     rows: list[str] = []
@@ -130,6 +130,7 @@ body {{ margin:0; color:#1f2d3d; font-family: "Noto Sans CJK SC","Noto Sans SC",
   border-radius:2.5mm; box-shadow:0 1.5mm 4mm rgba(0,0,0,.12); }}
 .date-card .label {{ display:block; margin-bottom:.6mm; color:#66758a; font-size:7pt; font-weight:700; letter-spacing:1.4px; }}
 .date-card .value {{ font-size:10.5pt; font-weight:800; white-space:nowrap; }}
+.date-card .icon {{ display:block; margin-top:1mm; font-size:14pt; }}
 .content {{ padding:4mm 0 0; }}
 table {{ width:100%; table-layout:fixed; border-spacing:0; border-collapse:separate;
   border:.35mm solid #dce5f0; border-radius:2.2mm; overflow:hidden; background:#fff; }}
@@ -156,7 +157,7 @@ tbody tr:nth-child(even) td {{ background:#f6f9fd; }}
     <h1>{title}</h1>
     <div class="subtitle">{date_text} · {weekday} · 共 {total} 词</div>
   </div>
-  <div class="date-card"><span class="label">DATE / 日期</span><span class="value">{date_text}</span></div>
+  <div class="date-card"><span class="label">DATE / 日期</span><span class="value">{date_text}</span><span class="icon">{icon}</span></div>
 </header>
 <section class="content">
 <table>

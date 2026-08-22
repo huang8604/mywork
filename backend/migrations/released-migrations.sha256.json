@@ -5,5 +5,6 @@
   "0004_word_audio.py": "9368bac4503094a5b1e7f53eee06f534f244c9cf4b6c6d2361685fc085301d0a",
   "0005_practice_session_statuses.py": "c943d944139f5a675031fbddc05abe6d959d734fa9c261e683650ec2865fb2f4",
   "0006_system_issue_notes.py": "b2e34b12564f8940a432a1dca8718174c05dfe6705d4076ce63a318de368bac7",
-  "0007_system_audio_settings.py": "96593e010db91677dc709c12db6f3619ba919104826145dc0e200ebf1f8c53d8"
+  "0007_system_audio_settings.py": "96593e010db91677dc709c12db6f3619ba919104826145dc0e200ebf1f8c53d8",
+  "0008_audio_provider_overrides.py": "a3e09c513799f21a1c1164e3b41d57096f7d34fd4d93a4cc331afc37613d0e8f"
 }

@@ -17,16 +17,20 @@ class StrictModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-_ENGLISH_WORD = re.compile(r"^[A-Za-z][A-Za-z '\-]*$")
+_ENGLISH_WORD = re.compile(r"^[A-Za-z](?:(?:[A-Za-z '\-])|(?:\.[A-Za-z]))*\.?$")
 NonEmpty200 = Annotated[
     str,
-    Field(min_length=1, max_length=200, pattern=r"^\s*[A-Za-z][A-Za-z '\-]*\s*$"),
+    Field(
+        min_length=1,
+        max_length=200,
+        pattern=r"^\s*[A-Za-z](?:(?:[A-Za-z '\-])|(?:\.[A-Za-z]))*\.?\s*$",
+    ),
 ]
 
 
 def _validate_english_word(value: str) -> str:
     if not _ENGLISH_WORD.fullmatch(value.strip()):
-        raise ValueError("must use English letters, spaces, apostrophes or hyphens")
+        raise ValueError("must use English letters, spaces, apostrophes, hyphens or abbreviation periods")
     return value
 
 
@@ -125,9 +129,25 @@ class DictionaryAudioStartRequest(StrictModel):
     provider: AudioProvider | None = None
 
 
+class AudioProviderSettingsUpdate(StrictModel):
+    base_url: str | None = Field(default=None, max_length=500)
+    api_key: str | None = Field(default=None, max_length=1000)
+    model: str | None = Field(default=None, max_length=200)
+    voice: str | None = Field(default=None, max_length=200)
+
+    @field_validator("base_url", "api_key", "model", "voice")
+    @classmethod
+    def trim_values(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
+
+
 class SystemAudioSettingsUpdate(StrictModel):
     default_provider: AudioProvider
     expected_version: int = Field(gt=0)
+    mimo: AudioProviderSettingsUpdate | None = None
+    volc: AudioProviderSettingsUpdate | None = None
 
 
 class NumberAudioGenerateRequest(StrictModel):

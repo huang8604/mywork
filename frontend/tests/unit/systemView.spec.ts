@@ -24,16 +24,16 @@ vi.mock('@/api/system', () => ({
     default: 'volc', current: 'volc', default_provider: 'volc', version: 2,
     updated_at: '2026-08-10T00:00:00Z', updated_by: 'admin',
     providers: [
-      { id: 'mimo', label: 'mimo', enabled: true, model: 'mimo-v2.5-tts', voice: 'Chloe' },
-      { id: 'volc', label: '豆包 seed-tts-2.0', enabled: true, model: 'doubao-seed-tts-2.0', voice: 'Tina' },
+      { id: 'mimo', label: 'mimo', enabled: true, base_url: 'https://mimo.example/v1', api_key_configured: true, api_key_masked: 'mi****mo', model: 'mimo-v2.5-tts', voice: 'Chloe' },
+      { id: 'volc', label: '豆包 seed-tts-2.0', enabled: true, base_url: 'https://volc.example', api_key_configured: true, api_key_masked: 'vo****lc', model: 'doubao-seed-tts-2.0', voice: 'Tina' },
     ],
   }),
   saveAudioSettings: vi.fn().mockResolvedValue({
     default: 'volc', current: 'volc', default_provider: 'volc', version: 3,
     updated_at: '2026-08-10T01:00:00Z', updated_by: 'admin',
     providers: [
-      { id: 'mimo', label: 'mimo', enabled: true, model: 'mimo-v2.5-tts', voice: 'Chloe' },
-      { id: 'volc', label: '豆包 seed-tts-2.0', enabled: true, model: 'doubao-seed-tts-2.0', voice: 'Tina' },
+      { id: 'mimo', label: 'mimo', enabled: true, base_url: 'https://mimo.example/v1', api_key_configured: true, api_key_masked: 'mi****mo', model: 'mimo-v2.5-tts', voice: 'Chloe' },
+      { id: 'volc', label: '豆包 seed-tts-2.0', enabled: true, base_url: 'https://volc.example', api_key_configured: true, api_key_masked: 'vo****lc', model: 'doubao-seed-tts-2.0', voice: 'Tina' },
     ],
   }),
   getDictionaryAudioProgress: vi.fn().mockResolvedValue({
@@ -109,6 +109,6 @@ describe('SystemView', () => {
     const saveDefault = wrapper.find('[data-testid="save-audio-settings"]')
     await saveDefault.trigger('click')
     await flushPromises()
-    expect(saveAudioSettings).toHaveBeenCalledWith('volc', 2)
+    expect(saveAudioSettings).toHaveBeenCalledWith('volc', 2, expect.objectContaining({ mimo: expect.any(Object), volc: expect.any(Object) }))
   })
 })

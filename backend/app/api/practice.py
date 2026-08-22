@@ -111,7 +111,7 @@ def generate(
 def list_sessions(
     request: Request,
     db: Annotated[Session, Depends(get_db)],
-    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+    actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
     page: Annotated[int, Query(ge=1)] = 1,
     size: Annotated[int, Query(ge=1, le=100)] = 20,
     status: SessionStatus | None = None,
@@ -160,11 +160,27 @@ def list_sessions(
     )
 
 
-def _session(db: Session, session_id: int) -> PracticeSession:
+def _session(db: Session, session_id: int, actor: Actor | None = None) -> PracticeSession:
     session = db.get(PracticeSession, session_id)
     if session is None:
         raise not_found("practice session")
+    # Reading a worksheet is part of the learner's review surface. Personal
+    # isolation applies to review logs/statistics, while worksheet generation,
+    # item editing, archive and delete remain protected by practice:write.
     return session
+
+
+def _round(db: Session, round_id: int, actor: Actor) -> PracticeReviewRound:
+    round_ = db.get(PracticeReviewRound, round_id)
+    if round_ is None:
+        raise not_found("practice review round")
+    _session(db, round_.session_id, actor)
+    if actor.role == "student" and (
+        round_.created_by_actor_type != actor.actor_type
+        or round_.created_by_actor_id != actor.actor_id
+    ):
+        raise AppError(403, "FORBIDDEN", "只能查看和提交自己的复习轮次")
+    return round_
 
 
 @router.get("/practice-sessions/{session_id}")
@@ -172,9 +188,9 @@ def get_session(
     request: Request,
     session_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+    actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
 ):
-    return envelope(request, session_data(db, _session(db, session_id), include_items=True))
+    return envelope(request, session_data(db, _session(db, session_id, actor), include_items=True))
 
 
 @router.get("/practice-sessions/{session_id}/items/{item_id}/audio")
@@ -182,10 +198,10 @@ def get_session_item_audio(
     session_id: int,
     item_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+    actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
     language: Annotated[str, Query(pattern="^(en|zh)$")] = "en",
 ):
-    _session(db, session_id)
+    _session(db, session_id, actor)
     item = db.scalar(
         select(PracticeSessionItem).where(
             PracticeSessionItem.session_id == session_id,
@@ -398,12 +414,12 @@ def recitation(
     request: Request,
     session_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+    actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
     format: str = "pdf",
 ):
     # Export a session as the 单词背诵表 handout: markdown (the canonical
     # template) or PDF rendered from a themed HTML template via weasyprint.
-    session = _session(db, session_id)
+    session = _session(db, session_id, actor)
     if format not in {"pdf", "md"}:
         raise AppError(422, "VALIDATION_ERROR", "format 必须是 pdf 或 md")
     items = list(
@@ -451,7 +467,7 @@ def create_round(
     )
     if idem and idem.replayed:
         return _idem_response(request, idem)
-    session = _session(db, session_id)
+    session = _session(db, session_id, actor)
     if session.status == "archived":
         raise AppError(409, "INVALID_STATE", "复习表已归档")
     item_count = db.scalar(
@@ -498,11 +514,9 @@ def get_round(
     request: Request,
     round_id: int,
     db: Annotated[Session, Depends(get_db)],
-    _actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
+    actor: Annotated[Actor, Depends(require_scopes("practice:read"))],
 ):
-    round_ = db.get(PracticeReviewRound, round_id)
-    if round_ is None:
-        raise not_found("practice review round")
+    round_ = _round(db, round_id, actor)
     return envelope(request, round_data(db, round_))
 
 
@@ -527,6 +541,7 @@ def put_result(
     )
     if idem and idem.replayed:
         return _idem_response(request, idem)
+    round_ = _round(db, round_id, actor)
     log, stats, created = put_round_result(db, round_id, item_id, payload, actor)
     data = review_data(log, stats)
     status_code = 201 if created else 200
@@ -556,6 +571,7 @@ def put_results(
 ):
     if len(payload.items) > get_settings().max_batch_results:
         raise AppError(422, "VALIDATION_ERROR", "批量回录数量超过上限")
+    round_ = _round(db, round_id, actor)
     idem = claim(
         db,
         actor=actor,
@@ -568,7 +584,6 @@ def put_results(
     if idem and idem.replayed:
         return _idem_response(request, idem)
     results = batch_round_results(db, round_id, payload.items, actor)
-    round_ = db.get(PracticeReviewRound, round_id)
     data = {
         "round": round_data(db, round_),
         "items": [

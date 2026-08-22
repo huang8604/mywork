@@ -12,12 +12,13 @@ from app.core.errors import AppError
 log = logging.getLogger(__name__)
 
 # mimo (chat/completions style) takes a style prompt; seed-tts speaks raw text only.
-# Prompt asks for British English, clear + forceful, with a tiny pause before/after —
-# the "pause" is best-effort (models honor it loosely).
+# Keep the assistant message as the exact token. In particular, short words such as
+# "on" and "like" must not be interpreted as conversational instructions or filler.
 PROMPT = (
-    "Pronounce this English word in a clear, confident British English accent. "
-    "Pause briefly before speaking, articulate the word with force and clarity, "
-    "then pause briefly at the end."
+    "Speak exactly the English token in the assistant message, and nothing else. "
+    "Treat it as one isolated vocabulary word or abbreviation, not as a phrase, "
+    "instruction, conversational filler, or request. Use a clear, confident British "
+    "English accent; articulate every letter and do not add context."
 )
 CHINESE_PROMPT = (
     "请用清晰、自然、适合课堂听写的普通话朗读下面的中文内容。"
@@ -252,6 +253,14 @@ _CHINESE_PROVIDERS = {"mimo": _synthesize_mimo_chinese, "volc": _synthesize_volc
 _PROVIDER_LABELS = {"mimo": "mimo", "volc": "豆包 seed-tts-2.0"}
 
 
+def _mask_secret(value: str) -> str:
+    if not value:
+        return ""
+    if len(value) <= 4:
+        return "*" * len(value)
+    return f"{value[:2]}{'*' * max(4, len(value) - 4)}{value[-2:]}"
+
+
 def audio_providers_info(
     settings: Settings | None = None, *, default_provider: str | None = None
 ) -> dict[str, object]:
@@ -260,11 +269,15 @@ def audio_providers_info(
     providers = []
     for pid in ("mimo", "volc"):
         enabled = settings.provider_enabled(pid)
+        api_key = settings.tts_api_key if pid == "mimo" else settings.volc_api_key
         providers.append(
             {
                 "id": pid,
                 "label": _PROVIDER_LABELS[pid],
                 "enabled": enabled,
+                "base_url": settings.tts_base_url if pid == "mimo" else settings.volc_base_url,
+                "api_key_configured": bool(api_key),
+                "api_key_masked": _mask_secret(api_key),
                 "voice": settings.tts_voice if pid == "mimo" else settings.volc_voice,
                 "model": settings.tts_model if pid == "mimo" else settings.volc_model,
             }
@@ -298,6 +311,9 @@ def synthesize_word_mp3(
     remote call fails, falls back to the other configured provider. Raises
     ``TTS_NOT_CONFIGURED`` (409) if neither is configured, else the last provider error.
     """
+    text = text.strip()
+    if not text:
+        raise AppError(422, "VALIDATION_ERROR", "语音内容不能为空")
     if language not in {"en", "zh"}:
         raise AppError(422, "VALIDATION_ERROR", "不支持的语音语言")
     settings = settings or get_settings()
@@ -308,6 +324,7 @@ def synthesize_word_mp3(
             last_exc = AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
             continue
         try:
+            log.debug("tts synthesize provider=%s language=%s token=%r", current, language, text)
             audio = providers[current](text, settings)
         except AppError as exc:
             if exc.code in {"TTS_PROVIDER_ERROR", "TTS_NOT_CONFIGURED"}:

@@ -29,7 +29,6 @@ from typing import Callable
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.errors import AppError
 from app.models import Word
@@ -294,7 +293,9 @@ class _ImportWorker:
             ]
         if not created_ids:
             return
-        settings = get_settings()
+        from app.services.system_settings import audio_runtime_settings
+
+        settings = audio_runtime_settings()
         if not (
             settings.tts_auto_generate_on_import
             and (settings.tts_enabled or settings.volc_enabled)

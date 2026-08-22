@@ -15,7 +15,7 @@ const password = ref('')
 const loading = ref(false)
 
 function defaultPath(role: WebRole | null) {
-  return role === 'student' ? '/review' : '/dashboard'
+  return '/dashboard'
 }
 
 async function submit() {

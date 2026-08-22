@@ -15,7 +15,7 @@ export interface NavMeta {
 }
 
 function defaultPath(role: WebRole | null): string {
-  return role === 'student' ? '/review' : '/dashboard'
+  return '/dashboard'
 }
 
 export const routes: RouteRecordRaw[] = [
@@ -29,7 +29,7 @@ export const routes: RouteRecordRaw[] = [
   {
     path: '/', component: AppShell,
     children: [
-      { path: 'dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { label: '概览', shortLabel: '概览', icon: '⌂', nav: true, title: '今日概览', roles: ['admin'] } },
+      { path: 'dashboard', name: 'dashboard', component: () => import('@/views/DashboardView.vue'), meta: { label: '概览', shortLabel: '概览', icon: '⌂', nav: true, title: '今日概览', roles: ['admin', 'student'] } },
       { path: 'words', name: 'words', component: () => import('@/views/WordsView.vue'), meta: { label: '单词库', shortLabel: '词库', icon: 'Aa', nav: true, title: '单词库', roles: ['admin'] } },
       { path: 'review', name: 'review', component: () => import('@/views/ReviewView.vue'), meta: { label: '在线复习', shortLabel: '复习', icon: '◫', nav: true, title: '在线复习', roles: ['admin', 'student'] } },
       { path: 'daily/generate', name: 'daily-generate', component: () => import('@/views/DailyGenerateView.vue'), meta: { label: '复习表', shortLabel: '复习表', icon: '▤', nav: true, title: '复习表', roles: ['admin'] } },
@@ -56,6 +56,7 @@ router.beforeEach(async (to) => {
   }
   const allowedRoles = to.meta.roles as WebRole[] | undefined
   if (!auth.role || (allowedRoles && !allowedRoles.includes(auth.role))) {
+    if (auth.role) return { path: defaultPath(auth.role), replace: true }
     return {
       path: '/login',
       query: to.fullPath && to.fullPath !== '/' ? { redirect: to.fullPath } : undefined,

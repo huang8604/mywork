@@ -127,6 +127,10 @@ def save_audio_settings(
         default_provider=payload.default_provider,
         expected_version=payload.expected_version,
         actor_id=actor.actor_id,
+        provider_configs={
+            "mimo": payload.mimo.model_dump(exclude_unset=True) if payload.mimo else None,
+            "volc": payload.volc.model_dump(exclude_unset=True) if payload.volc else None,
+        },
     )
     add_audit(
         db,
@@ -137,7 +141,14 @@ def save_audio_settings(
         http_status=200,
         target_type="system_audio_settings",
         target_id="1",
-        metadata={"default_provider": payload.default_provider},
+        metadata={
+            "default_provider": payload.default_provider,
+            "configured_providers": [
+                provider
+                for provider, config in (("mimo", payload.mimo), ("volc", payload.volc))
+                if config is not None
+            ],
+        },
     )
     db.commit()
     db.refresh(setting)

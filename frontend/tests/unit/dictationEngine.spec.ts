@@ -136,6 +136,23 @@ describe('dictationEngine — 手动控制立即取消旧语音与定时器', ()
     expect(eng.getState().counts).toEqual({ played: 0, skipped: 0 })
   })
 
+  it('previousAndPlay：回播上一词但不回滚已听/跳过计数，首题不可回退', () => {
+    const m = mockPlay()
+    const eng = createDictationEngine({
+      texts: () => ['a', 'b', 'c'],
+      settings: () => ({ autoAdvance: false, intervalSec: 5, repeat: 1 }),
+      play: m.play, gapMs: 500, fallbackMs: 1e9,
+    })
+    eng.start()
+    eng.nextAndPlay()
+    eng.previousAndPlay()
+    expect(m.calls).toEqual(['a', 'b', 'a'])
+    expect(eng.getState().index).toBe(0)
+    expect(eng.getState().counts).toEqual({ played: 1, skipped: 0 })
+    eng.previousAndPlay()
+    expect(m.calls).toEqual(['a', 'b', 'a'])
+  })
+
   it('nextAndPlay 取消挂起的间隔定时器，不会产生幽灵推进或重复计数', () => {
     const m = mockPlay()
     const eng = createDictationEngine({

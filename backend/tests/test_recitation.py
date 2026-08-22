@@ -52,12 +52,13 @@ def test_md_uses_session_title_when_present():
     assert "# 📚 我的单词表" in md
 
 
-def test_theme_returns_morandi_color_per_weekday():
-    primary, deep, accent, name = _theme("2026-07-20T00:00:00Z")  # Monday
-    assert primary == "#a85a5a"
-    assert deep == "#874a4a"
-    assert accent == "#c2a370"
+def test_theme_returns_vivid_color_and_deer_mark_per_weekday():
+    primary, deep, accent, name, icon = _theme("2026-07-20T00:00:00Z")  # Monday
+    assert primary == "#e11d48"
+    assert deep == "#9f1239"
+    assert accent == "#fbbf24"
     assert name == "周一"
+    assert icon.startswith("🦌")
 
 
 def test_pdf_html_has_themed_hero_and_split_columns():

@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import AsyncState from '@/components/AsyncState.vue'
-import { getContributions, getStatsSummary } from '@/api/stats'
+import { getContributions, getOwnContributions, getOwnStatsSummary, getStatsSummary } from '@/api/stats'
 import { listSessions } from '@/api/practiceSessions'
 import { listWords } from '@/api/words'
 import { useAsyncState } from '@/composables/useAsyncState'
 import type { ContributionDay, ContributionsSummary, PracticeSession, StatsSummary } from '@/types/domain'
+import { useAuthStore } from '@/stores/auth'
 
 const state = useAsyncState<{ stats: StatsSummary; contributions: ContributionsSummary; wordCount: number; sessions: PracticeSession[] }>()
+const auth = useAuthStore()
+const isAdmin = computed(() => auth.role === 'admin')
 const now = ref(new Date())
 const activeDay = ref<ContributionDay | null>(null)
 const dateText = () => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' }).format(now.value)
@@ -41,8 +44,12 @@ const contributionTitle = (day: ContributionDay) => `${day.date}：复习 ${day.
 const prettyDay = (day: ContributionDay) => new Intl.DateTimeFormat('zh-CN', { month: 'long', day: 'numeric', weekday: 'short', timeZone: 'UTC' }).format(new Date(`${day.date}T00:00:00Z`))
 async function load() {
   const loaded = await state.run(async signal => {
-    const [stats, contributions, words, sessions] = await Promise.all([getStatsSummary(signal), getContributions(signal), listWords({ page: 1, size: 1 }, signal), listSessions(1, 4, signal)])
-    return { stats, contributions, wordCount: Number(words.meta.total || 0), sessions: sessions.data }
+    if (isAdmin.value) {
+      const [stats, contributions, words, sessions] = await Promise.all([getStatsSummary(signal), getContributions(signal), listWords({ page: 1, size: 1 }, signal), listSessions(1, 4, signal)])
+      return { stats, contributions, wordCount: Number(words.meta.total || 0), sessions: sessions.data }
+    }
+    const [stats, contributions] = await Promise.all([getOwnStatsSummary(signal), getOwnContributions(signal)])
+    return { stats, contributions, wordCount: stats.reviewed_words, sessions: [] }
   }).catch(() => undefined)
   if (loaded) activeDay.value = [...loaded.contributions.days].reverse().find(day => day.count > 0) ?? loaded.contributions.days.at(-1) ?? null
 }
@@ -51,7 +58,7 @@ onMounted(load)
 
 <template>
   <section class="page">
-    <div class="page-heading"><div><p class="eyebrow">{{ dateText() }}</p><h2>欢迎回来，今天也拾起几个词。</h2></div><el-button type="primary" size="large" @click="$router.push('/daily/generate')">生成今日复习表</el-button></div>
+    <div class="page-heading"><div><p class="eyebrow">{{ dateText() }}</p><h2>{{ isAdmin ? '欢迎回来，今天也拾起几个词。' : '这是你的学习概览。' }}</h2></div><el-button v-if="isAdmin" type="primary" size="large" @click="$router.push('/daily/generate')">生成今日复习表</el-button></div>
     <AsyncState :phase="state.phase.value" :error="state.error.value" @retry="load">
       <template v-if="state.data.value">
         <article class="panel contribution-panel">
@@ -78,14 +85,14 @@ onMounted(load)
           </div>
         </article>
         <div class="stats-grid">
-          <article class="stat-card primary"><small>累计单词</small><strong>{{ state.data.value.wordCount }}</strong><span>词库持续生长中</span></article>
+          <article class="stat-card primary"><small>{{ isAdmin ? '累计单词' : '已复习单词' }}</small><strong>{{ state.data.value.wordCount }}</strong><span>{{ isAdmin ? '词库持续生长中' : '只统计你的复习记录' }}</span></article>
           <article class="stat-card"><small>总复习次数</small><strong>{{ state.data.value.stats.total_attempts }}</strong><span>跳过 {{ state.data.value.stats.skipped_count }} 次</span></article>
           <article class="stat-card"><small>有效正确率</small><strong>{{ state.data.value.stats.accuracy === null ? '—' : Math.round(state.data.value.stats.accuracy * 100) + '%' }}</strong><span>认识 {{ state.data.value.stats.known_count }} 次</span></article>
           <article class="stat-card"><small>今日到期</small><strong>{{ state.data.value.stats.due_words }}</strong><span>建议优先复习</span></article>
         </div>
         <div class="dashboard-grid">
-          <article class="panel"><div class="section-title"><div><p class="eyebrow">QUICK START</p><h2>开始一次复习</h2></div></div><p class="muted">在线复习适合临时练习；平时建议生成复习表，在线下完成后回来回录结果。</p><div class="button-row"><el-button type="primary" @click="$router.push('/review')">在线卡片复习</el-button><el-button @click="$router.push('/words')">管理词库</el-button></div></article>
-          <article class="panel"><div class="section-title"><div><p class="eyebrow">RECENT SHEETS</p><h2>最近复习表</h2></div><el-button link @click="$router.push('/daily/generate')">查看全部</el-button></div><ul v-if="state.data.value.sessions.length" class="session-list"><li v-for="session in state.data.value.sessions" :key="session.session_id"><RouterLink :to="`/daily/sessions/${session.session_id}`"><span>#{{ session.session_id }} · {{ new Date(session.generated_at).toLocaleDateString('zh-CN') }}</span><span v-if="session.created_by_actor_type === 'api_client'" class="source-pill">外部 Skill</span><small>{{ Object.values(session.actual_counts).reduce((a, b) => a + b, 0) }} 词</small></RouterLink></li></ul><p v-else class="muted">还没有复习表。</p></article>
+          <article class="panel"><div class="section-title"><div><p class="eyebrow">QUICK START</p><h2>开始一次复习</h2></div></div><p class="muted">{{ isAdmin ? '在线复习适合临时练习；平时建议生成复习表，在线下完成后回来回录结果。' : '进入在线复习，使用分配给你的进行中复习表。' }}</p><div class="button-row"><el-button type="primary" @click="$router.push('/review')">在线卡片复习</el-button><el-button v-if="isAdmin" @click="$router.push('/words')">管理词库</el-button></div></article>
+          <article v-if="isAdmin" class="panel"><div class="section-title"><div><p class="eyebrow">RECENT SHEETS</p><h2>最近复习表</h2></div><el-button link @click="$router.push('/daily/generate')">查看全部</el-button></div><ul v-if="state.data.value.sessions.length" class="session-list"><li v-for="session in state.data.value.sessions" :key="session.session_id"><RouterLink :to="`/daily/sessions/${session.session_id}`"><span>#{{ session.session_id }} · {{ new Date(session.generated_at).toLocaleDateString('zh-CN') }}</span><span v-if="session.created_by_actor_type === 'api_client'" class="source-pill">外部 Skill</span><small>{{ Object.values(session.actual_counts).reduce((a, b) => a + b, 0) }} 词</small></RouterLink></li></ul><p v-else class="muted">还没有复习表。</p></article>
         </div>
       </template>
     </AsyncState>

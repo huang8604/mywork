@@ -19,7 +19,6 @@ from typing import Any
 
 from sqlalchemy import select
 
-from app.core.config import get_settings
 from app.core.database import SessionLocal
 from app.core.errors import AppError
 from app.models import Word
@@ -289,7 +288,9 @@ class _DictionaryAudioWorker:
             self._condition.notify_all()
 
     def start(self, provider: str | None = None) -> dict[str, Any]:
-        settings = get_settings()
+        from app.services.system_settings import audio_runtime_settings
+
+        settings = audio_runtime_settings()
         chosen = provider or settings.tts_provider
         if not settings.provider_enabled(chosen):
             raise AppError(409, "TTS_NOT_CONFIGURED", "所选 TTS 服务尚未配置")
@@ -316,7 +317,9 @@ class _DictionaryAudioWorker:
 
     def resume(self) -> dict[str, Any]:
         state = _store.state()
-        provider = state.get("provider") or get_settings().tts_provider
+        from app.services.system_settings import audio_runtime_settings
+
+        provider = state.get("provider") or audio_runtime_settings().tts_provider
         return self.start(provider)
 
     def _loop(self) -> None:
@@ -346,7 +349,9 @@ class _DictionaryAudioWorker:
             self._thread.join(timeout=1)
 
     def _run_pass(self) -> None:
-        settings = get_settings()
+        from app.services.system_settings import audio_runtime_settings
+
+        settings = audio_runtime_settings()
         words = dictionary_words()
         cached = _store.valid_cached_words(words)
         _store.update_state(total=len(words), generated=len(cached), failed=0)

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from dataclasses import replace
+from typing import Any
+
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -59,7 +62,7 @@ def update_issue_note(
 def audio_provider_catalog(db: Session) -> dict[str, object]:
     setting = db.get(SystemAudioSetting, 1)
     preferred = setting.default_provider if setting is not None else None
-    return audio_providers_info(default_provider=preferred)
+    return audio_providers_info(audio_runtime_settings(db), default_provider=preferred)
 
 
 def resolve_audio_provider(db: Session, requested: str | None = None) -> str:
@@ -80,12 +83,73 @@ def audio_settings_data(db: Session) -> dict[str, object]:
     }
 
 
-def update_audio_settings(
-    db: Session, *, default_provider: str, expected_version: int, actor_id: str | None
-) -> SystemAudioSetting:
+def audio_runtime_settings(db: Session | None = None):
+    """Return environment settings with the persisted provider overrides applied.
+
+    Background workers call this without a request session, so the short-lived
+    database session is deliberately opened lazily here. Secrets never leave this
+    function except through the internal TTS call; the API uses
+    ``audio_providers_info`` which only returns masked metadata.
+    """
     settings = get_settings()
-    if not settings.provider_enabled(default_provider):
-        raise AppError(409, "TTS_NOT_CONFIGURED", "所选 TTS 服务尚未配置")
+    owned_session = False
+    if db is None:
+        from app.core.database import SessionLocal
+
+        db = SessionLocal()
+        owned_session = True
+    try:
+        setting = db.get(SystemAudioSetting, 1)
+        if setting is None:
+            return settings
+        values: dict[str, Any] = {
+            "tts_provider": setting.default_provider or settings.tts_provider,
+            "tts_base_url": setting.mimo_base_url or settings.tts_base_url,
+            "tts_api_key": setting.mimo_api_key or settings.tts_api_key,
+            "tts_model": setting.mimo_model or settings.tts_model,
+            "tts_voice": setting.mimo_voice or settings.tts_voice,
+            "volc_base_url": setting.volc_base_url or settings.volc_base_url,
+            "volc_api_key": setting.volc_api_key or settings.volc_api_key,
+            "volc_model": setting.volc_model or settings.volc_model,
+            "volc_voice": setting.volc_voice or settings.volc_voice,
+        }
+        return replace(settings, **values)
+    finally:
+        if owned_session:
+            db.close()
+
+
+def _provider_override_values(
+    payload: dict[str, object] | None,
+) -> dict[str, str | None]:
+    if not payload:
+        return {}
+    result: dict[str, str | None] = {}
+    for key in ("base_url", "api_key", "model", "voice"):
+        if key not in payload:
+            continue
+        value = payload[key]
+        if value is None:
+            continue
+        cleaned = str(value).strip()
+        if key == "base_url":
+            cleaned = cleaned.rstrip("/")
+        # An empty key means "keep the existing secret". This lets the UI
+        # submit normal non-secret fields without accidentally clearing a key.
+        if key == "api_key" and not cleaned:
+            continue
+        result[key] = cleaned or None
+    return result
+
+
+def update_audio_settings(
+    db: Session,
+    *,
+    default_provider: str,
+    expected_version: int,
+    actor_id: str | None,
+    provider_configs: dict[str, dict[str, object] | None] | None = None,
+) -> SystemAudioSetting:
     setting = db.get(SystemAudioSetting, 1)
     if setting is None:
         if expected_version != 1:
@@ -105,5 +169,11 @@ def update_audio_settings(
         setting.version += 1
         setting.updated_at = utc_now_text()
         setting.updated_by = actor_id
+    for provider in ("mimo", "volc"):
+        values = _provider_override_values((provider_configs or {}).get(provider))
+        for field, value in values.items():
+            setattr(setting, f"{provider}_{field}", value)
     db.flush()
+    if not audio_runtime_settings(db).provider_enabled(default_provider):
+        raise AppError(409, "TTS_NOT_CONFIGURED", "所选 TTS 服务尚未配置")
     return setting

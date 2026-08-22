@@ -13,8 +13,23 @@ export async function getAudioSettings() {
   return unwrap((await apiClient.get<ApiEnvelope<SystemAudioSettings>>('/system/audio-settings')).data)
 }
 
-export async function saveAudioSettings(defaultProvider: AudioProvider, expectedVersion: number) {
-  return unwrap((await apiClient.put<ApiEnvelope<SystemAudioSettings>>('/system/audio-settings', { default_provider: defaultProvider, expected_version: expectedVersion })).data)
+export interface AudioProviderSettingsPayload {
+  base_url: string
+  api_key: string
+  model: string
+  voice: string
+}
+
+export async function saveAudioSettings(
+  defaultProvider: AudioProvider,
+  expectedVersion: number,
+  providers: Partial<Record<AudioProvider, AudioProviderSettingsPayload>> = {},
+) {
+  return unwrap((await apiClient.put<ApiEnvelope<SystemAudioSettings>>('/system/audio-settings', {
+    default_provider: defaultProvider,
+    expected_version: expectedVersion,
+    ...providers,
+  })).data)
 }
 
 export async function getDictionaryAudioProgress() {
