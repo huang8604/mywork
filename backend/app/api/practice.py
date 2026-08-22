@@ -541,7 +541,7 @@ def put_result(
     )
     if idem and idem.replayed:
         return _idem_response(request, idem)
-    round_ = _round(db, round_id, actor)
+    _round(db, round_id, actor)
     log, stats, created = put_round_result(db, round_id, item_id, payload, actor)
     data = review_data(log, stats)
     status_code = 201 if created else 200
