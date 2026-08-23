@@ -9,6 +9,7 @@ poll_seconds=10
 skip_push=0
 requested_sha=""
 push_args=()
+push_arg_count=0
 
 usage() {
   cat <<'EOF'
@@ -88,6 +89,7 @@ while (($# > 0)); do
     --)
       shift
       push_args=("$@")
+      push_arg_count=$#
       break
       ;;
     *)
@@ -113,7 +115,11 @@ sha="$(git rev-parse --verify "${sha_source}^{commit}" 2>/dev/null)" \
 
 if ((skip_push == 0)); then
   printf 'Pushing commit %s...\n' "$sha"
-  git push "${push_args[@]}" || die "git push failed" 1
+  if ((push_arg_count > 0)); then
+    git push "${push_args[@]}" || die "git push failed" 1
+  else
+    git push || die "git push failed" 1
+  fi
 else
   printf 'Skipping push; monitoring commit %s.\n' "$sha"
 fi

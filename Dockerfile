@@ -25,7 +25,7 @@ RUN npm run build
 # --- stage 2: backend + SPA host -------------------------------------------------------
 # python:3.12-slim (Debian trixie-slim). Multi-arch index digest works on
 # amd64 and arm64.
-FROM python:3.12-slim@sha256:57cd7c3a7a273101a6485ba99423ee568157882804b1124b4dd04266317710de AS backend-runner
+FROM python:3.12-slim@sha256:2c941e860699f878900b0edc2403613c234d4b32eda3cc9fa7036991a2a63c4a AS backend-runner
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -41,6 +41,7 @@ WORKDIR /app
 # hadolint ignore=DL3008
 # Acquire::Retries survives transient registry/proxy hiccups (e.g. 502s).
 RUN apt-get update \
+    && apt-get upgrade -y -o Acquire::Retries=5 \
     && apt-get install -y --no-install-recommends -o Acquire::Retries=5 \
         fonts-noto-cjk \
         libpango-1.0-0 \
