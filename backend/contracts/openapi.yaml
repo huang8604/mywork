@@ -110,6 +110,61 @@
         "title": "ApiClientUpdateRequest",
         "type": "object"
       },
+      "AudioProviderSettingsUpdate": {
+        "additionalProperties": false,
+        "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Base Url"
+          },
+          "model": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Model"
+          },
+          "voice": {
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Voice"
+          }
+        },
+        "title": "AudioProviderSettingsUpdate",
+        "type": "object"
+      },
       "BatchAudioRequest": {
         "additionalProperties": false,
         "properties": {
@@ -869,6 +924,26 @@
             "exclusiveMinimum": 0.0,
             "title": "Expected Version",
             "type": "integer"
+          },
+          "mimo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioProviderSettingsUpdate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "volc": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioProviderSettingsUpdate"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "required": [
@@ -1316,7 +1391,7 @@
           "en_word": {
             "maxLength": 200,
             "minLength": 1,
-            "pattern": "^\\s*[A-Za-z][A-Za-z '\\-]*\\s*$",
+            "pattern": "^\\s*[A-Za-z](?:(?:[A-Za-z '\\-])|(?:\\.[A-Za-z]))*\\.?\\s*$",
             "title": "En Word",
             "type": "string"
           },
@@ -1376,7 +1451,7 @@
             "items": {
               "maxLength": 200,
               "minLength": 1,
-              "pattern": "^\\s*[A-Za-z][A-Za-z '\\-]*\\s*$",
+              "pattern": "^\\s*[A-Za-z](?:(?:[A-Za-z '\\-])|(?:\\.[A-Za-z]))*\\.?\\s*$",
               "type": "string"
             },
             "maxItems": 200,
@@ -1403,7 +1478,7 @@
           "en_word": {
             "maxLength": 200,
             "minLength": 1,
-            "pattern": "^\\s*[A-Za-z][A-Za-z '\\-]*\\s*$",
+            "pattern": "^\\s*[A-Za-z](?:(?:[A-Za-z '\\-])|(?:\\.[A-Za-z]))*\\.?\\s*$",
             "title": "En Word",
             "type": "string"
           },
@@ -3493,6 +3568,100 @@
         "x-required-scopes": [
           "reviews:read"
         ]
+      }
+    },
+    "/api/v1/stats/my-contributions": {
+      "get": {
+        "description": "Personal activity heatmap, filtered by the authenticated actor.",
+        "operationId": "own_stats_contributions_api_v1_stats_my_contributions_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "days",
+            "required": false,
+            "schema": {
+              "default": 365,
+              "maximum": 366,
+              "minimum": 1,
+              "title": "Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Own Stats Contributions",
+        "tags": [
+          "reviews"
+        ],
+        "x-required-scopes": []
+      }
+    },
+    "/api/v1/stats/my-summary": {
+      "get": {
+        "description": "Personal dashboard totals; never reads the global WordStats aggregate.",
+        "operationId": "own_stats_summary_api_v1_stats_my_summary_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Own Stats Summary",
+        "tags": [
+          "reviews"
+        ],
+        "x-required-scopes": []
       }
     },
     "/api/v1/stats/summary": {

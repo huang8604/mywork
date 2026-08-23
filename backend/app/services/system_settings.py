@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import logging
 from typing import Any
 
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import Session
 
 from app.core.config import get_settings
@@ -10,6 +12,8 @@ from app.core.errors import AppError
 from app.models import SystemAudioSetting, SystemIssueNote
 from app.models.entities import utc_now_text
 from app.services.tts import audio_providers_info
+
+log = logging.getLogger(__name__)
 
 
 def issue_note_data(note: SystemIssueNote) -> dict[str, object]:
@@ -99,7 +103,18 @@ def audio_runtime_settings(db: Session | None = None):
         db = SessionLocal()
         owned_session = True
     try:
-        setting = db.get(SystemAudioSetting, 1)
+        try:
+            setting = db.get(SystemAudioSetting, 1)
+        except OperationalError as exc:
+            # Direct/background helpers can run before the application database
+            # has been migrated (notably isolated unit tests and migration-time
+            # startup checks).  Only the missing-settings-table case is safe to
+            # treat as "no persisted overrides"; every other database failure
+            # must still surface.
+            if not owned_session or "no such table: system_audio_settings" not in str(exc):
+                raise
+            log.info("system_audio_settings table unavailable; using environment settings")
+            return settings
         if setting is None:
             return settings
         values: dict[str, Any] = {

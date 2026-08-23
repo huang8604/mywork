@@ -56,9 +56,14 @@ def _theme(generated_at: str | None) -> tuple[str, str, str, str, str]:
 
 def _date_text(generated_at: str | None) -> str:
     if not generated_at:
-        return _dt.datetime.now().strftime("%Y年%m月%d日")
+        value = _dt.datetime.now()
+        return f"{value.year:04d}年{value.month:02d}月{value.day:02d}日"
     try:
-        return _dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00")).strftime("%Y年%m月%d日")
+        value = _dt.datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
+        # Python 3.13 on macOS can return an empty string when ``strftime``
+        # combines directives with non-ASCII literals. Formatting each numeric
+        # component directly is portable across the local and CI runtimes.
+        return f"{value.year:04d}年{value.month:02d}月{value.day:02d}日"
     except ValueError:
         return generated_at[:10]
 
