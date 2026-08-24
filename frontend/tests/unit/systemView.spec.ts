@@ -22,6 +22,8 @@ vi.mock('@/api/system', () => ({
   saveIssueNote: vi.fn(),
   getAudioSettings: vi.fn().mockResolvedValue({
     default: 'volc', current: 'volc', default_provider: 'volc', version: 2,
+    auto_generate_on_import: false,
+    volc_tuning: { resource_id: 'seed-tts-2.0', speech_rate: -20, loudness_rate: 30, silence_ms: 800 },
     updated_at: '2026-08-10T00:00:00Z', updated_by: 'admin',
     providers: [
       { id: 'mimo', label: 'mimo', enabled: true, base_url: 'https://mimo.example/v1', api_key_configured: true, api_key_masked: 'mi****mo', model: 'mimo-v2.5-tts', voice: 'Chloe' },
@@ -30,6 +32,8 @@ vi.mock('@/api/system', () => ({
   }),
   saveAudioSettings: vi.fn().mockResolvedValue({
     default: 'volc', current: 'volc', default_provider: 'volc', version: 3,
+    auto_generate_on_import: false,
+    volc_tuning: { resource_id: 'seed-tts-2.0', speech_rate: -20, loudness_rate: 30, silence_ms: 800 },
     updated_at: '2026-08-10T01:00:00Z', updated_by: 'admin',
     providers: [
       { id: 'mimo', label: 'mimo', enabled: true, base_url: 'https://mimo.example/v1', api_key_configured: true, api_key_masked: 'mi****mo', model: 'mimo-v2.5-tts', voice: 'Chloe' },
@@ -92,6 +96,8 @@ describe('SystemView', () => {
     expect(text).toContain('问题与需求记录')
     expect(text).toContain('默认音频模型')
     expect(text).toContain('本次词库生成模型')
+    expect(text).toContain('导入单词时自动生成语音')
+    expect(text).toContain('恢复环境变量默认值')
     expect(text).toContain('已生成 25 / 100')
     expect(text).toContain('mimo · mimo-v2.5-tts · Chloe')
     expect(text).toContain('豆包 seed-tts-2.0 · doubao-seed-tts-2.0 · Tina')
@@ -109,6 +115,9 @@ describe('SystemView', () => {
     const saveDefault = wrapper.find('[data-testid="save-audio-settings"]')
     await saveDefault.trigger('click')
     await flushPromises()
-    expect(saveAudioSettings).toHaveBeenCalledWith('volc', 2, expect.objectContaining({ mimo: expect.any(Object), volc: expect.any(Object) }))
+    expect(saveAudioSettings).toHaveBeenCalledWith('volc', 2, expect.objectContaining({
+      mimo: expect.any(Object),
+      volc: expect.objectContaining({ resource_id: 'seed-tts-2.0', speech_rate: -20, loudness_rate: 30, silence_ms: 800 }),
+    }), false)
   })
 })

@@ -108,8 +108,11 @@ export interface AudioProviderInfo {
 export interface AudioProvidersInfo {
   default: AudioProvider; current: AudioProvider; providers: AudioProviderInfo[]
 }
+export interface VolcTuning { resource_id: string; speech_rate: number; loudness_rate: number; silence_ms: number }
 export interface SystemAudioSettings extends AudioProvidersInfo {
   default_provider: AudioProvider
+  auto_generate_on_import: boolean
+  volc_tuning: VolcTuning
   version: number
   updated_at: string | null
   updated_by: string | null

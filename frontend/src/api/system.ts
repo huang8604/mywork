@@ -18,16 +18,22 @@ export interface AudioProviderSettingsPayload {
   api_key: string
   model: string
   voice: string
+  resource_id?: string | null
+  speech_rate?: number | null
+  loudness_rate?: number | null
+  silence_ms?: number | null
 }
 
 export async function saveAudioSettings(
   defaultProvider: AudioProvider,
   expectedVersion: number,
   providers: Partial<Record<AudioProvider, AudioProviderSettingsPayload>> = {},
+  autoGenerateOnImport?: boolean,
 ) {
   return unwrap((await apiClient.put<ApiEnvelope<SystemAudioSettings>>('/system/audio-settings', {
     default_provider: defaultProvider,
     expected_version: expectedVersion,
+    auto_generate_on_import: autoGenerateOnImport ?? null,
     ...providers,
   })).data)
 }
