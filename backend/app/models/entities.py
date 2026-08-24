@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from sqlalchemy import (
+    Boolean,
     CheckConstraint,
     ForeignKey,
     Index,
@@ -232,6 +233,13 @@ class SystemAudioSetting(Base):
     volc_api_key: Mapped[str | None] = mapped_column(String(1000))
     volc_model: Mapped[str | None] = mapped_column(String(200))
     volc_voice: Mapped[str | None] = mapped_column(String(200))
+    # Runtime tuning managed alongside the provider overrides.  Null keeps the
+    # corresponding environment/default behaviour.
+    auto_generate_on_import: Mapped[bool | None] = mapped_column(Boolean)
+    volc_resource_id: Mapped[str | None] = mapped_column(String(64))
+    volc_speech_rate: Mapped[int | None] = mapped_column(Integer)
+    volc_loudness_rate: Mapped[int | None] = mapped_column(Integer)
+    volc_silence_ms: Mapped[int | None] = mapped_column(Integer)
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False, default=utc_now_text)
     updated_by: Mapped[str | None] = mapped_column(String(128))
