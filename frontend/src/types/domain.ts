@@ -57,6 +57,8 @@ export interface ContributionDay {
 export interface ContributionsSummary {
   from: string; to: string; timezone: string; total: number; days: ContributionDay[]
 }
+export interface RecentErrorWord { word_id: number; en_word: string; phonetic: string | null; cn_meaning: string; reviewed_at: string }
+export interface RecentErrorWords { items: RecentErrorWord[] }
 
 export interface TodayReviewItem {
   review_id: number; round_id: number; session_id: number; session_title: string | null

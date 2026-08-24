@@ -15,6 +15,7 @@ async function installApi(page: Page) {
     if (path === '/api/v1/auth/me' && method === 'GET') return route.fulfill({ json: envelope({ username: 'admin', role: 'admin' }) })
     if (path === '/api/v1/stats/summary') return route.fulfill({ json: envelope(stats) })
     if (path === '/api/v1/stats/contributions') return route.fulfill({ json: envelope(contributions) })
+    if (path === '/api/v1/stats/my-recent-errors') return route.fulfill({ json: envelope({ items: [{ word_id: 1, en_word: 'serendipity', phonetic: '/ˌserənˈdɪpəti/', cn_meaning: '意外发现美好事物的能力', reviewed_at: '2026-07-20T02:00:00Z' }] }) })
     if (path === '/api/v1/practice-sessions' && method === 'GET') return route.fulfill({ json: envelope(sessions, { page: 1, size: 3, total: 3 }) })
     const sessionDetail = path.match(/^\/api\/v1\/practice-sessions\/(\d+)$/)
     if (sessionDetail && method === 'GET') return route.fulfill({ json: envelope(sessions.find(item => item.session_id === Number(sessionDetail[1])) || session) })
@@ -56,6 +57,7 @@ test.beforeEach(async ({ page }) => installApi(page))
 
 test('responsive dashboard and deep links never overflow the page', async ({ page }) => {
   await page.goto('/dashboard'); await expect(page.getByRole('heading', { name: '今日概览' })).toBeVisible()
+  await expect(page.locator('.recent-errors .re-word').first()).toHaveText('serendipity')
   const overflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth)
   expect(overflow).toBe(false)
   if (page.viewportSize()!.width < 640) {
