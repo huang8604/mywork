@@ -3691,6 +3691,44 @@
         "x-required-scopes": []
       }
     },
+    "/api/v1/stats/my-recent-errors": {
+      "get": {
+        "description": "Latest distinct wrongly-recalled words for the dashboard; admin sees everyone's.",
+        "operationId": "own_recent_error_words_api_v1_stats_my_recent_errors_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "AUTH_REQUIRED"
+          },
+          "403": {
+            "description": "FORBIDDEN_SCOPE"
+          }
+        },
+        "security": [
+          {
+            "BearerAuth": []
+          },
+          {
+            "TrustedProxyUser": []
+          }
+        ],
+        "summary": "Own Recent Error Words",
+        "tags": [
+          "reviews"
+        ],
+        "x-required-scopes": [
+          "practice:read",
+          "reviews:write"
+        ]
+      }
+    },
     "/api/v1/stats/my-summary": {
       "get": {
         "description": "Personal dashboard totals; never reads the global WordStats aggregate.",

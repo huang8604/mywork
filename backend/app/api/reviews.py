@@ -19,6 +19,7 @@ from app.models import (
     PracticeSession,
     PracticeSessionItem,
     ReviewLog,
+    Word,
     WordStats,
 )
 from app.schemas import ReviewCorrection, ReviewCreate, TodayReviewResponse
@@ -396,6 +397,43 @@ def own_stats_contributions(
             "days": contribution_days,
         },
     )
+
+
+@router.get("/stats/my-recent-errors")
+def own_recent_error_words(
+    request: Request,
+    db: Annotated[Session, Depends(get_db)],
+    actor: Annotated[Actor, Depends(require_scopes("practice:read", "reviews:write"))],
+):
+    """Latest distinct wrongly-recalled words for the dashboard; admin sees everyone's."""
+    filters: list[object] = [ReviewLog.status == "unknown"]
+    if actor.role != "admin":
+        filters.extend(_own_review_filters(actor))
+    rows = db.execute(
+        select(ReviewLog, Word)
+        .join(Word, Word.id == ReviewLog.word_id)
+        .where(*filters)
+        .order_by(ReviewLog.reviewed_at.desc(), ReviewLog.id.desc())
+        .limit(200)
+    ).all()
+    items: list[dict[str, object]] = []
+    seen: set[int] = set()
+    for log, word in rows:
+        if log.word_id in seen:
+            continue
+        seen.add(log.word_id)
+        items.append(
+            {
+                "word_id": log.word_id,
+                "en_word": word.en_word,
+                "phonetic": word.phonetic,
+                "cn_meaning": word.cn_meaning,
+                "reviewed_at": log.reviewed_at,
+            }
+        )
+        if len(items) == 5:
+            break
+    return envelope(request, {"items": items})
 
 
 @router.get("/words/{word_id}/stats")
