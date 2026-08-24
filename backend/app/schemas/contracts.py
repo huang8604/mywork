@@ -134,8 +134,13 @@ class AudioProviderSettingsUpdate(StrictModel):
     api_key: str | None = Field(default=None, max_length=1000)
     model: str | None = Field(default=None, max_length=200)
     voice: str | None = Field(default=None, max_length=200)
+    # Volc-only tuning knobs; mimo ignores them.
+    resource_id: str | None = Field(default=None, max_length=64)
+    speech_rate: int | None = Field(default=None, ge=-50, le=100)
+    loudness_rate: int | None = Field(default=None, ge=0, le=100)
+    silence_ms: int | None = Field(default=None, ge=0, le=5000)
 
-    @field_validator("base_url", "api_key", "model", "voice")
+    @field_validator("base_url", "api_key", "model", "voice", "resource_id")
     @classmethod
     def trim_values(cls, value: str | None) -> str | None:
         if value is None:
@@ -148,6 +153,7 @@ class SystemAudioSettingsUpdate(StrictModel):
     expected_version: int = Field(gt=0)
     mimo: AudioProviderSettingsUpdate | None = None
     volc: AudioProviderSettingsUpdate | None = None
+    auto_generate_on_import: bool | None = None
 
 
 class NumberAudioGenerateRequest(StrictModel):

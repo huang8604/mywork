@@ -131,6 +131,7 @@ def save_audio_settings(
             "mimo": payload.mimo.model_dump(exclude_unset=True) if payload.mimo else None,
             "volc": payload.volc.model_dump(exclude_unset=True) if payload.volc else None,
         },
+        auto_generate_on_import=payload.auto_generate_on_import,
     )
     add_audit(
         db,

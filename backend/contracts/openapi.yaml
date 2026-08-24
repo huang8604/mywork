@@ -137,6 +137,19 @@
             ],
             "title": "Base Url"
           },
+          "loudness_rate": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Loudness Rate"
+          },
           "model": {
             "anyOf": [
               {
@@ -148,6 +161,44 @@
               }
             ],
             "title": "Model"
+          },
+          "resource_id": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Resource Id"
+          },
+          "silence_ms": {
+            "anyOf": [
+              {
+                "maximum": 5000.0,
+                "minimum": 0.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Silence Ms"
+          },
+          "speech_rate": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": -50.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Speech Rate"
           },
           "voice": {
             "anyOf": [
@@ -912,6 +963,17 @@
       "SystemAudioSettingsUpdate": {
         "additionalProperties": false,
         "properties": {
+          "auto_generate_on_import": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Auto Generate On Import"
+          },
           "default_provider": {
             "enum": [
               "mimo",

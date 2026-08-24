@@ -78,9 +78,17 @@ def resolve_audio_provider(db: Session, requested: str | None = None) -> str:
 def audio_settings_data(db: Session) -> dict[str, object]:
     setting = db.get(SystemAudioSetting, 1)
     catalog = audio_provider_catalog(db)
+    runtime = audio_runtime_settings(db)
     return {
         **catalog,
         "default_provider": catalog["current"],
+        "auto_generate_on_import": runtime.tts_auto_generate_on_import,
+        "volc_tuning": {
+            "resource_id": runtime.volc_resource_id,
+            "speech_rate": runtime.volc_speech_rate,
+            "loudness_rate": runtime.volc_loudness_rate,
+            "silence_ms": runtime.volc_silence_ms,
+        },
         "version": setting.version if setting is not None else 1,
         "updated_at": setting.updated_at if setting is not None else None,
         "updated_by": setting.updated_by if setting is not None else None,
@@ -127,6 +135,27 @@ def audio_runtime_settings(db: Session | None = None):
             "volc_api_key": setting.volc_api_key or settings.volc_api_key,
             "volc_model": setting.volc_model or settings.volc_model,
             "volc_voice": setting.volc_voice or settings.volc_voice,
+            "volc_resource_id": setting.volc_resource_id or settings.volc_resource_id,
+            "volc_speech_rate": (
+                setting.volc_speech_rate
+                if setting.volc_speech_rate is not None
+                else settings.volc_speech_rate
+            ),
+            "volc_loudness_rate": (
+                setting.volc_loudness_rate
+                if setting.volc_loudness_rate is not None
+                else settings.volc_loudness_rate
+            ),
+            "volc_silence_ms": (
+                setting.volc_silence_ms
+                if setting.volc_silence_ms is not None
+                else settings.volc_silence_ms
+            ),
+            "tts_auto_generate_on_import": (
+                setting.auto_generate_on_import
+                if setting.auto_generate_on_import is not None
+                else settings.tts_auto_generate_on_import
+            ),
         }
         return replace(settings, **values)
     finally:
@@ -157,6 +186,23 @@ def _provider_override_values(
     return result
 
 
+def _volc_tuning_values(payload: dict[str, object] | None) -> dict[str, object]:
+    """Cleanse the volc-only tuning knobs; explicit None clears the override."""
+    if not payload:
+        return {}
+    result: dict[str, object] = {}
+    for key in ("resource_id", "speech_rate", "loudness_rate", "silence_ms"):
+        if key not in payload:
+            continue
+        value = payload[key]
+        if key == "resource_id":
+            cleaned = str(value).strip() if value is not None else ""
+            result[key] = cleaned or None
+        else:
+            result[key] = value
+    return result
+
+
 def update_audio_settings(
     db: Session,
     *,
@@ -164,6 +210,7 @@ def update_audio_settings(
     expected_version: int,
     actor_id: str | None,
     provider_configs: dict[str, dict[str, object] | None] | None = None,
+    auto_generate_on_import: bool | None = None,
 ) -> SystemAudioSetting:
     setting = db.get(SystemAudioSetting, 1)
     if setting is None:
@@ -188,6 +235,10 @@ def update_audio_settings(
         values = _provider_override_values((provider_configs or {}).get(provider))
         for field, value in values.items():
             setattr(setting, f"{provider}_{field}", value)
+    if auto_generate_on_import is not None:
+        setting.auto_generate_on_import = auto_generate_on_import
+    for field, value in _volc_tuning_values((provider_configs or {}).get("volc")).items():
+        setattr(setting, f"volc_{field}", value)
     db.flush()
     if not audio_runtime_settings(db).provider_enabled(default_provider):
         raise AppError(409, "TTS_NOT_CONFIGURED", "所选 TTS 服务尚未配置")
