@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import { formatPhonetic } from '@/utils/formatPhonetic'
 import { worksheetTheme } from '@/utils/worksheetTheme'
 import WeekdayDeerIcon from '@/components/WeekdayDeerIcon.vue'
+import FawnIllustration from '@/components/FawnIllustration.vue'
 import type { PracticeItem, PracticeSession } from '@/types/domain'
 
 export type WorksheetMode = 'cn-to-en' | 'en-to-cn'
@@ -20,6 +21,8 @@ const worksheetStyle = computed<Record<string, string>>(() => ({
 }))
 const title = computed(() => props.session.title?.trim() || (props.answer ? '单词背诵表' : '单词默写练习'))
 const count = computed(() => props.session.items?.length ?? 0)
+// 页头中间空白区的横向定位：周一 22% → 周日 74%，中间均分（6 步 × 52%）。
+const fawnLeft = computed(() => `calc(${(22 + (theme.value.weekdayIndex - 1) * (52 / 6)).toFixed(2)}%)`)
 const dateText = computed(() => {
   const d = new Date(props.session.generated_at)
   if (Number.isNaN(d.getTime())) return ''
@@ -49,6 +52,7 @@ function example(item: PracticeItem): string {
 <template>
   <section class="worksheet" :style="worksheetStyle" :aria-label="title">
     <header class="ws-hero">
+      <FawnIllustration class="ws-fawn" :variant="theme.icon" :style="{ left: fawnLeft }" />
       <div class="ws-hero-title">
         <p class="ws-eyebrow">拾词 · WORD MEMORY</p>
         <h2>{{ title }}</h2>
@@ -78,7 +82,9 @@ function example(item: PracticeItem): string {
 </template>
 <style scoped>
 .worksheet{background:#fff;color:#17243a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.ws-hero{display:flex;align-items:center;justify-content:space-between;gap:12px 18px;min-height:64px;padding:12px 16px;color:#fff;background:var(--ws-deep);background:linear-gradient(120deg,var(--ws-deep),var(--ws-primary));border-bottom:7px solid var(--ws-accent);border-radius:10px 10px 0 0}
+.ws-hero{display:flex;align-items:center;justify-content:space-between;gap:12px 18px;min-height:64px;padding:12px 16px;color:#fff;background:var(--ws-deep);background:linear-gradient(120deg,var(--ws-deep),var(--ws-primary));border-bottom:7px solid var(--ws-accent);border-radius:10px 10px 0 0;position:relative}
+.ws-fawn{position:absolute;bottom:2px;width:84px;z-index:1;pointer-events:none;opacity:.96;filter:drop-shadow(0 2px 3px rgba(0,0,0,.18))}
+.ws-hero-title,.ws-date-card{position:relative;z-index:2}
 .ws-hero-title .ws-eyebrow{margin:0;color:#fff;opacity:.78;font-size:.62rem;font-weight:700;letter-spacing:.14em}
 .ws-hero-title h2{margin:2px 0;font:700 1.35rem Georgia,"Noto Serif SC",serif;color:#fff}
 .ws-hero-title .ws-subtitle{margin:0;color:#fff;opacity:.88;font-size:.76rem}
@@ -112,7 +118,7 @@ function example(item: PracticeItem): string {
 .worksheet-footer{display:flex;justify-content:space-between;gap:20px;padding:8px 4px 0;color:#62758a;font-size:.68rem}
 .write-line{display:inline-block;width:90px;height:1rem;border-bottom:1px solid #6c7d91}
 .score-line{letter-spacing:.06em}
-@media(max-width:760px){.ws-hero{padding:12px}.ws-date-card{display:none}.worksheet-table{display:none}.worksheet-mobile{display:grid}.worksheet-footer{display:none}}
+@media(max-width:760px){.ws-hero{padding:12px}.ws-fawn{width:60px;opacity:.85}.ws-date-card{display:none}.worksheet-table{display:none}.worksheet-mobile{display:grid}.worksheet-footer{display:none}}
 </style>
 <style scoped>
 .worksheet-mobile article{font-size:var(--worksheet-font-size)}

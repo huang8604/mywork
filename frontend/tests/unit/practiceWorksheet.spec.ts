@@ -107,4 +107,18 @@ describe('PracticeWorksheet', () => {
     expect(w.get('.repeat-print-header').text()).toContain('周一重点词')
     expect(w.find('.weekday-deer-icon').exists()).toBe(true)
   })
+
+  it('renders exactly one fawn whose header position slides with the weekday', () => {
+    const monday = mount(PracticeWorksheet, { props: { session, answer: false, mode: 'en-to-cn' } }) // 2026-07-20 周一
+    expect(monday.findAll('.ws-fawn')).toHaveLength(1)
+    expect(monday.get('.ws-fawn').attributes('style')).toContain('left: calc(22%)')
+    expect(monday.get('.ws-fawn').attributes('data-variant')).toBe('mon')
+
+    const thursday = mount(PracticeWorksheet, { props: { session: { ...session, generated_at: '2026-07-23T00:00:00Z' }, answer: false, mode: 'en-to-cn' } })
+    expect(thursday.get('.ws-fawn').attributes('style')).toContain('left: calc(48%)')
+
+    const sunday = mount(PracticeWorksheet, { props: { session: { ...session, generated_at: '2026-07-26T00:00:00Z' }, answer: false, mode: 'en-to-cn' } })
+    expect(sunday.get('.ws-fawn').attributes('style')).toContain('left: calc(74%)')
+    expect(sunday.get('.ws-fawn').attributes('data-variant')).toBe('sun')
+  })
 })

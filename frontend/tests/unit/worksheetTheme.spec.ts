@@ -8,6 +8,13 @@ describe('worksheetTheme', () => {
     expect(t.primary).toBe('#e11d48')
     expect(t.accent).toBe('#fbbf24')
     expect(t.icon).toBe('mon')
+    expect(t.weekdayIndex).toBe(1)
+  })
+
+  it('numbers the whole week Monday-first for the header fawn position', () => {
+    const days = ['2026-07-20', '2026-07-21', '2026-07-22', '2026-07-23', '2026-07-24', '2026-07-25', '2026-07-26']
+    const indexes = days.map(d => worksheetTheme(`${d}T00:00:00Z`).weekdayIndex)
+    expect(indexes).toEqual([1, 2, 3, 4, 5, 6, 7])
   })
 
   it('maps Saturday (2026-07-25) to the vivid blue palette', () => {

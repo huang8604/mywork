@@ -16,6 +16,7 @@
   .ws-date-card { min-width: 36mm !important; padding: 1.6mm 2.4mm !important; }
   .ws-date-card .ws-date-value { font-size: 9pt !important; color: var(--ws-deep) !important; }
   .ws-date-card .ws-date-label, .ws-date-card .ws-weekday { font-size: 7pt !important; }
+  .ws-fawn { width: 24mm !important; bottom: 1.2mm !important; break-inside: avoid; page-break-inside: avoid; }
   .worksheet-mobile { display: none !important; }
   .worksheet-table { display: table !important; width: 100% !important; table-layout: fixed; border-collapse: collapse; }
   .worksheet-table thead { display: table-header-group; }
