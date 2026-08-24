@@ -108,7 +108,10 @@ class WordEnrichRequest(StrictModel):
         return values
 
 
-AudioProvider = Literal["mimo", "volc"]
+# ``custom`` is the only provider exposed by the current UI.  The historical
+# values stay accepted for one release so already queued/API-triggered jobs can
+# drain while databases migrate to the single custom connection.
+AudioProvider = Literal["custom", "mimo", "volc"]
 
 
 class WordAudioGenerateRequest(StrictModel):
@@ -149,11 +152,25 @@ class AudioProviderSettingsUpdate(StrictModel):
 
 
 class SystemAudioSettingsUpdate(StrictModel):
-    default_provider: AudioProvider
     expected_version: int = Field(gt=0)
+    api_url: str | None = Field(default=None, max_length=500)
+    # Accept the former server-side name during rolling upgrades; the current
+    # UI and response contract use ``api_url``.
+    base_url: str | None = Field(default=None, max_length=500)
+    api_key: str | None = Field(default=None, max_length=1000)
+    # Legacy fields are accepted only for rolling upgrades.  They are not
+    # rendered or returned by the current settings flow.
+    default_provider: AudioProvider | None = None
     mimo: AudioProviderSettingsUpdate | None = None
     volc: AudioProviderSettingsUpdate | None = None
     auto_generate_on_import: bool | None = None
+
+    @field_validator("api_url", "base_url", "api_key")
+    @classmethod
+    def trim_custom_values(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip() or None
 
 
 class NumberAudioGenerateRequest(StrictModel):

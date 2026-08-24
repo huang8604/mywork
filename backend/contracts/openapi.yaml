@@ -223,6 +223,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "custom",
                   "mimo",
                   "volc"
                 ],
@@ -482,6 +483,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "custom",
                   "mimo",
                   "volc"
                 ],
@@ -553,6 +555,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "custom",
                   "mimo",
                   "volc"
                 ],
@@ -963,6 +966,30 @@
       "SystemAudioSettingsUpdate": {
         "additionalProperties": false,
         "properties": {
+          "api_key": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key"
+          },
+          "api_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Url"
+          },
           "auto_generate_on_import": {
             "anyOf": [
               {
@@ -974,13 +1001,33 @@
             ],
             "title": "Auto Generate On Import"
           },
-          "default_provider": {
-            "enum": [
-              "mimo",
-              "volc"
+          "base_url": {
+            "anyOf": [
+              {
+                "maxLength": 500,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "title": "Default Provider",
-            "type": "string"
+            "title": "Base Url"
+          },
+          "default_provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "custom",
+                  "mimo",
+                  "volc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default Provider"
           },
           "expected_version": {
             "exclusiveMinimum": 0.0,
@@ -1009,7 +1056,6 @@
           }
         },
         "required": [
-          "default_provider",
           "expected_version"
         ],
         "title": "SystemAudioSettingsUpdate",
@@ -1371,6 +1417,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "custom",
                   "mimo",
                   "volc"
                 ],
@@ -1398,6 +1445,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "custom",
                   "mimo",
                   "volc"
                 ],
@@ -1420,6 +1468,7 @@
             "anyOf": [
               {
                 "enum": [
+                  "custom",
                   "mimo",
                   "volc"
                 ],

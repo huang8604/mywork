@@ -179,8 +179,8 @@ class Settings:
             raise ValueError("VOLC_TTS_LOUDNESS_RATE must be between -50 and 100")
         if not (0 <= self.volc_silence_ms <= 30000):
             raise ValueError("VOLC_TTS_SILENCE_MS must be between 0 and 30000")
-        if self.tts_provider not in {"mimo", "volc"}:
-            raise ValueError("TTS_PROVIDER must be 'mimo' or 'volc'")
+        if self.tts_provider not in {"custom", "mimo", "volc"}:
+            raise ValueError("TTS_PROVIDER must be 'custom', 'mimo' or 'volc'")
         if min(
             self.dictionary_audio_retry_seconds,
             self.dictionary_audio_scan_seconds,
@@ -239,7 +239,9 @@ class Settings:
         return bool(self.volc_base_url and self.volc_api_key)
 
     def provider_enabled(self, provider: str) -> bool:
-        return self.tts_enabled if provider == "mimo" else self.volc_enabled
+        if provider in {"custom", "mimo"}:
+            return self.tts_enabled
+        return self.volc_enabled
 
 
 @lru_cache

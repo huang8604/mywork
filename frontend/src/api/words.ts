@@ -1,14 +1,14 @@
 import type { AxiosRequestConfig } from 'axios'
 import { apiClient, newEventId, unwrap } from './client'
-import type { ApiEnvelope, AudioBatchResult, AudioProgress, AudioProvidersInfo, AudioProvider, BatchDeleteResult, BatchItem, BatchResetResult, BatchTagsResult, EnrichedWord, ImportProgress, ImportResolved, ImportSummary, Word, WordFilters, WordPayload, WordUpdatePayload } from '@/types/domain'
+import type { ApiEnvelope, AudioBatchResult, AudioProgress, AudioProvidersInfo, BatchDeleteResult, BatchItem, BatchResetResult, BatchTagsResult, EnrichedWord, ImportProgress, ImportResolved, ImportSummary, Word, WordFilters, WordPayload, WordUpdatePayload } from '@/types/domain'
 
 export type { ImportResolved, ImportSummary, ImportProgress }
 export type ImportResult = ImportSummary
 export function wordAudioUrl(id: number) { return `/api/v1/words/${id}/audio` }
-export async function generateWordAudio(id: number, force = false, provider?: 'mimo' | 'volc') { return unwrap((await apiClient.post<ApiEnvelope<Word>>(`/words/${id}/audio`, { force, ...(provider ? { provider } : {}) }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
-export async function generateMissingWordAudio(limit = 50, provider?: 'mimo' | 'volc') { return unwrap((await apiClient.post<ApiEnvelope<AudioBatchResult>>('/words/audio/generate-missing', { limit, ...(provider ? { provider } : {}) }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
-export async function regenerateAllAudio(provider?: 'mimo' | 'volc') { return unwrap((await apiClient.post<ApiEnvelope<AudioBatchResult>>('/words/audio/regenerate-all', { ...(provider ? { provider } : {}) }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
-export async function generateNumberAudio(provider?: 'mimo' | 'volc', force = false) { return unwrap((await apiClient.post<ApiEnvelope<AudioBatchResult>>('/words/audio/generate-numbers', { ...(provider ? { provider } : {}), force }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
+export async function generateWordAudio(id: number, force = false) { return unwrap((await apiClient.post<ApiEnvelope<Word>>(`/words/${id}/audio`, { force }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
+export async function generateMissingWordAudio(limit = 50) { return unwrap((await apiClient.post<ApiEnvelope<AudioBatchResult>>('/words/audio/generate-missing', { limit }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
+export async function regenerateAllAudio() { return unwrap((await apiClient.post<ApiEnvelope<AudioBatchResult>>('/words/audio/regenerate-all', {}, { headers: { 'Idempotency-Key': newEventId() } })).data) }
+export async function generateNumberAudio(force = false) { return unwrap((await apiClient.post<ApiEnvelope<AudioBatchResult>>('/words/audio/generate-numbers', { force }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
 export async function listAudioProgress() { return unwrap((await apiClient.get<ApiEnvelope<AudioProgress>>('/words/audio/progress')).data) }
 export async function listAudioProviders() { return unwrap((await apiClient.get<ApiEnvelope<AudioProvidersInfo>>('/words/audio/providers')).data) }
 
@@ -48,7 +48,7 @@ export async function awaitImportDone(timeoutMs = 120_000, pollMs = 500): Promis
 }
 export async function batchDeleteWords(items: BatchItem[]) { return unwrap((await apiClient.post<ApiEnvelope<BatchDeleteResult>>('/words/batch/delete', { items }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
 export async function batchSetTags(items: BatchItem[], tags: string[]) { return unwrap((await apiClient.post<ApiEnvelope<BatchTagsResult>>('/words/batch/tags', { items, tags }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
-export async function batchGenerateAudio(wordIds: number[], provider?: AudioProvider) { return unwrap((await apiClient.post<ApiEnvelope<AudioBatchResult>>('/words/batch/audio', { word_ids: wordIds, ...(provider ? { provider } : {}) }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
+export async function batchGenerateAudio(wordIds: number[]) { return unwrap((await apiClient.post<ApiEnvelope<AudioBatchResult>>('/words/batch/audio', { word_ids: wordIds }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
 export async function batchResetProgress(wordIds: number[]) { return unwrap((await apiClient.post<ApiEnvelope<BatchResetResult>>('/words/batch/reset-progress', { word_ids: wordIds }, { headers: { 'Idempotency-Key': newEventId() } })).data) }
 export async function exportWords(format: 'csv' | 'json', filters: WordFilters = {}) {
   const config: AxiosRequestConfig = { params: { ...filters, page: undefined, size: undefined, format }, responseType: 'blob', timeout: 60_000, paramsSerializer: { indexes: null } }

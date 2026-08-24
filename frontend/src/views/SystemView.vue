@@ -15,7 +15,7 @@ import { apiClient } from '@/api/client'
 import { getAudioSettings, getDictionaryAudioProgress, getIssueNote, pauseDictionaryAudio, resumeDictionaryAudio, saveAudioSettings, saveIssueNote, startDictionaryAudio } from '@/api/system'
 import { scopeLabel } from '@/utils/apiScopes'
 import { ALL_API_SCOPES } from '@/types/domain'
-import type { ApiClient, ApiClientCreatePayload, ApiScope, AudioProvider, DictionaryAudioProgress, DictionaryAudioState, SystemAudioSettings, SystemIssueNote } from '@/types/domain'
+import type { ApiClient, ApiClientCreatePayload, ApiScope, DictionaryAudioProgress, DictionaryAudioState, SystemAudioSettings, SystemIssueNote } from '@/types/domain'
 
 const clients = ref<ApiClient[]>([])
 const loading = ref(false)
@@ -79,16 +79,9 @@ const backupLoading = ref(false)
 const dictionaryAudio = ref<DictionaryAudioProgress | null>(null)
 const dictionaryAudioBusy = ref(false)
 const audioSettings = ref<SystemAudioSettings | null>(null)
-const defaultAudioProvider = ref<AudioProvider>('mimo')
-const dictionaryAudioProvider = ref<AudioProvider>('mimo')
 const audioSettingsBusy = ref(false)
 const autoImportDraft = ref(false)
-const audioDraft = reactive<Record<AudioProvider, { base_url: string; api_key: string; model: string; voice: string }>>({
-  mimo: { base_url: '', api_key: '', model: '', voice: '' },
-  volc: { base_url: '', api_key: '', model: '', voice: '' },
-})
-// 清空数字/文本 = 清除覆盖，回落到环境变量默认值。
-const volcTuningDraft = reactive<{ resource_id: string; speech_rate: number | null; loudness_rate: number | null; silence_ms: number | null }>({ resource_id: '', speech_rate: null, loudness_rate: null, silence_ms: null })
+const audioDraft = reactive({ api_url: '', api_key: '' })
 let dictionaryAudioTimer: number | null = null
 const dictionaryAudioPercent = computed(() => dictionaryAudio.value?.total ? Math.round(dictionaryAudio.value.generated / dictionaryAudio.value.total * 100) : 0)
 const dictionaryAudioStateLabels: Record<DictionaryAudioState, string> = {
@@ -97,24 +90,14 @@ const dictionaryAudioStateLabels: Record<DictionaryAudioState, string> = {
 }
 function syncAudioDraft() {
   if (!audioSettings.value) return
-  defaultAudioProvider.value = audioSettings.value.default_provider
-  for (const provider of audioSettings.value.providers) {
-    audioDraft[provider.id].base_url = provider.base_url
-    audioDraft[provider.id].model = provider.model
-    audioDraft[provider.id].voice = provider.voice
-    audioDraft[provider.id].api_key = ''
-  }
+  audioDraft.api_url = audioSettings.value.api_url
+  audioDraft.api_key = ''
   autoImportDraft.value = audioSettings.value.auto_generate_on_import
-  volcTuningDraft.resource_id = audioSettings.value.volc_tuning.resource_id
-  volcTuningDraft.speech_rate = audioSettings.value.volc_tuning.speech_rate
-  volcTuningDraft.loudness_rate = audioSettings.value.volc_tuning.loudness_rate
-  volcTuningDraft.silence_ms = audioSettings.value.volc_tuning.silence_ms
 }
 async function loadAudioSettings() {
   try {
     audioSettings.value = await getAudioSettings()
     syncAudioDraft()
-    dictionaryAudioProvider.value = audioSettings.value.default_provider
   } catch (error) { ElMessage.error(normalizeApiError(error).message) }
 }
 async function persistAudioSettings() {
@@ -122,21 +105,18 @@ async function persistAudioSettings() {
   audioSettingsBusy.value = true
   try {
     audioSettings.value = await saveAudioSettings(
-      defaultAudioProvider.value,
+      audioDraft.api_url,
+      audioDraft.api_key,
       audioSettings.value.version,
-      { mimo: { ...audioDraft.mimo }, volc: { ...audioDraft.volc, ...volcTuningDraft } },
       autoImportDraft.value,
     )
     syncAudioDraft()
-    ElMessage.success('音频模型与连接设置已保存')
+    ElMessage.success('自定义语音 API 设置已保存')
   } catch (error) {
     const normalized = normalizeApiError(error)
     if (normalized.isConflict) await loadAudioSettings()
     ElMessage.error(normalized.isConflict ? '音频设置已变化，已加载最新设置' : normalized.message)
   } finally { audioSettingsBusy.value = false }
-}
-function audioModelLabel(provider: SystemAudioSettings['providers'][number]) {
-  return `${provider.label} · ${provider.model} · ${provider.voice}${provider.enabled ? '' : '（未配置）'}`
 }
 function scheduleDictionaryAudioPoll() {
   if (dictionaryAudioTimer !== null) window.clearTimeout(dictionaryAudioTimer)
@@ -151,7 +131,7 @@ async function loadDictionaryAudio() {
 async function runDictionaryAudioAction(action: 'start'|'pause'|'resume') {
   dictionaryAudioBusy.value = true
   try {
-    dictionaryAudio.value = action === 'start' ? await startDictionaryAudio(dictionaryAudioProvider.value) : action === 'pause' ? await pauseDictionaryAudio() : await resumeDictionaryAudio()
+    dictionaryAudio.value = action === 'start' ? await startDictionaryAudio() : action === 'pause' ? await pauseDictionaryAudio() : await resumeDictionaryAudio()
     ElMessage.success(action === 'pause' ? '本地词库语音生成已暂停' : '本地词库语音生成已在后台运行')
   } catch (error) { ElMessage.error(normalizeApiError(error).message) }
   finally { dictionaryAudioBusy.value = false; scheduleDictionaryAudioPoll() }
@@ -436,13 +416,12 @@ async function downloadPreRestore() {
       </div>
       <div v-if="audioSettings" class="audio-model-settings">
         <label class="audio-model-field">
-          <span><strong>默认音频模型</strong><small>单词、批量、序号及词库任务未单独选择时使用</small></span>
-          <span class="audio-model-control">
-            <el-select v-model="defaultAudioProvider" aria-label="默认音频模型">
-              <el-option v-for="provider in audioSettings.providers" :key="provider.id" :value="provider.id" :label="audioModelLabel(provider)" :disabled="!provider.enabled" />
-            </el-select>
-            <el-button data-testid="save-audio-settings" type="primary" :loading="audioSettingsBusy" @click="persistAudioSettings">保存设置</el-button>
-          </span>
+          <span><strong>自定义语音 API URL</strong><small>填写 OpenAI 兼容 API 根地址，或直接填写 /chat/completions 地址</small></span>
+          <el-input v-model="audioDraft.api_url" aria-label="自定义语音 API URL" placeholder="例如 https://api.example.com/v1" />
+        </label>
+        <label class="audio-model-field">
+          <span><strong>自定义 API Key</strong><small>{{ audioSettings.api_key_configured ? `当前 Key：${audioSettings.api_key_masked}` : '尚未配置 Key' }}；Key 只保存在服务端</small></span>
+          <el-input v-model="audioDraft.api_key" aria-label="自定义语音 API Key" type="password" show-password placeholder="输入新的 API Key（留空保留现有 Key）" />
         </label>
         <label class="audio-model-field">
           <span><strong>导入单词时自动生成语音</strong><small>影响词库导入完成后是否自动排队生成发音</small></span>
@@ -450,35 +429,11 @@ async function downloadPreRestore() {
             <el-switch v-model="autoImportDraft" aria-label="导入单词时自动生成语音" />
           </span>
         </label>
-        <div v-for="provider in audioSettings.providers" :key="provider.id" class="audio-provider-config">
-          <div class="audio-provider-config-head">
-            <strong>{{ provider.label }} 连接设置</strong>
-            <small>{{ provider.api_key_configured ? `当前 Key：${provider.api_key_masked}` : '尚未配置 Key' }}</small>
-          </div>
-          <div class="audio-provider-fields">
-            <el-input v-model="audioDraft[provider.id].base_url" :aria-label="`${provider.label}端点`" placeholder="端点 URL" />
-            <el-input v-model="audioDraft[provider.id].api_key" :aria-label="`${provider.label}Key`" type="password" show-password placeholder="Key（留空保留现有 Key）" />
-            <el-input v-model="audioDraft[provider.id].model" :aria-label="`${provider.label}模型`" placeholder="模型" />
-            <el-input v-model="audioDraft[provider.id].voice" :aria-label="`${provider.label}音色`" placeholder="音色" />
-          </div>
-          <div v-if="provider.id === 'volc'" class="audio-provider-fields volc-tuning">
-            <el-input v-model="volcTuningDraft.resource_id" aria-label="豆包资源 ID" placeholder="资源 ID（默认 seed-tts-2.0）" />
-            <el-input-number v-model="volcTuningDraft.speech_rate" :min="-50" :max="100" aria-label="豆包语速" placeholder="语速" />
-            <el-input-number v-model="volcTuningDraft.loudness_rate" :min="0" :max="100" aria-label="豆包音量" placeholder="音量" />
-            <el-input-number v-model="volcTuningDraft.silence_ms" :min="0" :max="5000" :step="100" aria-label="豆包尾部停顿毫秒" placeholder="尾部停顿 ms" />
-          </div>
-          <p v-if="provider.id === 'volc'" class="muted audio-tuning-hint">语速 &lt;0 更平稳耐心；音量 &gt;0 更有力清晰；尾部停顿留白毫秒。清空数字 = 恢复环境变量默认值。</p>
-        </div>
         <label class="audio-model-field">
-          <span><strong>本次词库生成模型</strong><small>只影响下次“扫描并生成缺失音频”任务</small></span>
-          <el-select v-model="dictionaryAudioProvider" aria-label="本次词库生成模型">
-            <el-option v-for="provider in audioSettings.providers" :key="provider.id" :value="provider.id" :label="audioModelLabel(provider)" :disabled="!provider.enabled" />
-          </el-select>
+          <span><strong>当前生效模型</strong><small>{{ audioSettings.model }} · {{ audioSettings.voice }}</small></span>
+          <el-button data-testid="save-audio-settings" type="primary" :loading="audioSettingsBusy" @click="persistAudioSettings">保存设置</el-button>
         </label>
-        <p class="audio-model-catalog">
-          <strong>支持模型：</strong>
-          <span v-for="provider in audioSettings.providers" :key="provider.id">{{ audioModelLabel(provider) }}</span>
-        </p>
+        <p v-if="!audioSettings.configured" class="error-box">尚未配置完整的 API URL 和 Key，保存后语音生成会提示未配置。</p>
       </div>
       <div v-if="dictionaryAudio" class="dictionary-audio-progress" aria-live="polite">
         <div class="dictionary-audio-summary"><strong>{{ dictionaryAudioStateLabels[dictionaryAudio.state] }}</strong><span>已生成 {{ dictionaryAudio.generated }} / {{ dictionaryAudio.total }}</span></div>
@@ -714,10 +669,6 @@ async function downloadPreRestore() {
 .audio-model-field { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fafcfb; }
 .audio-model-field > span:first-child { display: grid; gap: 3px; }.audio-model-field small { color: var(--muted); }
 .audio-model-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
-.audio-provider-config { grid-column: 1 / -1; display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
-.audio-provider-config-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }.audio-provider-config-head small { color: var(--muted); }
-.audio-provider-fields { display: grid; grid-template-columns: 1.3fr 1.3fr 1fr 1fr; gap: 8px; }
-.audio-model-catalog { grid-column: 1 / -1; display: flex; gap: 8px 14px; flex-wrap: wrap; margin: 0; color: var(--muted); font-size: .82rem; }
 .dictionary-audio-summary,.dictionary-audio-meta { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .dictionary-audio-summary span,.dictionary-audio-meta { color: var(--muted); font-size: .85rem; }.dictionary-audio-meta { justify-content: flex-start; }
 .quota-note { margin: 0; padding: 10px 12px; border-radius: 8px; background: #fff8e6; color: #76540e; }
@@ -726,6 +677,5 @@ async function downloadPreRestore() {
 }
 @media (max-width: 900px) { .system-sections { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 700px) { .audio-model-settings { grid-template-columns: 1fr; } }
-@media (max-width: 700px) { .audio-provider-fields { grid-template-columns: 1fr 1fr; } }
-@media (max-width: 479px) { .system-sections { grid-template-columns: 1fr; }.audio-model-control { grid-template-columns: 1fr; }.audio-provider-fields { grid-template-columns: 1fr; }.audio-provider-config-head { display: grid; } }
+@media (max-width: 479px) { .system-sections { grid-template-columns: 1fr; }.audio-model-control { grid-template-columns: 1fr; } }
 </style>

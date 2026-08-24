@@ -48,15 +48,6 @@
    chmod 0400 /share/Container/vocab-app/secrets/tts-api-key
    chown 10001:10001 /share/Container/vocab-app/secrets/tts-api-key
    ```
-5b.（可选）启用豆包 seed-tts-2.0 第二模型：先在[火山方舟控制台](https://console.volcengine.com/ark)「配置模型 doubao-seed-tts-2.0 + 开启超额后付费」，再把 **Ark API Key** 写入独立 secret 文件：
-   ```bash
-   umask 077
-   read -r -s -p 'Volc Ark API Key: ' VOCAB_VOLC_KEY
-   printf '%s' "$VOCAB_VOLC_KEY" > /share/Container/vocab-app/secrets/volc-tts-api-key
-   unset VOCAB_VOLC_KEY
-   chmod 0400 /share/Container/vocab-app/secrets/volc-tts-api-key
-   chown 10001:10001 /share/Container/vocab-app/secrets/volc-tts-api-key
-   ```
 6. 将已确认授权的 `dictionary-index.json` 放到 `/share/Container/vocab-app/dictionary-index.json`，并确保 UID 10001 可读。
 7. 当前环境直接检查 `portainer-stack.yml`；新环境复制模板并替换全部 `REPLACE_ME`（域名、NAS 根目录、端口、反代 CIDR、模型和不可变镜像标签）。
 8. Lucky 上游设为 `http://127.0.0.1:8587`，对外入口为 `https://myword.myjojo.fun:666`。Lucky 必须覆盖 `X-Forwarded-For`、`X-Forwarded-Proto`、`Host`，并删除客户端自带的 `X-Forwarded-User` 后再注入可信网页身份。
@@ -104,46 +95,27 @@ Docker 端口发布后，Lucky 请求在容器内通常来自 `172.x` 网桥网�
 
 ### 云 TTS smoke
 
-启用 TTS 后，词库页顶部出现「TTS 模型」下拉 + 「一键生成音频 / 全部重新生成」。支持**两个模型**:
+启用 TTS 后，词库页和系统页使用同一条自定义 OpenAI 兼容语音连接。管理员在「系统管理 → 本地词库语音」填写 API URL 和 API Key（Key 只写入服务端，页面只显示掩码），模型与音色沿用服务端默认值；不再在页面定义多个供应商账号。
 
-- **mimo**(`TTS_PROVIDER=mimo`,默认):`TTS_BASE_URL` + `TTS_API_KEY` + `TTS_MODEL=mimo-v2.5-tts` + `TTS_VOICE=Chloe`。
-- **豆包 seed-tts-2.0**(`TTS_PROVIDER=volc`):需先在[火山方舟控制台](https://console.volcengine.com/ark)**配置模型 doubao-seed-tts-2.0 + 开启超额后付费**(否则调用会 401/NotFound)。走 agent-plan 专属入口 `https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional`,Key 必须放在 query `?api_key=`,头 `X-Api-Resource-Id: seed-tts-2.0`。
-
-两个模型都已配置时,生成时选中的模型若失败会**自动尝试另一个**(跨模型兜底);默认模型由 `TTS_PROVIDER` 决定。词库页可按需切换;「全部重新生成」会用当前选中模型对所有词强制重做(后台进行,覆盖旧音频)。导入单词时若 `TTS_AUTO_GENERATE_ON_IMPORT=true`(默认),新词自动进后台队列生成音频。
-
-推荐 Stack 环境变量(Key 一律走 secret 文件,不写明文):
+推荐 Stack 环境变量（Key 一律走 secret 文件，不写明文）：
 
 ```yaml
-TTS_PROVIDER: "mimo"            # 或 volc
 TTS_BASE_URL: "https://api.xiaomimimo.com/v1"
 TTS_API_KEY_FILE: "/run/secrets/tts-api-key"
 TTS_MODEL: "mimo-v2.5-tts"
 TTS_VOICE: "Chloe"
-# 豆包(可选,配置后即可在词库页下拉选用/兜底)
-VOLC_TTS_BASE_URL: "https://openspeech.bytedance.com"
-VOLC_TTS_API_KEY_FILE: "/run/secrets/volc-tts-api-key"   # Ark API Key
-VOLC_TTS_MODEL: "doubao-seed-tts-2.0"
-VOLC_TTS_RESOURCE_ID: "seed-tts-2.0"
-VOLC_TTS_VOICE: "zh_female_yingyujiaoxue_uranus_bigtts"   # Tina老师 2.0(教育/中文+英式英语)。必须用 2.0 音色(*_uranus_bigtts),见下
-# 平稳/耐心/有力/清晰 + 前后留白(留白:句尾追加静音 + MP3 自然句首留白 + 默写间隔)
-VOLC_TTS_SPEECH_RATE: "-10"   # -50..100,负=慢(耐心/平稳)
-VOLC_TTS_LOUDNESS_RATE: "20"  # -50..100,正=更响(有力/清晰)
-VOLC_TTS_SILENCE_MS: "500"    # 0..30000ms,句尾静音,防止结尾被切
-# 可选:TTS_AUDIO_DIR=/app/data/audio、TTS_TIMEOUT_SECONDS=60、VOLC_TTS_TIMEOUT_SECONDS=60、TTS_AUTO_GENERATE_ON_IMPORT=true
+TTS_AUTO_GENERATE_ON_IMPORT: "true"
+# 可选：TTS_AUDIO_DIR=/app/data/audio、TTS_TIMEOUT_SECONDS=60
 ```
 
-> ⚠️ **`VOLC_TTS_VOICE` 必须是「豆包语音合成模型 2.0」音色**。`seed-tts-2.0` 资源**只接受 2.0 音色**(voice_type 形如 `*_uranus_bigtts`,见[2.0 音色列表](https://www.volcengine.com/docs/6561/1257544));填 1.0 音色(`BV700_streaming`、`*_moon_bigtts`、`*_mars_bigtts` 等)会报 `55000000 resource ID is mismatched with speaker related resource`。默认 `zh_female_yingyujiaoxue_uranus_bigtts`(Tina老师 2.0,教育场景,中文+英式英语)适配本项目的英音需求;若要美音,2.0 列表里有大量 `en_*_uranus_bigtts`(如 `en_female_myra_uranus_bigtts`、`en_male_russell_uranus_bigtts`)可选。Key 仍是 **agent-plan 专属 Key**,只在 `https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional?api_key=` 可用(标准 `/api/v3/tts/unidirectional` 返回 401)。豆包失败会**自动兜底到 mimo** 出英音,音频生成不会中断。
-```
+部署后 smoke：管理员打开系统设置，填写自定义 API URL/Key 并保存；词库页选一个无音频的词 → 点「生成音频」→ 状态变「已生成」→ 点「播放」应能听到 MP3；把复习表设为“进行中”后进入 `/review` 在线默写，英文优先播词库 MP3，缺失/失败自动回退浏览器 `speechSynthesis`。
 
-部署后 smoke:词库页选一个无音频的词 → 选模型 → 点「生成音频」→ 状态变「已生成」→ 点「播放」应能听到 MP3；把复习表设为“进行中”后进入 `/review` 在线默写，英文优先播词库 MP3，中文释义与中文序号 1–50 会在首次播放时自动生成并缓存，缺失/失败自动回退浏览器 `speechSynthesis`。
+若生成失败，依次检查：
 
-若生成失败,依次检查:
-
-1. 容器挂载了对应 secret(`tts-api-key` / `volc-tts-api-key`),文件非空且 UID 10001 可读;
-2. `*_API_KEY_FILE` 已生效,未把 Key 写入明文环境变量;
-3. mimo:`TTS_BASE_URL` 含 `/v1`、模型 `mimo-v2.5-tts`、voice `Chloe`;volc:已在火山方舟控制台**配置模型 + 开启超额后付费**、`VOLC_TTS_RESOURCE_ID=seed-tts-2.0`、且 `VOLC_TTS_VOICE` 是 **2.0 音色**(`*_uranus_bigtts`,如默认的 `zh_female_yingyujiaoxue_uranus_bigtts`);填 1.0 音色(`BVxxx` / `*_moon_bigtts` / `*_mars_bigtts`)会报 `resource ID is mismatched with speaker related resource`;
-4. `/app/data/audio`(或 `TTS_AUDIO_DIR`)归 UID 10001 可写;
-5. 容器日志中的 `TTS_PROVIDER_ERROR` / `AUDIO_STORAGE_ERROR`(日志不会输出 Key)。
+1. 自定义 URL 是 OpenAI 兼容 API 根地址，或完整的 `/chat/completions` 地址；
+2. API Key 已保存且服务端日志中的配置检查通过（日志不会输出 Key）；
+3. `/app/data/audio`（或 `TTS_AUDIO_DIR`）归 UID 10001 可写；
+4. 容器日志中的 `TTS_PROVIDER_ERROR` / `AUDIO_STORAGE_ERROR`（日志不会输出 Key）。
 
 ---
 

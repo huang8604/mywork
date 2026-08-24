@@ -28,6 +28,12 @@ CHINESE_PROMPT = (
 _QUOTA_MARKERS = ("quota", "rate limit", "rate_limit", "too many requests", "额度", "余额不足", "超限")
 
 
+def _chat_completions_url(settings: Settings) -> str:
+    """Accept either an OpenAI-compatible API root or the full endpoint URL."""
+    base = settings.tts_base_url.rstrip("/")
+    return base if base.endswith("/chat/completions") else f"{base}/chat/completions"
+
+
 def _provider_error(message: object = "") -> AppError:
     text = str(message or "")
     if any(marker in text.casefold() for marker in _QUOTA_MARKERS):
@@ -51,7 +57,7 @@ def _synthesize_mimo(text: str, settings: Settings) -> bytes:
         ],
     }
     req = urllib.request.Request(
-        f"{settings.tts_base_url}/chat/completions",
+        _chat_completions_url(settings),
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {settings.tts_api_key}",
@@ -88,7 +94,7 @@ def _synthesize_mimo_chinese(text: str, settings: Settings) -> bytes:
         ],
     }
     req = urllib.request.Request(
-        f"{settings.tts_base_url}/chat/completions",
+        _chat_completions_url(settings),
         data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         headers={
             "Authorization": f"Bearer {settings.tts_api_key}",
@@ -252,6 +258,13 @@ _CHINESE_PROVIDERS = {"mimo": _synthesize_mimo_chinese, "volc": _synthesize_volc
 
 _PROVIDER_LABELS = {"mimo": "mimo", "volc": "豆包 seed-tts-2.0"}
 
+# ``custom`` is the only provider exposed by the current settings flow.  It uses
+# the OpenAI-compatible chat/completions contract already implemented for mimo;
+# the old mimo/volc entries below remain only so previously queued jobs and old
+# API clients can finish during the migration window.
+_PROVIDERS["custom"] = _synthesize_mimo
+_CHINESE_PROVIDERS["custom"] = _synthesize_mimo_chinese
+
 
 def _mask_secret(value: str) -> str:
     if not value:
@@ -290,8 +303,29 @@ def audio_providers_info(
     return {"default": default, "current": default, "providers": providers}
 
 
+def custom_audio_info(settings: Settings | None = None) -> dict[str, object]:
+    """Return the single custom API connection shown in System settings.
+
+    The API key is deliberately represented only by a masked value.  Model and
+    voice are effective environment defaults; they are returned for context but
+    are not account fields in the UI.
+    """
+    settings = settings or get_settings()
+    return {
+        "api_url": settings.tts_base_url,
+        "base_url": settings.tts_base_url,
+        "api_key_configured": bool(settings.tts_api_key),
+        "api_key_masked": _mask_secret(settings.tts_api_key),
+        "model": settings.tts_model,
+        "voice": settings.tts_voice,
+        "configured": settings.tts_enabled,
+    }
+
+
 def _provider_order(provider: str | None, settings: Settings) -> list[str]:
     chosen = (provider or settings.tts_provider).strip().lower()
+    if chosen == "custom":
+        return ["custom"]
     if chosen not in _PROVIDERS:
         chosen = "mimo"
     other = "volc" if chosen == "mimo" else "mimo"
@@ -307,9 +341,9 @@ def synthesize_word_mp3(
 ) -> tuple[bytes, str]:
     """Synthesize English or Chinese text to MP3.
 
-    Tries the selected (or default) provider first; if it is not configured or the
-    remote call fails, falls back to the other configured provider. Raises
-    ``TTS_NOT_CONFIGURED`` (409) if neither is configured, else the last provider error.
+    The current ``custom`` connection is authoritative and never falls back to a
+    second account.  Historical mimo/volc requests retain their old fallback
+    behavior for queued jobs and rolling API clients.
     """
     text = text.strip()
     if not text:
@@ -329,9 +363,10 @@ def synthesize_word_mp3(
         except AppError as exc:
             if exc.code in {"TTS_PROVIDER_ERROR", "TTS_NOT_CONFIGURED"}:
                 last_exc = exc
-                log.warning("TTS provider %s failed, trying fallback", current)
+                if current != "custom":
+                    log.warning("TTS provider %s failed, trying fallback", current)
                 continue
             raise
-        voice = settings.tts_voice if current == "mimo" else settings.volc_voice
+        voice = settings.tts_voice if current in {"custom", "mimo"} else settings.volc_voice
         return audio, voice
     raise last_exc or AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")

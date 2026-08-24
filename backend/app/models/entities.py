@@ -240,6 +240,11 @@ class SystemAudioSetting(Base):
     volc_speech_rate: Mapped[int | None] = mapped_column(Integer)
     volc_loudness_rate: Mapped[int | None] = mapped_column(Integer)
     volc_silence_ms: Mapped[int | None] = mapped_column(Integer)
+    # The current UI exposes one custom OpenAI-compatible TTS endpoint.  Keep
+    # these separate from the historical provider columns so existing databases
+    # can be upgraded without rewriting released migrations.
+    custom_base_url: Mapped[str | None] = mapped_column(String(500))
+    custom_api_key: Mapped[str | None] = mapped_column(String(1000))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     updated_at: Mapped[str] = mapped_column(String(32), nullable=False, default=utc_now_text)
     updated_by: Mapped[str | None] = mapped_column(String(128))

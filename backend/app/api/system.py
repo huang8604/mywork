@@ -122,6 +122,7 @@ def save_audio_settings(
     actor: Annotated[Actor, Depends(require_web_admin)],
     db: Annotated[Session, Depends(get_db)],
 ):
+    api_url = payload.api_url if payload.api_url is not None else payload.base_url
     setting = update_audio_settings(
         db,
         default_provider=payload.default_provider,
@@ -132,6 +133,11 @@ def save_audio_settings(
             "volc": payload.volc.model_dump(exclude_unset=True) if payload.volc else None,
         },
         auto_generate_on_import=payload.auto_generate_on_import,
+        custom_config={
+            key: value
+            for key, value in {"api_url": api_url, "api_key": payload.api_key}.items()
+            if value is not None
+        } or None,
     )
     add_audit(
         db,
@@ -144,7 +150,9 @@ def save_audio_settings(
         target_id="1",
         metadata={
             "default_provider": payload.default_provider,
-            "configured_providers": [
+            "custom_api_url_submitted": api_url is not None,
+            "custom_api_key_submitted": payload.api_key is not None,
+            "legacy_provider_fields_submitted": [
                 provider
                 for provider, config in (("mimo", payload.mimo), ("volc", payload.volc))
                 if config is not None

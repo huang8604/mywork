@@ -21,33 +21,25 @@ vi.mock('@/api/system', () => ({
   }),
   saveIssueNote: vi.fn(),
   getAudioSettings: vi.fn().mockResolvedValue({
-    default: 'volc', current: 'volc', default_provider: 'volc', version: 2,
+    api_url: 'https://custom.example/v1', api_key_configured: true, api_key_masked: 'cu****om',
+    model: 'custom-tts', voice: 'default', configured: true, version: 2,
     auto_generate_on_import: false,
-    volc_tuning: { resource_id: 'seed-tts-2.0', speech_rate: -20, loudness_rate: 30, silence_ms: 800 },
     updated_at: '2026-08-10T00:00:00Z', updated_by: 'admin',
-    providers: [
-      { id: 'mimo', label: 'mimo', enabled: true, base_url: 'https://mimo.example/v1', api_key_configured: true, api_key_masked: 'mi****mo', model: 'mimo-v2.5-tts', voice: 'Chloe' },
-      { id: 'volc', label: '豆包 seed-tts-2.0', enabled: true, base_url: 'https://volc.example', api_key_configured: true, api_key_masked: 'vo****lc', model: 'doubao-seed-tts-2.0', voice: 'Tina' },
-    ],
   }),
   saveAudioSettings: vi.fn().mockResolvedValue({
-    default: 'volc', current: 'volc', default_provider: 'volc', version: 3,
+    api_url: 'https://custom.example/v1', api_key_configured: true, api_key_masked: 'cu****om',
+    model: 'custom-tts', voice: 'default', configured: true, version: 3,
     auto_generate_on_import: false,
-    volc_tuning: { resource_id: 'seed-tts-2.0', speech_rate: -20, loudness_rate: 30, silence_ms: 800 },
     updated_at: '2026-08-10T01:00:00Z', updated_by: 'admin',
-    providers: [
-      { id: 'mimo', label: 'mimo', enabled: true, base_url: 'https://mimo.example/v1', api_key_configured: true, api_key_masked: 'mi****mo', model: 'mimo-v2.5-tts', voice: 'Chloe' },
-      { id: 'volc', label: '豆包 seed-tts-2.0', enabled: true, base_url: 'https://volc.example', api_key_configured: true, api_key_masked: 'vo****lc', model: 'doubao-seed-tts-2.0', voice: 'Tina' },
-    ],
   }),
   getDictionaryAudioProgress: vi.fn().mockResolvedValue({
     state: 'paused', total: 100, generated: 25, failed: 2, remaining: 75,
-    provider: 'mimo', next_run_at: null, last_error: null, updated_at: null,
+    provider: 'custom', next_run_at: null, last_error: null, updated_at: null,
     dictionary_available: true,
   }),
   startDictionaryAudio: vi.fn().mockResolvedValue({
     state: 'running', total: 100, generated: 25, failed: 0, remaining: 75,
-    provider: 'volc', next_run_at: null, last_error: null, updated_at: null,
+    provider: 'custom', next_run_at: null, last_error: null, updated_at: null,
     dictionary_available: true,
   }),
   pauseDictionaryAudio: vi.fn(),
@@ -85,7 +77,7 @@ describe('SystemView', () => {
     vi.clearAllMocks()
   })
 
-  it('renders notebook and supported audio models, then starts with the selected model', async () => {
+  it('renders notebook and one custom audio connection, then starts with it', async () => {
     const wrapper = mount(SystemView, { global: { stubs: ['el-table', 'el-table-column', 'el-dialog', 'el-checkbox-group', 'el-checkbox', 'el-tag', 'el-button', 'el-input', 'el-select', 'el-option', 'el-progress'] } })
     // flush onMounted -> listApiClients
     await flushPromises()
@@ -94,13 +86,13 @@ describe('SystemView', () => {
     expect(text).toContain('数据备份')
     expect(text).toContain('本地词库语音导入')
     expect(text).toContain('问题与需求记录')
-    expect(text).toContain('默认音频模型')
-    expect(text).toContain('本次词库生成模型')
+    expect(text).toContain('自定义语音 API URL')
+    expect(text).toContain('自定义 API Key')
     expect(text).toContain('导入单词时自动生成语音')
-    expect(text).toContain('恢复环境变量默认值')
+    expect(text).not.toContain('默认音频模型')
+    expect(text).not.toContain('豆包 seed-tts-2.0')
     expect(text).toContain('已生成 25 / 100')
-    expect(text).toContain('mimo · mimo-v2.5-tts · Chloe')
-    expect(text).toContain('豆包 seed-tts-2.0 · doubao-seed-tts-2.0 · Tina')
+    expect(text).toContain('custom-tts · default')
     // The 「新增客户端」 and 「下载整库备份」 buttons render as el-button stubs
     expect(wrapper.findAll('el-button-stub').length).toBeGreaterThanOrEqual(2)
     // The page calls listApiClients() on mount (mocked); no crash.
@@ -110,14 +102,11 @@ describe('SystemView', () => {
     expect(start.exists()).toBe(true)
     await start.trigger('click')
     await flushPromises()
-    expect(startDictionaryAudio).toHaveBeenCalledWith('volc')
+    expect(startDictionaryAudio).toHaveBeenCalledWith()
 
     const saveDefault = wrapper.find('[data-testid="save-audio-settings"]')
     await saveDefault.trigger('click')
     await flushPromises()
-    expect(saveAudioSettings).toHaveBeenCalledWith('volc', 2, expect.objectContaining({
-      mimo: expect.any(Object),
-      volc: expect.objectContaining({ resource_id: 'seed-tts-2.0', speech_rate: -20, loudness_rate: 30, silence_ms: 800 }),
-    }), false)
+    expect(saveAudioSettings).toHaveBeenCalledWith('https://custom.example/v1', '', 2, false)
   })
 })

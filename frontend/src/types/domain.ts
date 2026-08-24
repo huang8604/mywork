@@ -102,7 +102,7 @@ export interface AudioBatchResult { queued: number; total: number; provider: str
 export interface AudioProgress {
   state: 'idle' | 'running'; total: number; completed: number; failed: number; pending: number
 }
-export type AudioProvider = 'mimo' | 'volc'
+export type AudioProvider = 'custom' | 'mimo' | 'volc'
 export interface AudioProviderInfo {
   id: AudioProvider; label: string; enabled: boolean; base_url: string
   api_key_configured: boolean; api_key_masked: string; voice: string; model: string
@@ -111,10 +111,15 @@ export interface AudioProvidersInfo {
   default: AudioProvider; current: AudioProvider; providers: AudioProviderInfo[]
 }
 export interface VolcTuning { resource_id: string; speech_rate: number; loudness_rate: number; silence_ms: number }
-export interface SystemAudioSettings extends AudioProvidersInfo {
-  default_provider: AudioProvider
+export interface SystemAudioSettings {
+  api_url: string
+  base_url?: string
+  api_key_configured: boolean
+  api_key_masked: string
+  model: string
+  voice: string
+  configured: boolean
   auto_generate_on_import: boolean
-  volc_tuning: VolcTuning
   version: number
   updated_at: string | null
   updated_by: string | null

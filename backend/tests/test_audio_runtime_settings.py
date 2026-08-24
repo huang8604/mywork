@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from app.core.config import get_settings
+from app.models import SystemAudioSetting
 from app.services.system_settings import audio_runtime_settings
 from conftest import seed_credential
 
@@ -14,6 +15,49 @@ def _put(client, version: int, **overrides):
     payload: dict[str, object] = {"default_provider": "mimo", "expected_version": version}
     payload.update(overrides)
     return client.put("/api/v1/system/audio-settings", json=payload)
+
+
+def test_custom_api_url_and_key_are_the_single_runtime_connection(
+    client, db_session, login_mode, monkeypatch
+):
+    monkeypatch.setenv("TTS_BASE_URL", "https://env.example.invalid/v1")
+    monkeypatch.delenv("TTS_API_KEY", raising=False)
+    get_settings.cache_clear()
+    seed_credential(db_session, "admin", "supersecret")
+    _login(client, "admin", "supersecret")
+    try:
+        saved = client.put(
+            "/api/v1/system/audio-settings",
+            json={
+                "api_url": "https://custom.example.invalid/v1/",
+                "api_key": "custom-key",
+                "expected_version": 1,
+            },
+        )
+        assert saved.status_code == 200, saved.text
+        data = saved.json()["data"]
+        assert data["api_url"] == "https://custom.example.invalid/v1"
+        assert data["api_key_configured"] is True
+        assert "custom-key" not in saved.text
+        assert data["configured"] is True
+
+        setting = db_session.get(SystemAudioSetting, 1)
+        assert setting is not None
+        assert setting.custom_base_url == "https://custom.example.invalid/v1"
+        assert setting.custom_api_key == "custom-key"
+        runtime = audio_runtime_settings(db_session)
+        assert runtime.tts_provider == "custom"
+        assert runtime.tts_base_url == "https://custom.example.invalid/v1"
+        assert runtime.tts_api_key == "custom-key"
+
+        kept = client.put(
+            "/api/v1/system/audio-settings",
+            json={"api_url": "https://custom.example.invalid/v2", "api_key": "", "expected_version": 2},
+        )
+        assert kept.status_code == 200, kept.text
+        assert audio_runtime_settings(db_session).tts_api_key == "custom-key"
+    finally:
+        get_settings.cache_clear()
 
 
 def test_put_persists_volc_tuning_and_import_toggle(client, db_session, login_mode, monkeypatch):

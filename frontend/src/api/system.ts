@@ -13,28 +13,17 @@ export async function getAudioSettings() {
   return unwrap((await apiClient.get<ApiEnvelope<SystemAudioSettings>>('/system/audio-settings')).data)
 }
 
-export interface AudioProviderSettingsPayload {
-  base_url: string
-  api_key: string
-  model: string
-  voice: string
-  resource_id?: string | null
-  speech_rate?: number | null
-  loudness_rate?: number | null
-  silence_ms?: number | null
-}
-
 export async function saveAudioSettings(
-  defaultProvider: AudioProvider,
+  apiUrl: string,
+  apiKey: string,
   expectedVersion: number,
-  providers: Partial<Record<AudioProvider, AudioProviderSettingsPayload>> = {},
   autoGenerateOnImport?: boolean,
 ) {
   return unwrap((await apiClient.put<ApiEnvelope<SystemAudioSettings>>('/system/audio-settings', {
-    default_provider: defaultProvider,
+    api_url: apiUrl,
+    api_key: apiKey,
     expected_version: expectedVersion,
     auto_generate_on_import: autoGenerateOnImport ?? null,
-    ...providers,
   })).data)
 }
 
