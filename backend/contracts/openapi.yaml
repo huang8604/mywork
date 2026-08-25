@@ -479,6 +479,11 @@
       "DictionaryAudioStartRequest": {
         "additionalProperties": false,
         "properties": {
+          "force": {
+            "default": false,
+            "title": "Force",
+            "type": "boolean"
+          },
           "provider": {
             "anyOf": [
               {
@@ -1059,6 +1064,29 @@
           "expected_version"
         ],
         "title": "SystemAudioSettingsUpdate",
+        "type": "object"
+      },
+      "SystemAudioTestRequest": {
+        "additionalProperties": false,
+        "properties": {
+          "provider": {
+            "anyOf": [
+              {
+                "enum": [
+                  "custom",
+                  "mimo",
+                  "volc"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Provider"
+          }
+        },
+        "title": "SystemAudioTestRequest",
         "type": "object"
       },
       "SystemIssueNoteUpdate": {
@@ -3910,6 +3938,51 @@
           }
         ],
         "summary": "Save Audio Settings",
+        "tags": [
+          "system"
+        ]
+      }
+    },
+    "/api/v1/system/audio-settings/test": {
+      "post": {
+        "description": "Synthesize a short probe and return the actual provider metadata in headers.",
+        "operationId": "test_audio_settings_api_v1_system_audio_settings_test_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SystemAudioTestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Test Audio Settings",
         "tags": [
           "system"
         ]

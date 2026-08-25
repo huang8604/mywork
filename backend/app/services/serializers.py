@@ -69,6 +69,8 @@ def word_data(db: Session, word: Word, *, include_stats: bool = True) -> dict[st
         "example_sentence": word.example_sentence,
         "audio_path": word.audio_path,
         "audio_format": word.audio_format,
+        "audio_provider": word.audio_provider,
+        "audio_model": word.audio_model,
         "audio_voice": word.audio_voice,
         "audio_generated_at": word.audio_generated_at,
         "audio_bytes": word.audio_bytes,

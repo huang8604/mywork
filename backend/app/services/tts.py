@@ -3,13 +3,33 @@ from __future__ import annotations
 import base64
 import json
 import logging
+from dataclasses import dataclass
 import urllib.error
 import urllib.request
+from urllib.parse import urlencode
 
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
 
 log = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class SynthesisResult:
+    """Audio plus the effective provider metadata (including fallback choice).
+
+    ``__iter__`` keeps the old ``audio, voice = ...`` callers compatible while
+    newer callers can inspect the exact provider/model that produced the bytes.
+    """
+
+    audio: bytes
+    voice: str
+    provider: str
+    model: str
+
+    def __iter__(self):
+        yield self.audio
+        yield self.voice
 
 # mimo (chat/completions style) takes a style prompt; seed-tts speaks raw text only.
 # Keep the assistant message as the exact token. In particular, short words such as
@@ -223,10 +243,11 @@ def _synthesize_volc(text: str, settings: Settings) -> bytes:
             "additions": json.dumps({"silence_duration": settings.volc_silence_ms}),
         },
     }
-    url = (
-        f"{settings.volc_base_url}/api/v3/plan/tts/unidirectional"
-        f"?api_key={settings.volc_api_key}"
-    )
+    endpoint = settings.volc_base_url.rstrip("/")
+    if not endpoint.endswith("/api/v3/plan/tts/unidirectional"):
+        endpoint = f"{endpoint}/api/v3/plan/tts/unidirectional"
+    separator = "&" if "?" in endpoint else "?"
+    url = f"{endpoint}{separator}{urlencode({'api_key': settings.volc_api_key})}"
     req = urllib.request.Request(
         url,
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
@@ -256,14 +277,28 @@ def _synthesize_volc(text: str, settings: Settings) -> bytes:
 _PROVIDERS = {"mimo": _synthesize_mimo, "volc": _synthesize_volc}
 _CHINESE_PROVIDERS = {"mimo": _synthesize_mimo_chinese, "volc": _synthesize_volc}
 
-_PROVIDER_LABELS = {"mimo": "mimo", "volc": "豆包 seed-tts-2.0"}
+_PROVIDER_LABELS = {"mimo": "Mimo", "volc": "豆包"}
 
-# ``custom`` is the only provider exposed by the current settings flow.  It uses
-# the OpenAI-compatible chat/completions contract already implemented for mimo;
-# the old mimo/volc entries below remain only so previously queued jobs and old
-# API clients can finish during the migration window.
-_PROVIDERS["custom"] = _synthesize_mimo
-_CHINESE_PROVIDERS["custom"] = _synthesize_mimo_chinese
+
+def canonical_provider(provider: str | None, settings: Settings) -> str:
+    """Normalize released aliases while keeping 豆包 (volc) the primary id."""
+    chosen = (provider or settings.tts_provider).strip().lower()
+    if chosen == "custom":
+        # ``custom`` was the previous single-connection setting. New persisted
+        # settings migrate it to a real provider; old queued jobs use the current
+        # default rather than accidentally sending a Mimo payload to 豆包.
+        chosen = settings.tts_provider if settings.tts_provider in {"mimo", "volc"} else "volc"
+    return chosen if chosen in {"mimo", "volc"} else "volc"
+
+
+def provider_model_voice(settings: Settings, provider: str) -> tuple[str, str]:
+    if provider == "volc":
+        return settings.volc_model, settings.volc_voice
+    return settings.tts_model, settings.tts_voice
+
+
+def provider_label(provider: str) -> str:
+    return _PROVIDER_LABELS.get(provider, provider)
 
 
 def _mask_secret(value: str) -> str:
@@ -277,57 +312,53 @@ def _mask_secret(value: str) -> str:
 def audio_providers_info(
     settings: Settings | None = None, *, default_provider: str | None = None
 ) -> dict[str, object]:
-    """Describe the configured TTS providers for the word-library picker."""
+    """Describe the two supported TTS services without exposing secrets."""
     settings = settings or get_settings()
     providers = []
     for pid in ("mimo", "volc"):
         enabled = settings.provider_enabled(pid)
+        api_url = settings.tts_base_url if pid == "mimo" else settings.volc_base_url
         api_key = settings.tts_api_key if pid == "mimo" else settings.volc_api_key
+        model, voice = provider_model_voice(settings, pid)
         providers.append(
             {
                 "id": pid,
-                "label": _PROVIDER_LABELS[pid],
+                "label": provider_label(pid),
                 "enabled": enabled,
-                "base_url": settings.tts_base_url if pid == "mimo" else settings.volc_base_url,
+                "api_url": api_url,
+                "base_url": api_url,
                 "api_key_configured": bool(api_key),
                 "api_key_masked": _mask_secret(api_key),
-                "voice": settings.tts_voice if pid == "mimo" else settings.volc_voice,
-                "model": settings.tts_model if pid == "mimo" else settings.volc_model,
+                "voice": voice,
+                "model": model,
             }
         )
-    default = default_provider or settings.tts_provider
-    if default not in _PROVIDERS:
-        default = settings.tts_provider
-    if not settings.provider_enabled(default):
-        default = next((p["id"] for p in providers if p["enabled"]), default)
+    default = canonical_provider(default_provider, settings)
     return {"default": default, "current": default, "providers": providers}
 
 
 def custom_audio_info(settings: Settings | None = None) -> dict[str, object]:
-    """Return the single custom API connection shown in System settings.
-
-    The API key is deliberately represented only by a masked value.  Model and
-    voice are effective environment defaults; they are returned for context but
-    are not account fields in the UI.
-    """
+    """Return the selected service in the legacy top-level response shape."""
     settings = settings or get_settings()
+    provider = canonical_provider(settings.tts_provider, settings)
+    api_url = settings.tts_base_url if provider == "mimo" else settings.volc_base_url
+    api_key = settings.tts_api_key if provider == "mimo" else settings.volc_api_key
+    model, voice = provider_model_voice(settings, provider)
     return {
-        "api_url": settings.tts_base_url,
-        "base_url": settings.tts_base_url,
-        "api_key_configured": bool(settings.tts_api_key),
-        "api_key_masked": _mask_secret(settings.tts_api_key),
-        "model": settings.tts_model,
-        "voice": settings.tts_voice,
-        "configured": settings.tts_enabled,
+        "api_url": api_url,
+        "base_url": api_url,
+        "api_key_configured": bool(api_key),
+        "api_key_masked": _mask_secret(api_key),
+        "model": model,
+        "voice": voice,
+        "configured": settings.provider_enabled(provider),
+        "provider": provider,
+        "provider_label": provider_label(provider),
     }
 
 
 def _provider_order(provider: str | None, settings: Settings) -> list[str]:
-    chosen = (provider or settings.tts_provider).strip().lower()
-    if chosen == "custom":
-        return ["custom"]
-    if chosen not in _PROVIDERS:
-        chosen = "mimo"
+    chosen = canonical_provider(provider, settings)
     other = "volc" if chosen == "mimo" else "mimo"
     return [chosen, other]
 
@@ -338,12 +369,12 @@ def synthesize_word_mp3(
     provider: str | None = None,
     settings: Settings | None = None,
     language: str = "en",
-) -> tuple[bytes, str]:
+) -> SynthesisResult:
     """Synthesize English or Chinese text to MP3.
 
-    The current ``custom`` connection is authoritative and never falls back to a
-    second account.  Historical mimo/volc requests retain their old fallback
-    behavior for queued jobs and rolling API clients.
+    豆包 is attempted first by default. A provider error (including quota or an
+    undecodable response) moves to the other configured service; local validation
+    errors are raised before any provider call.
     """
     text = text.strip()
     if not text:
@@ -361,12 +392,14 @@ def synthesize_word_mp3(
             log.debug("tts synthesize provider=%s language=%s token=%r", current, language, text)
             audio = providers[current](text, settings)
         except AppError as exc:
-            if exc.code in {"TTS_PROVIDER_ERROR", "TTS_NOT_CONFIGURED"}:
+            if exc.code in {"TTS_PROVIDER_ERROR", "TTS_NOT_CONFIGURED", "TTS_QUOTA_EXHAUSTED"}:
                 last_exc = exc
-                if current != "custom":
-                    log.warning("TTS provider %s failed, trying fallback", current)
+                log.warning("TTS provider %s failed, trying fallback", current)
                 continue
             raise
-        voice = settings.tts_voice if current in {"custom", "mimo"} else settings.volc_voice
-        return audio, voice
+        voice = settings.tts_voice if current == "mimo" else settings.volc_voice
+        model = settings.tts_model if current == "mimo" else settings.volc_model
+        if isinstance(audio, SynthesisResult):
+            return audio
+        return SynthesisResult(audio=audio, voice=voice, provider=current, model=model)
     raise last_exc or AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")

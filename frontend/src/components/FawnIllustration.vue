@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import fawnIcon from '@/assets/fawn-look-back-64px.png'
+import { computed } from 'vue'
+import { deerAsset } from '@/utils/deerAssets'
 
 const props = withDefaults(defineProps<{ variant?: string; width?: number }>(), {
   variant: 'mon',
-  width: 84,
+  width: 88,
 })
+const image = computed(() => deerAsset(props.variant))
 </script>
 
 <template>
   <img
     class="fawn-illustration"
-    :src="fawnIcon"
+    :src="image"
     :data-variant="props.variant"
     :width="props.width"
-    :height="Math.round(props.width * 0.75)"
+    :height="props.width"
     role="img"
     alt="星期小鹿插图"
   />

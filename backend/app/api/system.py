@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, Request, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -19,6 +19,7 @@ from app.core.errors import AppError
 from app.core.responses import envelope
 from app.schemas import (
     DictionaryAudioStartRequest,
+    SystemAudioTestRequest,
     SystemAudioSettingsUpdate,
     SystemIssueNoteUpdate,
 )
@@ -28,8 +29,10 @@ from app.services.dictionary_audio import (
     resume_dictionary_audio,
     start_dictionary_audio,
 )
+from app.services import tts as tts_service
 from app.services.system_settings import (
     audio_settings_data,
+    audio_runtime_settings,
     get_issue_note_data,
     issue_note_data,
     resolve_audio_provider,
@@ -164,6 +167,34 @@ def save_audio_settings(
     return envelope(request, audio_settings_data(db))
 
 
+@router.post("/audio-settings/test")
+def test_audio_settings(
+    payload: SystemAudioTestRequest,
+    db: Annotated[Session, Depends(get_db)],
+    _actor: Annotated[Actor, Depends(require_web_admin)],
+):
+    """Synthesize a short probe and return the actual provider metadata in headers."""
+    settings = audio_runtime_settings(db)
+    provider = resolve_audio_provider(db, payload.provider)
+    result = tts_service.synthesize_word_mp3("camera", provider=provider, settings=settings)
+    if isinstance(result, tts_service.SynthesisResult):
+        audio, actual_provider, model, voice = result.audio, result.provider, result.model, result.voice
+    else:
+        audio, voice = result
+        actual_provider = provider
+        model = settings.volc_model if actual_provider == "volc" else settings.tts_model
+    return Response(
+        content=audio,
+        media_type="audio/mpeg",
+        headers={
+            "Content-Disposition": "inline",
+            "X-TTS-Provider": actual_provider,
+            "X-TTS-Model": model,
+            "X-TTS-Voice": voice,
+        },
+    )
+
+
 @router.get("/dictionary-audio/progress")
 def get_dictionary_audio_progress(
     request: Request,
@@ -180,7 +211,7 @@ def start_dictionary_audio_route(
     actor: Annotated[Actor, Depends(require_web_admin)],
 ):
     provider = resolve_audio_provider(db, payload.provider)
-    data = start_dictionary_audio(provider)
+    data = start_dictionary_audio(provider, force=payload.force)
     _record_dictionary_audio_action(db, request, actor, "system.dictionary_audio.start", data)
     return envelope(request, data)
 

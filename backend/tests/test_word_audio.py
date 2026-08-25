@@ -269,9 +269,11 @@ def test_synthesize_dispatches_to_selected_provider(monkeypatch, tmp_path):
         return MP3
 
     _mock_providers(monkeypatch, fake_mimo, fake_volc)
-    audio, voice = tts.synthesize_word_mp3("camera", provider="volc")
-    assert audio == MP3
-    assert voice == "zh_female_yingyujiaoxue_uranus_bigtts"
+    result = tts.synthesize_word_mp3("camera", provider="volc")
+    assert result.audio == MP3
+    assert result.provider == "volc"
+    assert result.model == "doubao-seed-tts-2.0"
+    assert result.voice == "zh_female_yingyujiaoxue_uranus_bigtts"
     assert volc_calls == ["camera"]
     assert mimo_calls == []
 
@@ -288,9 +290,11 @@ def test_synthesize_falls_back_to_other_provider_on_failure(monkeypatch, tmp_pat
         return MP3 + b"volc"
 
     _mock_providers(monkeypatch, fake_mimo, fake_volc)
-    audio, voice = tts.synthesize_word_mp3("camera", provider="mimo")
-    assert audio == MP3 + b"volc"
-    assert voice == "zh_female_yingyujiaoxue_uranus_bigtts"
+    result = tts.synthesize_word_mp3("camera", provider="mimo")
+    assert result.audio == MP3 + b"volc"
+    assert result.provider == "volc"
+    assert result.model == "doubao-seed-tts-2.0"
+    assert result.voice == "zh_female_yingyujiaoxue_uranus_bigtts"
 
 
 def test_synthesize_skips_unconfigured_provider(monkeypatch, tmp_path):
@@ -331,7 +335,7 @@ def test_audio_providers_endpoint(client, monkeypatch, tmp_path):
     response = client.get("/api/v1/words/audio/providers")
     assert response.status_code == 200, response.text
     data = response.json()["data"]
-    assert data["current"] == "mimo"
+    assert data["current"] == "volc"
     by_id = {p["id"]: p for p in data["providers"]}
     assert by_id["mimo"]["enabled"] is True
     assert by_id["volc"]["enabled"] is False
@@ -472,6 +476,46 @@ def test_decode_audio_passes_through_raw_mp3():
     raw = b"ID3" + b"\x00" * 40 + b"frames"
     assert _decode_audio(raw) == raw
     assert _decode_audio(b"\xff\xf3AB" + b"x" * 20) == b"\xff\xf3AB" + b"x" * 20
+
+
+def test_volc_full_endpoint_is_not_treated_as_mimo_chat_url(monkeypatch):
+    _enable_volc(monkeypatch)
+    endpoint = "https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional"
+    monkeypatch.setenv("VOLC_TTS_BASE_URL", endpoint)
+    get_settings.cache_clear()
+    import urllib.request
+    import app.services.tts as tts
+
+    captured: dict[str, object] = {}
+    ndjson = ('{"code":0,"message":"","data":"' + _b64(MP3) + '"}\n'
+              '{"code":20000000,"message":"OK","data":null}\n').encode("utf-8")
+
+    class FakeResponse:
+        headers = {"Content-Type": "application/json"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return ndjson
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["resource_id"] = request.headers.get("X-api-resource-id")
+        captured["timeout"] = timeout
+        return FakeResponse()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    try:
+        assert tts._synthesize_volc("camera", get_settings()) == MP3
+    finally:
+        get_settings.cache_clear()
+    assert captured["url"] == endpoint + "?api_key=volc-key"
+    assert "/chat/completions" not in str(captured["url"])
+    assert captured["resource_id"] == "seed-tts-2.0"
 
 
 def test_decode_audio_reassembles_volc_ndjson_chunks():

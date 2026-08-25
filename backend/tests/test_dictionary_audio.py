@@ -68,11 +68,16 @@ def test_dictionary_audio_system_routes_expose_controls(client, monkeypatch):
 
     base = {
         "state": "running", "total": 10, "generated": 3, "failed": 0,
-        "remaining": 7, "provider": "mimo", "next_run_at": None,
+        "remaining": 7, "provider": "mimo", "model": "mimo-v2.5-tts", "voice": "Chloe",
+        "last_provider": None, "last_model": None, "last_voice": None, "next_run_at": None,
         "last_error": None, "updated_at": None, "dictionary_available": True,
     }
     monkeypatch.setattr(system, "dictionary_audio_progress", lambda: base)
-    monkeypatch.setattr(system, "start_dictionary_audio", lambda provider=None: {**base, "provider": provider or "mimo"})
+    monkeypatch.setattr(
+        system,
+        "start_dictionary_audio",
+        lambda provider=None, *, force=False: {**base, "provider": provider or "mimo"},
+    )
     monkeypatch.setattr(system, "pause_dictionary_audio", lambda: {**base, "state": "paused"})
     monkeypatch.setattr(system, "resume_dictionary_audio", lambda: base)
 

@@ -132,12 +132,18 @@ class Settings:
             tts_voice=os.getenv("TTS_VOICE", "Chloe"),
             tts_audio_dir=os.getenv("TTS_AUDIO_DIR", "").strip(),
             tts_timeout_seconds=float(os.getenv("TTS_TIMEOUT_SECONDS", "60")),
-            tts_provider=os.getenv("TTS_PROVIDER", "mimo").strip().lower() or "mimo",
+            # 豆包 is the primary provider; mimo remains the automatic fallback.
+            tts_provider=os.getenv("TTS_PROVIDER", "volc").strip().lower() or "volc",
             tts_auto_generate_on_import=_boolean("TTS_AUTO_GENERATE_ON_IMPORT", True),
             dictionary_audio_retry_seconds=int(os.getenv("DICTIONARY_AUDIO_RETRY_SECONDS", "300")),
             dictionary_audio_scan_seconds=int(os.getenv("DICTIONARY_AUDIO_SCAN_SECONDS", "3600")),
             dictionary_audio_quota_wait_seconds=int(os.getenv("DICTIONARY_AUDIO_QUOTA_WAIT_SECONDS", "18000")),
-            volc_base_url=os.getenv("VOLC_TTS_BASE_URL", "https://openspeech.bytedance.com").rstrip("/"),
+            # Keep the complete agent-plan endpoint as the visible default. The
+            # request builder also accepts the historical host-only value.
+            volc_base_url=os.getenv(
+                "VOLC_TTS_BASE_URL",
+                "https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional",
+            ).rstrip("/"),
             volc_api_key_file=volc_api_key_file,
             volc_api_key=volc_api_key,
             volc_model=os.getenv("VOLC_TTS_MODEL", "doubao-seed-tts-2.0"),

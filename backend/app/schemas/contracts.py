@@ -108,9 +108,8 @@ class WordEnrichRequest(StrictModel):
         return values
 
 
-# ``custom`` is the only provider exposed by the current UI.  The historical
-# values stay accepted for one release so already queued/API-triggered jobs can
-# drain while databases migrate to the single custom connection.
+# ``custom`` remains accepted for rolling compatibility with released clients;
+# the current UI exposes the two concrete service slots below.
 AudioProvider = Literal["custom", "mimo", "volc"]
 
 
@@ -129,6 +128,11 @@ class WordAudioRegenerateAllRequest(StrictModel):
 
 
 class DictionaryAudioStartRequest(StrictModel):
+    provider: AudioProvider | None = None
+    force: bool = False
+
+
+class SystemAudioTestRequest(StrictModel):
     provider: AudioProvider | None = None
 
 

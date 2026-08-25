@@ -159,6 +159,8 @@ def update_word(db: Session, word_id: int, payload: WordUpdate) -> Word:
         # "on" and "like"). The next request regenerates it with the new token.
         word.audio_path = None
         word.audio_format = None
+        word.audio_provider = None
+        word.audio_model = None
         word.audio_voice = None
         word.audio_generated_at = None
         word.audio_bytes = None
@@ -244,6 +246,8 @@ def reimport_word(db: Session, word_id: int, payload: WordCreate) -> Word:
     if word.normalized_en_word != normalized:
         word.audio_path = None
         word.audio_format = None
+        word.audio_provider = None
+        word.audio_model = None
         word.audio_voice = None
         word.audio_generated_at = None
         word.audio_bytes = None
@@ -275,12 +279,19 @@ def audio_dir(settings: Settings | None = None) -> Path:
     return Path("data/audio").resolve()
 
 
-def _audio_filename(word: Word, settings: Settings, provider: str | None = None) -> str:
+def _audio_filename(
+    word: Word,
+    settings: Settings,
+    provider: str | None = None,
+    *,
+    model: str | None = None,
+    voice: str | None = None,
+) -> str:
     selected_provider = provider or settings.tts_provider
-    model = settings.volc_model if selected_provider == "volc" else settings.tts_model
-    voice = settings.volc_voice if selected_provider == "volc" else settings.tts_voice
+    effective_model = model or (settings.volc_model if selected_provider == "volc" else settings.tts_model)
+    effective_voice = voice or (settings.volc_voice if selected_provider == "volc" else settings.tts_voice)
     digest = hashlib.sha256(
-        f"isolated-token-v2|{word.en_word}|{selected_provider}|{model}|{voice}".encode("utf-8")
+        f"isolated-token-v2|{word.en_word}|{selected_provider}|{effective_model}|{effective_voice}".encode("utf-8")
     ).hexdigest()[:12]
     return f"word-{word.id}-{digest}.mp3"
 
@@ -307,19 +318,24 @@ def generate_word_audio(
     word = get_word(db, word_id, include_deleted=False)
     settings = audio_runtime_settings(db)
     provider = resolve_audio_provider(db, provider)
-    expected_filename = _audio_filename(word, settings, provider)
-    if word.audio_path and not force and (
-        word.audio_path.startswith("dictionary/")
-        or (word.audio_path == expected_filename and word_audio_file(word, settings))
-    ):
+    if word.audio_path and not force and word_audio_file(word, settings):
         return word
-    audio, voice = tts_service.synthesize_word_mp3(
+    result = tts_service.synthesize_word_mp3(
         word.en_word, provider=provider, settings=settings
     )
+    if isinstance(result, tts_service.SynthesisResult):
+        audio = result.audio
+        voice = result.voice
+        actual_provider = result.provider
+        model = result.model
+    else:  # Compatibility for older worker/test doubles returning (bytes, voice).
+        audio, voice = result
+        actual_provider = provider
+        model = settings.volc_model if actual_provider == "volc" else settings.tts_model
     root = audio_dir(settings)
     try:
         root.mkdir(parents=True, exist_ok=True)
-        filename = _audio_filename(word, settings, provider)
+        filename = _audio_filename(word, settings, actual_provider, model=model, voice=voice)
         final = root / filename
         fd, tmp_name = tempfile.mkstemp(prefix=f".{filename}.", suffix=".tmp", dir=root)
         try:
@@ -339,6 +355,8 @@ def generate_word_audio(
     old_path = word.audio_path
     word.audio_path = filename
     word.audio_format = "mp3"
+    word.audio_provider = actual_provider
+    word.audio_model = model
     word.audio_voice = voice
     word.audio_generated_at = utc_text()
     word.audio_bytes = len(audio)

@@ -70,6 +70,8 @@ class _DictionaryAudioStore:
                 en_word TEXT NOT NULL,
                 audio_path TEXT NOT NULL,
                 audio_format TEXT NOT NULL,
+                audio_provider TEXT,
+                audio_model TEXT,
                 audio_voice TEXT NOT NULL,
                 audio_bytes INTEGER NOT NULL,
                 generated_at TEXT NOT NULL
@@ -81,16 +83,40 @@ class _DictionaryAudioStore:
                 generated INTEGER NOT NULL,
                 failed INTEGER NOT NULL,
                 provider TEXT,
+                model TEXT,
+                voice TEXT,
+                last_provider TEXT,
+                last_model TEXT,
+                last_voice TEXT,
+                force_regenerate INTEGER NOT NULL DEFAULT 0,
                 next_run_at TEXT,
                 last_error TEXT,
                 updated_at TEXT NOT NULL
             );
             """
         )
+        columns = {
+            row[1] for row in con.execute("PRAGMA table_info(dictionary_audio_entries)")
+        }
+        for name, definition in (("audio_provider", "TEXT"), ("audio_model", "TEXT")):
+            if name not in columns:
+                con.execute(f"ALTER TABLE dictionary_audio_entries ADD COLUMN {name} {definition}")  # noqa: S608
+        job_columns = {row[1] for row in con.execute("PRAGMA table_info(dictionary_audio_job)")}
+        for name, definition in (
+            ("model", "TEXT"),
+            ("voice", "TEXT"),
+            ("last_provider", "TEXT"),
+            ("last_model", "TEXT"),
+            ("last_voice", "TEXT"),
+            ("force_regenerate", "INTEGER NOT NULL DEFAULT 0"),
+        ):
+            if name not in job_columns:
+                con.execute(f"ALTER TABLE dictionary_audio_job ADD COLUMN {name} {definition}")  # noqa: S608
         con.execute(
             """INSERT OR IGNORE INTO dictionary_audio_job
-               (id,state,total,generated,failed,provider,next_run_at,last_error,updated_at)
-               VALUES (1,'idle',0,0,0,NULL,NULL,NULL,?)""",
+               (id,state,total,generated,failed,provider,model,voice,last_provider,last_model,last_voice,
+                force_regenerate,next_run_at,last_error,updated_at)
+               VALUES (1,'idle',0,0,0,NULL,NULL,NULL,NULL,NULL,NULL,0,NULL,NULL,?)""",
             (utc_text(),),
         )
         con.commit()
@@ -101,7 +127,9 @@ class _DictionaryAudioStore:
         if con is None:
             return {
                 "state": "idle", "total": 0, "generated": 0, "failed": 0,
-                "provider": None, "next_run_at": None, "last_error": None,
+                "provider": None, "model": None, "voice": None,
+                "last_provider": None, "last_model": None, "last_voice": None,
+                "force_regenerate": 0, "next_run_at": None, "last_error": None,
                 "updated_at": None,
             }
         try:
@@ -178,11 +206,14 @@ class _DictionaryAudioStore:
         try:
             con.execute(
                 """INSERT INTO dictionary_audio_entries
-                   (normalized_word,en_word,audio_path,audio_format,audio_voice,audio_bytes,generated_at)
-                   VALUES (:normalized_word,:en_word,:audio_path,:audio_format,:audio_voice,:audio_bytes,:generated_at)
+                   (normalized_word,en_word,audio_path,audio_format,audio_provider,audio_model,
+                    audio_voice,audio_bytes,generated_at)
+                   VALUES (:normalized_word,:en_word,:audio_path,:audio_format,:audio_provider,:audio_model,
+                    :audio_voice,:audio_bytes,:generated_at)
                    ON CONFLICT(normalized_word) DO UPDATE SET
                      en_word=excluded.en_word,audio_path=excluded.audio_path,
-                     audio_format=excluded.audio_format,audio_voice=excluded.audio_voice,
+                     audio_format=excluded.audio_format,audio_provider=excluded.audio_provider,
+                     audio_model=excluded.audio_model,audio_voice=excluded.audio_voice,
                      audio_bytes=excluded.audio_bytes,generated_at=excluded.generated_at""",
                 entry,
             )
@@ -211,13 +242,17 @@ def attach_cached_dictionary_audio(word: Word) -> bool:
         return False
     word.audio_path = entry["audio_path"]
     word.audio_format = entry["audio_format"]
+    word.audio_provider = entry.get("audio_provider")
+    word.audio_model = entry.get("audio_model")
     word.audio_voice = entry["audio_voice"]
     word.audio_generated_at = entry["generated_at"]
     word.audio_bytes = entry["audio_bytes"]
     return True
 
 
-def _write_shared_audio(normalized_word: str, audio: bytes, voice: str) -> dict[str, Any]:
+def _write_shared_audio(
+    normalized_word: str, audio: bytes, *, provider: str, model: str, voice: str
+) -> dict[str, Any]:
     root = audio_dir()
     target_dir = root / "dictionary"
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -242,6 +277,8 @@ def _write_shared_audio(normalized_word: str, audio: bytes, voice: str) -> dict[
         "en_word": normalized_word,
         "audio_path": str(Path("dictionary") / filename),
         "audio_format": "mp3",
+        "audio_provider": provider,
+        "audio_model": model,
         "audio_voice": voice,
         "audio_bytes": len(audio),
         "generated_at": utc_text(),
@@ -287,23 +324,28 @@ class _DictionaryAudioWorker:
                 self._thread.start()
             self._condition.notify_all()
 
-    def start(self, provider: str | None = None) -> dict[str, Any]:
+    def start(self, provider: str | None = None, *, force: bool = False) -> dict[str, Any]:
         from app.services.system_settings import audio_runtime_settings
+        from app.services.tts import canonical_provider, provider_model_voice
 
         settings = audio_runtime_settings()
-        chosen = provider or settings.tts_provider
-        if not settings.provider_enabled(chosen):
+        chosen = canonical_provider(provider, settings)
+        other = "mimo" if chosen == "volc" else "volc"
+        if not settings.provider_enabled(chosen) and not settings.provider_enabled(other):
             raise AppError(409, "TTS_NOT_CONFIGURED", "所选 TTS 服务尚未配置")
         words = dictionary_words()
         if not words:
             raise AppError(409, "DICTIONARY_UNAVAILABLE", "本地词库不存在或没有可生成的单词")
         cached = _store.valid_cached_words(words)
         _store.update_state(
-            state="running" if len(cached) < len(words) else "completed",
+            state="running" if force or len(cached) < len(words) else "completed",
             total=len(words), generated=len(cached), failed=0, provider=chosen,
+            model=provider_model_voice(settings, chosen)[0], voice=provider_model_voice(settings, chosen)[1],
+            last_provider=None, last_model=None, last_voice=None,
+            force_regenerate=int(force),
             next_run_at=None, last_error=None,
         )
-        if len(cached) == len(words):
+        if len(cached) == len(words) and not force:
             _store.update_state(next_run_at=_after(settings.dictionary_audio_scan_seconds))
         self.ensure_thread()
         return dictionary_audio_progress()
@@ -320,7 +362,7 @@ class _DictionaryAudioWorker:
         from app.services.system_settings import audio_runtime_settings
 
         provider = state.get("provider") or audio_runtime_settings().tts_provider
-        return self.start(provider)
+        return self.start(provider, force=bool(state.get("force_regenerate")))
 
     def _loop(self) -> None:
         while not self._stopped:
@@ -356,22 +398,40 @@ class _DictionaryAudioWorker:
         cached = _store.valid_cached_words(words)
         _store.update_state(total=len(words), generated=len(cached), failed=0)
         failed = 0
-        provider = _store.state().get("provider") or settings.tts_provider
+        state = _store.state()
+        provider = state.get("provider") or settings.tts_provider
+        force_regenerate = bool(state.get("force_regenerate"))
         for normalized_word in words:
             if _store.state().get("state") != "running":
                 return
             entry = _store.entry(normalized_word)
-            if entry is not None and _entry_file(entry) is not None:
+            if not force_regenerate and entry is not None and _entry_file(entry) is not None:
                 continue
             try:
-                audio, voice = tts_service.synthesize_word_mp3(
+                result = tts_service.synthesize_word_mp3(
                     normalized_word, provider=provider, settings=settings
                 )
-                entry = _write_shared_audio(normalized_word, audio, voice)
+                if isinstance(result, tts_service.SynthesisResult):
+                    audio, voice = result.audio, result.voice
+                    actual_provider, model = result.provider, result.model
+                else:
+                    audio, voice = result
+                    actual_provider = provider
+                    model = settings.volc_model if actual_provider == "volc" else settings.tts_model
+                entry = _write_shared_audio(
+                    normalized_word,
+                    audio,
+                    provider=actual_provider,
+                    model=model,
+                    voice=voice,
+                )
                 _store.save_entry(entry)
                 _attach_existing_words(normalized_word)
                 cached.add(normalized_word)
-                _store.update_state(generated=len(cached), failed=failed, last_error=None)
+                _store.update_state(
+                    generated=len(cached), failed=failed, last_error=None,
+                    last_provider=actual_provider, last_model=model, last_voice=voice,
+                )
             except AppError as exc:
                 if exc.code == "TTS_QUOTA_EXHAUSTED":
                     _store.update_state(
@@ -390,7 +450,7 @@ class _DictionaryAudioWorker:
         if len(cached) >= len(words):
             _store.update_state(
                 state="completed", generated=len(cached), failed=0,
-                next_run_at=_after(settings.dictionary_audio_scan_seconds), last_error=None,
+                force_regenerate=0, next_run_at=_after(settings.dictionary_audio_scan_seconds), last_error=None,
             )
         else:
             _store.update_state(
@@ -419,8 +479,8 @@ def dictionary_audio_progress() -> dict[str, Any]:
     }
 
 
-def start_dictionary_audio(provider: str | None = None) -> dict[str, Any]:
-    return _worker.start(provider)
+def start_dictionary_audio(provider: str | None = None, *, force: bool = False) -> dict[str, Any]:
+    return _worker.start(provider, force=force)
 
 
 def pause_dictionary_audio() -> dict[str, Any]:

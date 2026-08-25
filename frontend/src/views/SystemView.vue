@@ -12,10 +12,10 @@ import {
   updateApiClient,
 } from '@/api/apiClients'
 import { apiClient } from '@/api/client'
-import { getAudioSettings, getDictionaryAudioProgress, getIssueNote, pauseDictionaryAudio, resumeDictionaryAudio, saveAudioSettings, saveIssueNote, startDictionaryAudio } from '@/api/system'
+import { getAudioSettings, getDictionaryAudioProgress, getIssueNote, pauseDictionaryAudio, resumeDictionaryAudio, saveAudioSettings, saveIssueNote, startDictionaryAudio, testAudioSettings as runAudioSettingsTest } from '@/api/system'
 import { scopeLabel } from '@/utils/apiScopes'
 import { ALL_API_SCOPES } from '@/types/domain'
-import type { ApiClient, ApiClientCreatePayload, ApiScope, DictionaryAudioProgress, DictionaryAudioState, SystemAudioSettings, SystemIssueNote } from '@/types/domain'
+import type { ApiClient, ApiClientCreatePayload, ApiScope, AudioProviderInfo, DictionaryAudioProgress, DictionaryAudioState, SystemAudioSettings, SystemIssueNote } from '@/types/domain'
 
 const clients = ref<ApiClient[]>([])
 const loading = ref(false)
@@ -80,8 +80,14 @@ const dictionaryAudio = ref<DictionaryAudioProgress | null>(null)
 const dictionaryAudioBusy = ref(false)
 const audioSettings = ref<SystemAudioSettings | null>(null)
 const audioSettingsBusy = ref(false)
+const audioTestBusy = ref(false)
 const autoImportDraft = ref(false)
-const audioDraft = reactive({ api_url: '', api_key: '' })
+type AudioDraft = { base_url: string; api_key: string }
+const audioProviderDraft = ref<'mimo' | 'volc'>('volc')
+const audioDraft = reactive<{ mimo: AudioDraft; volc: AudioDraft }>({
+  mimo: { base_url: '', api_key: '' },
+  volc: { base_url: '', api_key: '' },
+})
 let dictionaryAudioTimer: number | null = null
 const dictionaryAudioPercent = computed(() => dictionaryAudio.value?.total ? Math.round(dictionaryAudio.value.generated / dictionaryAudio.value.total * 100) : 0)
 const dictionaryAudioStateLabels: Record<DictionaryAudioState, string> = {
@@ -90,10 +96,18 @@ const dictionaryAudioStateLabels: Record<DictionaryAudioState, string> = {
 }
 function syncAudioDraft() {
   if (!audioSettings.value) return
-  audioDraft.api_url = audioSettings.value.api_url
-  audioDraft.api_key = ''
+  audioProviderDraft.value = audioSettings.value.default_provider === 'mimo' ? 'mimo' : 'volc'
+  for (const provider of audioSettings.value.providers ?? []) {
+    if (provider.id !== 'mimo' && provider.id !== 'volc') continue
+    audioDraft[provider.id] = {
+      base_url: provider.api_url ?? provider.base_url,
+      api_key: '',
+    }
+  }
   autoImportDraft.value = audioSettings.value.auto_generate_on_import
 }
+const activeAudioProvider = computed<AudioProviderInfo | undefined>(() => audioSettings.value?.providers?.find(provider => provider.id === audioProviderDraft.value))
+const providerLabel = (provider: string | null | undefined) => provider === 'volc' ? '豆包' : provider === 'mimo' ? 'Mimo' : provider || '—'
 async function loadAudioSettings() {
   try {
     audioSettings.value = await getAudioSettings()
@@ -105,18 +119,31 @@ async function persistAudioSettings() {
   audioSettingsBusy.value = true
   try {
     audioSettings.value = await saveAudioSettings(
-      audioDraft.api_url,
-      audioDraft.api_key,
+      audioProviderDraft.value,
+      { mimo: audioDraft.mimo, volc: audioDraft.volc },
       audioSettings.value.version,
       autoImportDraft.value,
     )
     syncAudioDraft()
-    ElMessage.success('自定义语音 API 设置已保存')
+    ElMessage.success('豆包 / Mimo 语音设置已保存')
   } catch (error) {
     const normalized = normalizeApiError(error)
     if (normalized.isConflict) await loadAudioSettings()
     ElMessage.error(normalized.isConflict ? '音频设置已变化，已加载最新设置' : normalized.message)
   } finally { audioSettingsBusy.value = false }
+}
+async function testCurrentAudioSettings() {
+  audioTestBusy.value = true
+  try {
+    const result = await runAudioSettingsTest(audioProviderDraft.value)
+    const url = URL.createObjectURL(result.blob)
+    const player = new Audio(url)
+    player.onended = () => URL.revokeObjectURL(url)
+    await player.play()
+    ElMessage.success(`测试成功：${providerLabel(result.provider)} · ${result.model} · ${result.voice}`)
+  } catch (error) {
+    ElMessage.error(normalizeApiError(error).message)
+  } finally { audioTestBusy.value = false }
 }
 function scheduleDictionaryAudioPoll() {
   if (dictionaryAudioTimer !== null) window.clearTimeout(dictionaryAudioTimer)
@@ -131,8 +158,16 @@ async function loadDictionaryAudio() {
 async function runDictionaryAudioAction(action: 'start'|'pause'|'resume') {
   dictionaryAudioBusy.value = true
   try {
-    dictionaryAudio.value = action === 'start' ? await startDictionaryAudio() : action === 'pause' ? await pauseDictionaryAudio() : await resumeDictionaryAudio()
+    dictionaryAudio.value = action === 'start' ? await startDictionaryAudio(audioProviderDraft.value) : action === 'pause' ? await pauseDictionaryAudio() : await resumeDictionaryAudio()
     ElMessage.success(action === 'pause' ? '本地词库语音生成已暂停' : '本地词库语音生成已在后台运行')
+  } catch (error) { ElMessage.error(normalizeApiError(error).message) }
+  finally { dictionaryAudioBusy.value = false; scheduleDictionaryAudioPoll() }
+}
+async function regenerateDictionaryAudio() {
+  dictionaryAudioBusy.value = true
+  try {
+    dictionaryAudio.value = await startDictionaryAudio(audioProviderDraft.value, true)
+    ElMessage.success(`已按${providerLabel(audioProviderDraft.value)}配置重新生成词库音频`)
   } catch (error) { ElMessage.error(normalizeApiError(error).message) }
   finally { dictionaryAudioBusy.value = false; scheduleDictionaryAudioPoll() }
 }
@@ -410,36 +445,45 @@ async function downloadPreRestore() {
         </div>
         <div class="button-row">
           <el-button data-testid="start-dictionary-audio" type="primary" :loading="dictionaryAudioBusy" :disabled="dictionaryAudio?.dictionary_available===false" @click="runDictionaryAudioAction('start')">扫描并生成缺失音频</el-button>
+          <el-button data-testid="regenerate-dictionary-audio" :loading="dictionaryAudioBusy" :disabled="dictionaryAudio?.dictionary_available===false" @click="regenerateDictionaryAudio">按当前服务重新生成</el-button>
           <el-button v-if="dictionaryAudio&&dictionaryAudio.state!=='paused'&&dictionaryAudio.state!=='idle'" :loading="dictionaryAudioBusy" @click="runDictionaryAudioAction('pause')">暂停</el-button>
           <el-button v-if="dictionaryAudio?.state==='paused'" type="success" :loading="dictionaryAudioBusy" @click="runDictionaryAudioAction('resume')">恢复</el-button>
         </div>
       </div>
       <div v-if="audioSettings" class="audio-model-settings">
         <label class="audio-model-field">
-          <span><strong>自定义语音 API URL</strong><small>填写 OpenAI 兼容 API 根地址，或直接填写 /chat/completions 地址</small></span>
-          <el-input v-model="audioDraft.api_url" aria-label="自定义语音 API URL" placeholder="例如 https://api.example.com/v1" />
+          <span><strong>语音服务</strong><small>默认使用豆包；豆包失败时自动回退到 Mimo</small></span>
+          <select v-model="audioProviderDraft" aria-label="语音服务">
+            <option value="volc">豆包（默认）</option>
+            <option value="mimo">Mimo</option>
+          </select>
         </label>
         <label class="audio-model-field">
-          <span><strong>自定义 API Key</strong><small>{{ audioSettings.api_key_configured ? `当前 Key：${audioSettings.api_key_masked}` : '尚未配置 Key' }}；Key 只保存在服务端</small></span>
-          <el-input v-model="audioDraft.api_key" aria-label="自定义语音 API Key" type="password" show-password placeholder="输入新的 API Key（留空保留现有 Key）" />
+          <span><strong>{{ activeAudioProvider?.label }} API URL</strong><small>默认值可直接保留；豆包使用完整 plan/tts 地址，Mimo 使用 /v1 根地址</small></span>
+          <el-input v-model="audioDraft[audioProviderDraft].base_url" aria-label="语音 API URL" />
+        </label>
+        <label class="audio-model-field">
+          <span><strong>{{ activeAudioProvider?.label }} API Key</strong><small>{{ activeAudioProvider?.api_key_configured ? `当前 Key：${activeAudioProvider.api_key_masked}` : '尚未配置 Key' }}；留空保留原 Key，Key 只保存在服务端</small></span>
+          <el-input v-model="audioDraft[audioProviderDraft].api_key" aria-label="语音 API Key" type="password" show-password placeholder="输入新的 API Key（留空保留现有 Key）" />
+        </label>
+        <label class="audio-model-field">
+          <span><strong>当前默认模型</strong><small>{{ activeAudioProvider?.model }} · {{ activeAudioProvider?.voice }}</small></span>
+          <div class="audio-model-control">
+            <el-button data-testid="test-audio-settings" :loading="audioTestBusy" @click="testCurrentAudioSettings">测试语音</el-button>
+            <el-button data-testid="save-audio-settings" type="primary" :loading="audioSettingsBusy" @click="persistAudioSettings">保存设置</el-button>
+          </div>
         </label>
         <label class="audio-model-field">
           <span><strong>导入单词时自动生成语音</strong><small>影响词库导入完成后是否自动排队生成发音</small></span>
-          <span class="audio-model-control">
-            <el-switch v-model="autoImportDraft" aria-label="导入单词时自动生成语音" />
-          </span>
+          <span class="audio-model-control"><el-switch v-model="autoImportDraft" aria-label="导入单词时自动生成语音" /></span>
         </label>
-        <label class="audio-model-field">
-          <span><strong>当前生效模型</strong><small>{{ audioSettings.model }} · {{ audioSettings.voice }}</small></span>
-          <el-button data-testid="save-audio-settings" type="primary" :loading="audioSettingsBusy" @click="persistAudioSettings">保存设置</el-button>
-        </label>
-        <p v-if="!audioSettings.configured" class="error-box">尚未配置完整的 API URL 和 Key，保存后语音生成会提示未配置。</p>
+        <p v-if="!activeAudioProvider?.enabled" class="error-box">当前服务尚未配置 API Key；测试或生成时会按规则回退。</p>
       </div>
       <div v-if="dictionaryAudio" class="dictionary-audio-progress" aria-live="polite">
         <div class="dictionary-audio-summary"><strong>{{ dictionaryAudioStateLabels[dictionaryAudio.state] }}</strong><span>已生成 {{ dictionaryAudio.generated }} / {{ dictionaryAudio.total }}</span></div>
         <el-progress :percentage="dictionaryAudioPercent" :status="dictionaryAudio.state==='completed'?'success':undefined" />
         <div class="dictionary-audio-meta">
-          <span>剩余 {{ dictionaryAudio.remaining }}</span><span v-if="dictionaryAudio.failed">本轮失败 {{ dictionaryAudio.failed }}</span><span v-if="dictionaryAudio.provider">模型 {{ dictionaryAudio.provider }}</span>
+          <span>剩余 {{ dictionaryAudio.remaining }}</span><span v-if="dictionaryAudio.failed">本轮失败 {{ dictionaryAudio.failed }}</span><span v-if="dictionaryAudio.provider">首选 {{ providerLabel(dictionaryAudio.provider) }}</span><span v-if="dictionaryAudio.last_provider">最近实际使用 {{ providerLabel(dictionaryAudio.last_provider) }} · {{ dictionaryAudio.last_model }}</span>
           <span v-if="dictionaryAudio.next_run_at">下次运行 {{ new Date(dictionaryAudio.next_run_at).toLocaleString('zh-CN') }}</span>
         </div>
         <p v-if="dictionaryAudio.state==='waiting_quota'" class="quota-note">已达到模型额度限制，系统将在 5 小时后自动继续；也可先暂停，额度恢复后手动恢复。</p>

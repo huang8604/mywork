@@ -41,6 +41,8 @@ class Word(Base):
     example_sentence: Mapped[str | None] = mapped_column(Text)
     audio_path: Mapped[str | None] = mapped_column(String(255))
     audio_format: Mapped[str | None] = mapped_column(String(16))
+    audio_provider: Mapped[str | None] = mapped_column(String(16))
+    audio_model: Mapped[str | None] = mapped_column(String(200))
     audio_voice: Mapped[str | None] = mapped_column(String(64))
     audio_generated_at: Mapped[str | None] = mapped_column(String(32))
     audio_bytes: Mapped[int | None] = mapped_column(Integer)
@@ -240,9 +242,8 @@ class SystemAudioSetting(Base):
     volc_speech_rate: Mapped[int | None] = mapped_column(Integer)
     volc_loudness_rate: Mapped[int | None] = mapped_column(Integer)
     volc_silence_ms: Mapped[int | None] = mapped_column(Integer)
-    # The current UI exposes one custom OpenAI-compatible TTS endpoint.  Keep
-    # these separate from the historical provider columns so existing databases
-    # can be upgraded without rewriting released migrations.
+    # Kept for one-release migration compatibility with the former single custom
+    # connection. New settings are stored in the mimo/volc provider columns.
     custom_base_url: Mapped[str | None] = mapped_column(String(500))
     custom_api_key: Mapped[str | None] = mapped_column(String(1000))
     version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)

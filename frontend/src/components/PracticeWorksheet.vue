@@ -82,8 +82,8 @@ function example(item: PracticeItem): string {
 </template>
 <style scoped>
 .worksheet{background:#fff;color:#17243a;-webkit-print-color-adjust:exact;print-color-adjust:exact}
-.ws-hero{display:flex;align-items:center;justify-content:space-between;gap:12px 18px;min-height:64px;padding:12px 16px;color:#fff;background:var(--ws-deep);background:linear-gradient(120deg,var(--ws-deep),var(--ws-primary));border-bottom:7px solid var(--ws-accent);border-radius:10px 10px 0 0;position:relative}
-.ws-fawn{position:absolute;bottom:2px;width:84px;z-index:1;pointer-events:none;opacity:.96;filter:drop-shadow(0 2px 3px rgba(0,0,0,.18))}
+.ws-hero{display:flex;align-items:center;justify-content:space-between;gap:12px 18px;min-height:88px;padding:12px 16px;color:#fff;background:var(--ws-deep);background:linear-gradient(120deg,var(--ws-deep),var(--ws-primary));border-bottom:7px solid var(--ws-accent);border-radius:10px 10px 0 0;position:relative}
+.ws-fawn{position:absolute;bottom:2px;width:88px;height:88px;z-index:1;pointer-events:none;opacity:.96;filter:drop-shadow(0 2px 3px rgba(0,0,0,.18))}
 .ws-hero-title,.ws-date-card{position:relative;z-index:2}
 .ws-hero-title .ws-eyebrow{margin:0;color:#fff;opacity:.78;font-size:.62rem;font-weight:700;letter-spacing:.14em}
 .ws-hero-title h2{margin:2px 0;font:700 1.35rem Georgia,"Noto Serif SC",serif;color:#fff}
@@ -118,7 +118,7 @@ function example(item: PracticeItem): string {
 .worksheet-footer{display:flex;justify-content:space-between;gap:20px;padding:8px 4px 0;color:#62758a;font-size:.68rem}
 .write-line{display:inline-block;width:90px;height:1rem;border-bottom:1px solid #6c7d91}
 .score-line{letter-spacing:.06em}
-@media(max-width:760px){.ws-hero{padding:12px}.ws-fawn{width:60px;opacity:.85}.ws-date-card{display:none}.worksheet-table{display:none}.worksheet-mobile{display:grid}.worksheet-footer{display:none}}
+@media(max-width:760px){.ws-hero{padding:12px;min-height:72px}.ws-fawn{width:60px;height:60px;opacity:.85}.ws-date-card{display:none}.worksheet-table{display:none}.worksheet-mobile{display:grid}.worksheet-footer{display:none}}
 </style>
 <style scoped>
 .worksheet-mobile article{font-size:var(--worksheet-font-size)}

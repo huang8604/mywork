@@ -95,7 +95,7 @@ Docker 端口发布后，Lucky 请求在容器内通常来自 `172.x` 网桥网�
 
 ### 云 TTS smoke
 
-启用 TTS 后，词库页和系统页使用同一条自定义 OpenAI 兼容语音连接。管理员在「系统管理 → 本地词库语音」填写 API URL 和 API Key（Key 只写入服务端，页面只显示掩码），模型与音色沿用服务端默认值；不再在页面定义多个供应商账号。
+启用 TTS 后，系统页分别保存豆包和 Mimo 的 API URL/Key（Key 只写入服务端，页面只显示掩码），模型与音色沿用服务端默认值。默认使用豆包，调用失败时当前请求自动回退到 Mimo；回退不会改变下次运行的默认服务。
 
 推荐 Stack 环境变量（Key 一律走 secret 文件，不写明文）：
 
@@ -104,18 +104,23 @@ TTS_BASE_URL: "https://api.xiaomimimo.com/v1"
 TTS_API_KEY_FILE: "/run/secrets/tts-api-key"
 TTS_MODEL: "mimo-v2.5-tts"
 TTS_VOICE: "Chloe"
+VOLC_TTS_BASE_URL: "https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional"
+VOLC_TTS_API_KEY_FILE: "/run/secrets/volc-tts-api-key"
+VOLC_TTS_MODEL: "doubao-seed-tts-2.0"
+VOLC_TTS_RESOURCE_ID: "seed-tts-2.0"
+VOLC_TTS_VOICE: "zh_female_yingyujiaoxue_uranus_bigtts"
 TTS_AUTO_GENERATE_ON_IMPORT: "true"
-# 可选：TTS_AUDIO_DIR=/app/data/audio、TTS_TIMEOUT_SECONDS=60
+# 可选：TTS_AUDIO_DIR=/app/data/audio、TTS_TIMEOUT_SECONDS=60、VOLC_TTS_TIMEOUT_SECONDS=60
 ```
 
-部署后 smoke：管理员打开系统设置，填写自定义 API URL/Key 并保存；词库页选一个无音频的词 → 点「生成音频」→ 状态变「已生成」→ 点「播放」应能听到 MP3；把复习表设为“进行中”后进入 `/review` 在线默写，英文优先播词库 MP3，缺失/失败自动回退浏览器 `speechSynthesis`。
+部署后 smoke：管理员打开系统设置，确认豆包 URL 为完整 `plan/tts/unidirectional` 地址、Mimo URL 为 `/v1` 根地址，分别填写 Key 后点击「测试语音」；词库页选一个无音频的词 → 点「生成音频」→ 状态变「已生成」并显示实际 provider/model/voice → 点「播放」应能听到 MP3。点「按当前服务重新生成」可在需要时重做整套词库音频；把复习表设为“进行中”后进入 `/review` 在线默写，英文优先播词库 MP3，缺失/失败自动回退浏览器 `speechSynthesis`。
 
 若生成失败，依次检查：
 
-1. 自定义 URL 是 OpenAI 兼容 API 根地址，或完整的 `/chat/completions` 地址；
-2. API Key 已保存且服务端日志中的配置检查通过（日志不会输出 Key）；
+1. 豆包 URL 使用完整的 `https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional` 地址，不要改成 Mimo 的 `/chat/completions`；Mimo 才使用 `/v1` 根地址并由服务端追加 `/chat/completions`；
+2. 两个 API Key 分别保存且服务端日志中的配置检查通过（日志不会输出 Key）；
 3. `/app/data/audio`（或 `TTS_AUDIO_DIR`）归 UID 10001 可写；
-4. 容器日志中的 `TTS_PROVIDER_ERROR` / `AUDIO_STORAGE_ERROR`（日志不会输出 Key）。
+4. 容器日志中的 `TTS_PROVIDER_ERROR` / `AUDIO_STORAGE_ERROR`（日志不会输出 Key），并检查音频结果上记录的实际 provider/model/voice。
 
 ---
 
@@ -150,7 +155,7 @@ docker exec vocab-app python -c "import sqlite3; c=sqlite3.connect('/app/data/vo
 ```
 
 - 至少保留最近若干版本,并复制到**不同物理存储**。
-- 记录当前运行镜像 SHA 与数据库 schema 版本（`SELECT version_num FROM alembic_version`，当前应为 `0008`）。
+- 记录当前运行镜像 SHA 与数据库 schema 版本（`SELECT version_num FROM alembic_version`，当前应为 `0011`）。
 - 定期在临时目录恢复一份备份,用同版本镜像起一个临时容器,验证单词数、流水数与 `word_stats` 重建一致性(恢复演练)。建议 RPO/RTO 至少做到「更新前备份 + 周期备份」。
 
 ---

@@ -19,7 +19,7 @@ export interface WordStats {
 export interface Word {
   id: number; en_word: string; normalized_en_word: string; phonetic: string | null
   cn_meaning: string; example_sentence: string | null
-  audio_path?: string | null; audio_format?: string | null; audio_voice?: string | null
+  audio_path?: string | null; audio_format?: string | null; audio_provider?: string | null; audio_model?: string | null; audio_voice?: string | null
   audio_generated_at?: string | null; audio_bytes?: number | null
   is_custom: boolean; tags: string[]
   version: number; created_at: string; updated_at: string; deleted_at: string | null; stats: WordStats
@@ -105,6 +105,7 @@ export interface AudioProgress {
 export type AudioProvider = 'custom' | 'mimo' | 'volc'
 export interface AudioProviderInfo {
   id: AudioProvider; label: string; enabled: boolean; base_url: string
+  api_url?: string
   api_key_configured: boolean; api_key_masked: string; voice: string; model: string
 }
 export interface AudioProvidersInfo {
@@ -112,6 +113,8 @@ export interface AudioProvidersInfo {
 }
 export interface VolcTuning { resource_id: string; speech_rate: number; loudness_rate: number; silence_ms: number }
 export interface SystemAudioSettings {
+  default_provider: AudioProvider
+  providers: AudioProviderInfo[]
   api_url: string
   base_url?: string
   api_key_configured: boolean
@@ -138,6 +141,12 @@ export interface DictionaryAudioProgress {
   failed: number
   remaining: number
   provider: AudioProvider | null
+  model: string | null
+  voice: string | null
+  last_provider?: AudioProvider | null
+  last_model?: string | null
+  last_voice?: string | null
+  force_regenerate?: number
   next_run_at: string | null
   last_error: string | null
   updated_at: string | null

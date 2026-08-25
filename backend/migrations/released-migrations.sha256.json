@@ -8,5 +8,6 @@
   "0007_system_audio_settings.py": "96593e010db91677dc709c12db6f3619ba919104826145dc0e200ebf1f8c53d8",
   "0008_audio_provider_overrides.py": "a3e09c513799f21a1c1164e3b41d57096f7d34fd4d93a4cc331afc37613d0e8f",
   "0009_audio_runtime_tuning.py": "7efb8fb6e8d5bfea1a06b5ddab1ba602acbe2a7bdfa7a23a02121ab794a04105",
-  "0010_custom_tts_settings.py": "82f83940fff91b05623cafa1a36512b837514a9a5188f0ee2a0183a5f4c6a8ea"
+  "0010_custom_tts_settings.py": "82f83940fff91b05623cafa1a36512b837514a9a5188f0ee2a0183a5f4c6a8ea",
+  "0011_provider_audio_metadata.py": "7be678163aa4e714ff1e5a2887e45b57023d9fe0f68640628ab0cbdad5383f7c"
 }

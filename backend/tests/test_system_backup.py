@@ -119,7 +119,7 @@ def test_admin_sets_persistent_default_audio_provider(
 
         selected: list[str | None] = []
 
-        def fake_start(provider=None):
+        def fake_start(provider=None, *, force=False):
             selected.append(provider)
             return {
                 "state": "running",
@@ -128,6 +128,12 @@ def test_admin_sets_persistent_default_audio_provider(
                 "failed": 0,
                 "remaining": 1,
                 "provider": provider,
+                "model": "doubao-seed-tts-2.0",
+                "voice": "zh_female_yingyujiaoxue_uranus_bigtts",
+                "last_provider": None,
+                "last_model": None,
+                "last_voice": None,
+                "force_regenerate": int(force),
                 "next_run_at": None,
                 "last_error": None,
                 "updated_at": None,

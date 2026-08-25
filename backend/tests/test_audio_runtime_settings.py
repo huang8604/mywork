@@ -17,7 +17,7 @@ def _put(client, version: int, **overrides):
     return client.put("/api/v1/system/audio-settings", json=payload)
 
 
-def test_custom_api_url_and_key_are_the_single_runtime_connection(
+def test_provider_api_urls_and_keys_are_saved_separately(
     client, db_session, login_mode, monkeypatch
 ):
     monkeypatch.setenv("TTS_BASE_URL", "https://env.example.invalid/v1")
@@ -29,8 +29,15 @@ def test_custom_api_url_and_key_are_the_single_runtime_connection(
         saved = client.put(
             "/api/v1/system/audio-settings",
             json={
-                "api_url": "https://custom.example.invalid/v1/",
-                "api_key": "custom-key",
+                "default_provider": "mimo",
+                "mimo": {
+                    "base_url": "https://custom.example.invalid/v1/",
+                    "api_key": "mimo-key",
+                },
+                "volc": {
+                    "base_url": "https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional",
+                    "api_key": "volc-key",
+                },
                 "expected_version": 1,
             },
         )
@@ -38,24 +45,36 @@ def test_custom_api_url_and_key_are_the_single_runtime_connection(
         data = saved.json()["data"]
         assert data["api_url"] == "https://custom.example.invalid/v1"
         assert data["api_key_configured"] is True
-        assert "custom-key" not in saved.text
+        assert data["default_provider"] == "mimo"
+        by_id = {provider["id"]: provider for provider in data["providers"]}
+        assert by_id["mimo"]["api_url"] == "https://custom.example.invalid/v1"
+        assert by_id["volc"]["api_url"] == "https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional"
+        assert "mimo-key" not in saved.text
+        assert "volc-key" not in saved.text
         assert data["configured"] is True
 
         setting = db_session.get(SystemAudioSetting, 1)
         assert setting is not None
-        assert setting.custom_base_url == "https://custom.example.invalid/v1"
-        assert setting.custom_api_key == "custom-key"
+        assert setting.mimo_base_url == "https://custom.example.invalid/v1"
+        assert setting.mimo_api_key == "mimo-key"
+        assert setting.volc_base_url == "https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional"
+        assert setting.volc_api_key == "volc-key"
         runtime = audio_runtime_settings(db_session)
-        assert runtime.tts_provider == "custom"
+        assert runtime.tts_provider == "mimo"
         assert runtime.tts_base_url == "https://custom.example.invalid/v1"
-        assert runtime.tts_api_key == "custom-key"
+        assert runtime.tts_api_key == "mimo-key"
+        assert runtime.volc_api_key == "volc-key"
 
         kept = client.put(
             "/api/v1/system/audio-settings",
-            json={"api_url": "https://custom.example.invalid/v2", "api_key": "", "expected_version": 2},
+            json={
+                "default_provider": "mimo",
+                "mimo": {"base_url": "https://custom.example.invalid/v2", "api_key": ""},
+                "expected_version": 2,
+            },
         )
         assert kept.status_code == 200, kept.text
-        assert audio_runtime_settings(db_session).tts_api_key == "custom-key"
+        assert audio_runtime_settings(db_session).tts_api_key == "mimo-key"
     finally:
         get_settings.cache_clear()
 
