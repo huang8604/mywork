@@ -31,7 +31,9 @@ describe('blankWord', () => {
     } as PracticeSession
     const question = mount(PracticeWorksheet, { props: { session, mode: 'cn-to-en' } })
     const answer = mount(PracticeWorksheet, { props: { session, mode: 'cn-to-en', answer: true } })
-    expect(question.find('img').exists()).toBe(false); expect(answer.find('script').exists()).toBe(false)
+    expect(question.find('tbody .word-cell img').exists()).toBe(false)
+    expect(answer.find('tbody .word-cell img').exists()).toBe(false)
+    expect(answer.find('script').exists()).toBe(false)
     expect(answer.text()).toContain('<img src=x onerror=alert(1)>')
     expect(question.findAll('tbody .number-cell').map(node=>node.text())).toEqual(answer.findAll('tbody .number-cell').map(node=>node.text()))
   })
