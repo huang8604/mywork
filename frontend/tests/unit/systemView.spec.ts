@@ -8,8 +8,8 @@ import { saveAudioSettings, startDictionaryAudio } from '@/api/system'
 const providerInfo = vi.hoisted(() => [
   {
     id: 'volc', label: '豆包', enabled: true,
-    api_url: 'https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional',
-    base_url: 'https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional',
+    api_url: 'https://openspeech.bytedance.com',
+    base_url: 'https://openspeech.bytedance.com',
     api_key_configured: true, api_key_masked: 'ar****96',
     model: 'doubao-seed-tts-2.0', voice: 'zh_female_yingyujiaoxue_uranus_bigtts',
   },
@@ -139,7 +139,7 @@ describe('SystemView', () => {
       'volc',
       {
         mimo: { base_url: 'https://api.xiaomimimo.com/v1', api_key: '' },
-        volc: { base_url: 'https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional', api_key: '' },
+        volc: { base_url: 'https://openspeech.bytedance.com', api_key: '' },
       },
       2,
       false,

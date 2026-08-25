@@ -518,6 +518,50 @@ def test_volc_full_endpoint_is_not_treated_as_mimo_chat_url(monkeypatch):
     assert captured["resource_id"] == "seed-tts-2.0"
 
 
+def test_volc_host_default_is_extended_to_agent_plan_endpoint(monkeypatch):
+    _enable_volc(monkeypatch)
+    monkeypatch.setenv("VOLC_TTS_BASE_URL", "https://openspeech.bytedance.com")
+    get_settings.cache_clear()
+    import urllib.request
+    import app.services.tts as tts
+
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        headers = {"Content-Type": "application/json"}
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def read(self):
+            return ('{"code":0,"message":"","data":"' + _b64(MP3) + '"}\n').encode()
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        return FakeResponse()
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    try:
+        assert tts._synthesize_volc("camera", get_settings()) == MP3
+    finally:
+        get_settings.cache_clear()
+    assert captured["url"] == (
+        "https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional?api_key=volc-key"
+    )
+
+
+def test_default_volc_url_preserves_historical_host(monkeypatch):
+    monkeypatch.delenv("VOLC_TTS_BASE_URL", raising=False)
+    get_settings.cache_clear()
+    try:
+        assert get_settings().volc_base_url == "https://openspeech.bytedance.com"
+    finally:
+        get_settings.cache_clear()
+
+
 def test_decode_audio_reassembles_volc_ndjson_chunks():
     # seed-tts-2.0 HTTP-chunked success shape: one JSON event per line, base64
     # MP3 fragments in `data`, terminated by code=20000000 "OK".

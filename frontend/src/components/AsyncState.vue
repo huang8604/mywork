@@ -12,7 +12,7 @@ defineEmits<{ retry: [] }>()
     <el-button type="primary" @click="$emit('retry')">重试</el-button>
   </div>
   <div v-else-if="phase === 'empty'" class="async-state empty-state">
-    <span class="empty-illustration" aria-hidden="true">☁</span><p>{{ emptyText || '这里还没有数据' }}</p><slot name="empty-action" />
+    <div class="empty-illustration" aria-hidden="true"><slot name="empty-illustration">☁</slot></div><p>{{ emptyText || '这里还没有数据' }}</p><slot name="empty-action" />
   </div>
   <slot v-else />
 </template>

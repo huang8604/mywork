@@ -104,7 +104,7 @@ TTS_BASE_URL: "https://api.xiaomimimo.com/v1"
 TTS_API_KEY_FILE: "/run/secrets/tts-api-key"
 TTS_MODEL: "mimo-v2.5-tts"
 TTS_VOICE: "Chloe"
-VOLC_TTS_BASE_URL: "https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional"
+VOLC_TTS_BASE_URL: "https://openspeech.bytedance.com"
 VOLC_TTS_API_KEY_FILE: "/run/secrets/volc-tts-api-key"
 VOLC_TTS_MODEL: "doubao-seed-tts-2.0"
 VOLC_TTS_RESOURCE_ID: "seed-tts-2.0"
@@ -113,11 +113,11 @@ TTS_AUTO_GENERATE_ON_IMPORT: "true"
 # 可选：TTS_AUDIO_DIR=/app/data/audio、TTS_TIMEOUT_SECONDS=60、VOLC_TTS_TIMEOUT_SECONDS=60
 ```
 
-部署后 smoke：管理员打开系统设置，确认豆包 URL 为完整 `plan/tts/unidirectional` 地址、Mimo URL 为 `/v1` 根地址，分别填写 Key 后点击「测试语音」；词库页选一个无音频的词 → 点「生成音频」→ 状态变「已生成」并显示实际 provider/model/voice → 点「播放」应能听到 MP3。点「按当前服务重新生成」可在需要时重做整套词库音频；把复习表设为“进行中”后进入 `/review` 在线默写，英文优先播词库 MP3，缺失/失败自动回退浏览器 `speechSynthesis`。
+部署后 smoke：管理员打开系统设置，确认豆包 URL 默认为 `https://openspeech.bytedance.com`、Mimo URL 为 `/v1` 根地址，分别填写 Key 后点击「测试语音」；服务端会为豆包追加固定的 `/api/v3/plan/tts/unidirectional` 接口。词库页选一个无音频的词 → 点「生成音频」→ 状态变「已生成」并显示实际 provider/model/voice → 点「播放」应能听到 MP3。点「按当前服务重新生成」可在需要时重做整套词库音频；把复习表设为“进行中”后进入 `/review` 在线默写，英文优先播词库 MP3，缺失/失败自动回退浏览器 `speechSynthesis`。
 
 若生成失败，依次检查：
 
-1. 豆包 URL 使用完整的 `https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional` 地址，不要改成 Mimo 的 `/chat/completions`；Mimo 才使用 `/v1` 根地址并由服务端追加 `/chat/completions`；
+1. 豆包默认 URL 是 `https://openspeech.bytedance.com`，服务端调用其固定的 `/api/v3/plan/tts/unidirectional?api_key=...` 接口；Mimo 使用 `/v1` 根地址并由服务端追加 `/chat/completions`。管理员也可以填写完整豆包 endpoint，服务端会识别并避免重复追加；
 2. 两个 API Key 分别保存且服务端日志中的配置检查通过（日志不会输出 Key）；
 3. `/app/data/audio`（或 `TTS_AUDIO_DIR`）归 UID 10001 可写；
 4. 容器日志中的 `TTS_PROVIDER_ERROR` / `AUDIO_STORAGE_ERROR`（日志不会输出 Key），并检查音频结果上记录的实际 provider/model/voice。

@@ -138,11 +138,12 @@ class Settings:
             dictionary_audio_retry_seconds=int(os.getenv("DICTIONARY_AUDIO_RETRY_SECONDS", "300")),
             dictionary_audio_scan_seconds=int(os.getenv("DICTIONARY_AUDIO_SCAN_SECONDS", "3600")),
             dictionary_audio_quota_wait_seconds=int(os.getenv("DICTIONARY_AUDIO_QUOTA_WAIT_SECONDS", "18000")),
-            # Keep the complete agent-plan endpoint as the visible default. The
-            # request builder also accepts the historical host-only value.
+            # Preserve the original default: the request builder appends the
+            # fixed agent-plan path. A complete endpoint is still accepted when
+            # an administrator overrides the URL at runtime.
             volc_base_url=os.getenv(
                 "VOLC_TTS_BASE_URL",
-                "https://openspeech.bytedance.com/api/v3/plan/tts/unidirectional",
+                "https://openspeech.bytedance.com",
             ).rstrip("/"),
             volc_api_key_file=volc_api_key_file,
             volc_api_key=volc_api_key,

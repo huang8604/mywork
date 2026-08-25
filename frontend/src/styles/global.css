@@ -25,7 +25,8 @@ h2 { font-size:1.2rem; }
 .error-box { padding:12px 14px; border-left:4px solid var(--red); background:#fff1ef; border-radius:8px; color:#8d2f2c; }
 .request-id { display:block; font-size:.75rem; color:var(--muted); margin-top:5px; word-break:break-all; }
 .button-row { display:flex; flex-wrap:wrap; gap:10px; align-items:center; }
-.empty-illustration { font-size:2.5rem; filter:grayscale(.3); }
+.empty-illustration { display:flex; justify-content:center; align-items:center; min-height:112px; font-size:2.5rem; filter:grayscale(.3); }
+.empty-illustration img { max-width:100%; }
 .tag-list { display:flex; flex-wrap:wrap; gap:6px; }
 .source-pill { display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; background:var(--green-100); color:var(--green-800); font-size:.76rem; font-weight:700; }
 .local-scroll { max-width:100%; overflow-x:auto; }

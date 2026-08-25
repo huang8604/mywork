@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import AsyncState from '@/components/AsyncState.vue'
+import FawnIllustration from '@/components/FawnIllustration.vue'
 import { getContributions, getOwnContributions, getOwnStatsSummary, getRecentErrors, getStatsSummary } from '@/api/stats'
 import { listSessions } from '@/api/practiceSessions'
 import { listWords } from '@/api/words'
@@ -61,6 +62,7 @@ onMounted(load)
   <section class="page">
     <div class="page-heading"><div><p class="eyebrow">{{ dateText() }}</p><h2>{{ isAdmin ? '欢迎回来，今天也拾起几个词。' : '这是你的学习概览。' }}</h2></div><el-button v-if="isAdmin" type="primary" size="large" @click="$router.push('/daily/generate')">生成今日复习表</el-button></div>
     <AsyncState :phase="state.phase.value" :error="state.error.value" @retry="load">
+      <template #empty-illustration><FawnIllustration variant="sun" :width="132" /></template>
       <template v-if="state.data.value">
         <article class="panel contribution-panel">
           <div class="contribution-head">
