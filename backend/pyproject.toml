@@ -25,7 +25,8 @@ test = [
 ]
 pdf = [
   "markdown>=3.7,<4",
-  "weasyprint>=62,<66",
+  "weasyprint>=70,<71",
+  "pillow>=13,<14; python_version >= '3.11'",
 ]
 
 [tool.setuptools.packages.find]
@@ -47,4 +48,3 @@ extend-exclude = ["migrations/versions"]
 [tool.ruff.lint]
 select = ["E9", "F"]
 ignore = []
-

@@ -210,9 +210,22 @@ docker exec vocab-app python -c "import sqlite3; c=sqlite3.connect('/app/data/vo
 
 ### 已知接受的漏洞风险(`.trivyignore`)
 
-CI 的 Trivy 门禁扫到、但经评估**在本系统威胁模型下不可利用**、故写入仓库根 `.trivyignore` 显式抑制的条目。每项都必须有理由,并在升级依赖时复核(修复版本一旦进入 `requirements.lock` 就删掉对应行)。
+当前 `.trivyignore` 没有活动的漏洞抑制条目。新增抑制必须记录理由；修复版本进入 `requirements.lock` 后应移除对应条目。
 
-- **CVE-2025-68616**(WeasyPrint SSRF,HIGH;修复于 68.0,当前镜像装 65.1)。该 SSRF 需在渲染内容里塞入 `http(s)://` URL(如 markdown 图片或 CSS `url()`)才会触发服务端抓取;而 `/practice-sessions/{id}/recitation` PDF 渲染的 markdown 来自单词字段(text / cn_meaning / example_sentence),这些字段**仅**认证 web admin(即 owner 本人)或 owner 自己持有 `words:write` 的 API client 可写。无任何匿名/不可信用户能注入,因此不存在可越权的边界 → 实际风险为零。**待办**:待后续 `requirements.lock` 整体升级时一并把 weasyprint 升到 ≥68.0,并删除此条抑制。
+2026-11-04，Actions 运行 `41819915805` 的后端、前端、接口契约、镜像构建与启动检查通过，
+发布被 Trivy 扫描阻挡。按报告升级运行时锁文件中的四项依赖：
+
+| 依赖 | 原版本 | 修复后锁定版本 |
+| --- | --- | --- |
+| Brotli | 1.2.0 | 1.2.1 |
+| certifi | 2026.6.17 | 2026.10.23 |
+| Pillow | 12.3.0 | 13.0.0 |
+| WeasyPrint | 65.1 | 70.0 |
+
+生产镜像使用 Python 3.12，满足 Pillow 13 的 Python ≥3.11 要求。
+旧的 WeasyPrint SSRF 抑制 `CVE-2025-68616`（修复于 68.0）随此次升级移除。
+本地已用完整哈希锁文件安装并通过 `pip check`、27 项 PDF/音频/迁移相关测试；
+生成的样例 PDF 经文本提取确认包含中文释义、音标与例句。
 
 ---
 
