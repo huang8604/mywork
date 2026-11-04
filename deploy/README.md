@@ -206,6 +206,7 @@ docker exec vocab-app python -c "import sqlite3; c=sqlite3.connect('/app/data/vo
 - 外部 Skill 必须经 HTTPS 反代访问 API,由应用自身验证 Bearer Token + scope;**服务端到服务端不适用 CORS,不要把 CORS 当认证**。
 - token pepper 与 AI Key 文件仅运行 UID 可读；各 Skill 明文 Token 只存在对应 Skill 的 Secret 配置中，不写入 Compose / 镜像 / 仓库 / 日志。
 - 应用响应已带 `Content-Security-Policy`、`X-Content-Type-Options`、`Referrer-Policy`(见 `app/main.py`)。
+- 语音试听通过 Blob URL 播放，CSP 必须包含 `media-src 'self' blob:`；缺失时所有服务都可能报 `Failed to load because no supported source was found.`。2026-11-04 已用同一份有效 MP3 在 Chromium 复现：原策略拒绝播放，补充该媒体规则后可播放；NAS 实际响应头也确认缺少此规则。
 
 ### 已知接受的漏洞风险(`.trivyignore`)
 

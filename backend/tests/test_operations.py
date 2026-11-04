@@ -148,6 +148,18 @@ def test_wrong_origin_is_rejected_before_write(client):
     assert response.json()["code"] == "FORBIDDEN_ORIGIN"
 
 
+def test_security_policy_allows_generated_audio_blob_urls(client):
+    response = client.get("/healthz/live")
+    directives = {
+        parts[0]: parts[1:]
+        for value in response.headers["content-security-policy"].split(";")
+        if (parts := value.split())
+    }
+    assert directives["media-src"] == ["'self'", "blob:"]
+    assert directives["script-src"] == ["'self'"]
+    assert directives["default-src"] == ["'self'"]
+
+
 def test_spa_deep_link_fallback_excludes_api_and_health(client, tmp_path, monkeypatch):
     import app.main as main_module
 
