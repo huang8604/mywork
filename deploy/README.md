@@ -150,6 +150,11 @@ SEED_AUDIO_MODEL: "seed-audio-1.0"
 
 使用文件方式时需另行挂载对应 secret。升级后入口脚本自动迁移到 `0012`，保留原有两家服务配置。
 原豆包连接的默认模型名称 `doubao-seed-tts-2.0` 沿用原接口默认行为；输入其他模型 ID 后会通过 `req_params.model` 提交，需与该服务的资源及音色匹配。
+豆包也支持完整的标准接口 URL `/api/v3/tts/unidirectional`：按标准接口使用 `X-Api-Key`、
+`X-Api-Resource-Id`、`X-Api-Request-Id` 请求头，不再重复拼接 agent-plan 路径。
+仅配置域名或完整 `/api/v3/plan/tts/unidirectional` 时保留原 agent-plan 鉴权方式。
+2026-11-04 NAS 实测：MiMo 返回 8064 字节、MP3 帧头正常；豆包的标准接口返回资源权限拒绝，
+尚不能视为该账户已完成合成验证。此次检查未修改 NAS 中的连接配置或 Key。
 2026-11-04 本机短文本实测：测试凭据返回 HTTP 403 / `45000030` / `requested resource not granted`，
 未生成音频；接口可达不能视为模型合成成功。测试凭据未保存在仓库或部署配置中。
 

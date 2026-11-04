@@ -163,3 +163,30 @@ def test_existing_providers_send_custom_model_and_voice(monkeypatch, provider):
     else:
         assert captured["model"] == "custom-mimo"
         assert captured["audio"]["voice"] == "custom-mimo-voice"
+
+
+@pytest.mark.parametrize("endpoint", [
+    "https://openspeech.bytedance.com/api/v3/tts/unidirectional",
+    "https://proxy.invalid/voice/api/v3/tts/unidirectional?api_key=obsolete&trace=test",
+])
+def test_volc_standard_endpoint_uses_header_key_without_appending_plan_path(monkeypatch, endpoint):
+    from urllib.parse import parse_qs, urlsplit
+    import uuid
+
+    captured = {}
+
+    def request(req, **kwargs):
+        captured.update(url=req.full_url, headers=dict(req.header_items()))
+        response = io.BytesIO(json.dumps({"data": base64.b64encode(MP3).decode()}).encode())
+        response.headers = {"Content-Type": "application/json"}
+        return response
+
+    monkeypatch.setattr(tts.urllib.request, "urlopen", request)
+    settings = replace(get_settings(), volc_base_url=endpoint, volc_api_key="current-test-key")
+    assert tts._synthesize_volc("camera", settings) == MP3
+    actual = urlsplit(captured["url"])
+    assert actual.path == urlsplit(endpoint).path
+    assert "api_key" not in parse_qs(actual.query)
+    assert captured["headers"]["X-api-key"] == "current-test-key"
+    assert captured["headers"]["X-api-resource-id"] == settings.volc_resource_id
+    uuid.UUID(captured["headers"]["X-api-request-id"])

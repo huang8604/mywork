@@ -468,7 +468,7 @@ async function downloadPreRestore() {
           </select>
         </label>
         <label class="audio-model-field">
-          <span><strong>{{ activeAudioProvider?.label }} API URL</strong><small>{{ audioProviderDraft === 'seed_audio' ? '默认域名可直接保留，服务端追加 /api/v3/tts/create 接口' : '默认值可直接保留；豆包追加 plan/tts 接口，Mimo 使用 /v1 根地址' }}</small></span>
+          <span><strong>{{ activeAudioProvider?.label }} API URL</strong><small>{{ audioProviderDraft === 'seed_audio' ? '默认域名可直接保留，服务端追加 /api/v3/tts/create 接口' : '豆包支持域名或完整语音接口地址；Mimo 使用 /v1 根地址' }}</small></span>
           <el-input v-model="audioDraft[audioProviderDraft].base_url" aria-label="语音 API URL" />
         </label>
         <label class="audio-model-field">

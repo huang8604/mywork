@@ -6,7 +6,8 @@ import logging
 from dataclasses import dataclass
 import urllib.error
 import urllib.request
-from urllib.parse import urlencode
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+import uuid
 
 from app.core.config import Settings, get_settings
 from app.core.errors import AppError
@@ -207,7 +208,10 @@ def _decode_audio(raw: bytes) -> bytes:
 
 
 def _synthesize_volc(text: str, settings: Settings) -> bytes:
-    """doubao-seed-tts-2.0 via the openspeech agent-plan HTTP chunked endpoint.
+    """Doubao HTTP chunked TTS: standard full URL or historical agent-plan API.
+
+    A full /api/v3/tts/unidirectional URL uses X-Api-Key header auth. A host
+    or the full agent-plan URL retains the original query-key contract below.
 
     Contract verified by live probe (returns ~17KB MP3 for one word):
       POST ``{volc_base_url}/api/v3/plan/tts/unidirectional?api_key=<key>``
@@ -247,18 +251,24 @@ def _synthesize_volc(text: str, settings: Settings) -> bytes:
     # API model IDs (e.g. clone variants) must actually reach the provider.
     if settings.volc_model != "doubao-seed-tts-2.0":
         body["req_params"]["model"] = settings.volc_model
-    endpoint = settings.volc_base_url.rstrip("/")
-    if not endpoint.endswith("/api/v3/plan/tts/unidirectional"):
-        endpoint = f"{endpoint}/api/v3/plan/tts/unidirectional"
-    separator = "&" if "?" in endpoint else "?"
-    url = f"{endpoint}{separator}{urlencode({'api_key': settings.volc_api_key})}"
+    endpoint = urlsplit(settings.volc_base_url)
+    path = endpoint.path.rstrip("/")
+    standard = path.endswith("/api/v3/tts/unidirectional")
+    query = [(name, value) for name, value in parse_qsl(endpoint.query, keep_blank_values=True)
+             if name.lower() != "api_key"]
+    headers = {"Content-Type": "application/json", "X-Api-Resource-Id": settings.volc_resource_id}
+    if standard:
+        headers["X-Api-Key"] = settings.volc_api_key
+        headers["X-Api-Request-Id"] = str(uuid.uuid4())
+    else:
+        if not path.endswith("/api/v3/plan/tts/unidirectional"):
+            path += "/api/v3/plan/tts/unidirectional"
+        query.append(("api_key", settings.volc_api_key))
+    url = urlunsplit((endpoint.scheme, endpoint.netloc, path, urlencode(query), ""))
     req = urllib.request.Request(
         url,
         data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
-        headers={
-            "Content-Type": "application/json",
-            "X-Api-Resource-Id": settings.volc_resource_id,
-        },
+        headers=headers,
         method="POST",
     )
     try:
