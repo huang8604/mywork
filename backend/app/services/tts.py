@@ -243,6 +243,10 @@ def _synthesize_volc(text: str, settings: Settings) -> bytes:
             "additions": json.dumps({"silence_duration": settings.volc_silence_ms}),
         },
     }
+    # The original display name uses the endpoint's default model. Explicit
+    # API model IDs (e.g. clone variants) must actually reach the provider.
+    if settings.volc_model != "doubao-seed-tts-2.0":
+        body["req_params"]["model"] = settings.volc_model
     endpoint = settings.volc_base_url.rstrip("/")
     if not endpoint.endswith("/api/v3/plan/tts/unidirectional"):
         endpoint = f"{endpoint}/api/v3/plan/tts/unidirectional"
@@ -274,10 +278,59 @@ def _synthesize_volc(text: str, settings: Settings) -> bytes:
     return audio
 
 
-_PROVIDERS = {"mimo": _synthesize_mimo, "volc": _synthesize_volc}
-_CHINESE_PROVIDERS = {"mimo": _synthesize_mimo_chinese, "volc": _synthesize_volc}
+def _synthesize_seed_audio(text: str, settings: Settings, *, language: str = "en") -> bytes:
+    """Seed Audio's non-streaming generation API; credentials are header-only."""
+    instruction = (
+        "用清晰自然、适合课堂听写的普通话"
+        if language == "zh" else "用清晰自然的英式英语"
+    )
+    body = {
+        "model": settings.seed_audio_model,
+        "text_prompt": f"{instruction}只朗读以下内容，不要解释，不要背景音乐或音效：{json.dumps(text, ensure_ascii=False)}",
+        "audio_config": {"format": "mp3", "sample_rate": 24000},
+    }
+    if settings.seed_audio_voice:
+        body["references"] = [{"speaker": settings.seed_audio_voice}]
+        body["text_prompt"] = "使用@音频1的音色。" + body["text_prompt"]
+    endpoint = settings.seed_audio_base_url.rstrip("/")
+    if not endpoint.endswith("/api/v3/tts/create"):
+        endpoint += "/api/v3/tts/create"
+    req = urllib.request.Request(
+        endpoint,
+        data=json.dumps(body, ensure_ascii=False).encode("utf-8"),
+        headers={"Content-Type": "application/json", "X-Api-Key": settings.seed_audio_api_key},
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=settings.seed_audio_timeout_seconds) as response:
+            data = json.loads(response.read())
+        if not isinstance(data, dict):
+            raise ValueError("invalid response")
+        if data.get("code") not in (None, 0, "0", 20000000):
+            raise _provider_error(data.get("message"))
+        audio = base64.b64decode(data.get("audio", ""), validate=True)
+    except urllib.error.HTTPError as exc:
+        # Never log provider bodies or headers: these may contain credentials.
+        log.warning("seed-audio TTS HTTP error: %s", exc.code)
+        if exc.code in {401, 403}:
+            raise AppError(502, "TTS_ACCESS_DENIED", "Seed Audio 鉴权或资源权限不足，请检查 API Key 和服务开通状态") from exc
+        raise _provider_error("quota" if exc.code == 429 else "") from exc
+    except (urllib.error.URLError, TimeoutError, TypeError, ValueError) as exc:
+        log.warning("seed-audio TTS provider failed: %s", exc.__class__.__name__)
+        raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商调用失败") from exc
+    if not audio or not (audio[:3] == b"ID3" or (len(audio) >= 2 and audio[0] == 0xFF and audio[1] & 0xE0 == 0xE0)):
+        raise AppError(502, "TTS_PROVIDER_ERROR", "TTS 供应商未返回有效 MP3 音频")
+    return audio
 
-_PROVIDER_LABELS = {"mimo": "Mimo", "volc": "豆包"}
+
+def _synthesize_seed_audio_chinese(text: str, settings: Settings) -> bytes:
+    return _synthesize_seed_audio(text, settings, language="zh")
+
+
+_PROVIDERS = {"mimo": _synthesize_mimo, "volc": _synthesize_volc, "seed_audio": _synthesize_seed_audio}
+_CHINESE_PROVIDERS = {"mimo": _synthesize_mimo_chinese, "volc": _synthesize_volc, "seed_audio": _synthesize_seed_audio_chinese}
+
+_PROVIDER_LABELS = {"mimo": "Mimo", "volc": "豆包", "seed_audio": "Seed Audio 1.0"}
 
 
 def canonical_provider(provider: str | None, settings: Settings) -> str:
@@ -287,11 +340,13 @@ def canonical_provider(provider: str | None, settings: Settings) -> str:
         # ``custom`` was the previous single-connection setting. New persisted
         # settings migrate it to a real provider; old queued jobs use the current
         # default rather than accidentally sending a Mimo payload to 豆包.
-        chosen = settings.tts_provider if settings.tts_provider in {"mimo", "volc"} else "volc"
-    return chosen if chosen in {"mimo", "volc"} else "volc"
+        chosen = settings.tts_provider if settings.tts_provider in _PROVIDER_LABELS else "volc"
+    return chosen if chosen in _PROVIDER_LABELS else "volc"
 
 
 def provider_model_voice(settings: Settings, provider: str) -> tuple[str, str]:
+    if provider == "seed_audio":
+        return settings.seed_audio_model, settings.seed_audio_voice or "prompt"
     if provider == "volc":
         return settings.volc_model, settings.volc_voice
     return settings.tts_model, settings.tts_voice
@@ -299,6 +354,14 @@ def provider_model_voice(settings: Settings, provider: str) -> tuple[str, str]:
 
 def provider_label(provider: str) -> str:
     return _PROVIDER_LABELS.get(provider, provider)
+
+
+def provider_connection(settings: Settings, provider: str) -> tuple[str, str]:
+    if provider == "seed_audio":
+        return settings.seed_audio_base_url, settings.seed_audio_api_key
+    if provider == "volc":
+        return settings.volc_base_url, settings.volc_api_key
+    return settings.tts_base_url, settings.tts_api_key
 
 
 def _mask_secret(value: str) -> str:
@@ -312,13 +375,12 @@ def _mask_secret(value: str) -> str:
 def audio_providers_info(
     settings: Settings | None = None, *, default_provider: str | None = None
 ) -> dict[str, object]:
-    """Describe the two supported TTS services without exposing secrets."""
+    """Describe supported TTS services without exposing secrets."""
     settings = settings or get_settings()
     providers = []
-    for pid in ("mimo", "volc"):
+    for pid in _PROVIDER_LABELS:
         enabled = settings.provider_enabled(pid)
-        api_url = settings.tts_base_url if pid == "mimo" else settings.volc_base_url
-        api_key = settings.tts_api_key if pid == "mimo" else settings.volc_api_key
+        api_url, api_key = provider_connection(settings, pid)
         model, voice = provider_model_voice(settings, pid)
         providers.append(
             {
@@ -341,8 +403,7 @@ def custom_audio_info(settings: Settings | None = None) -> dict[str, object]:
     """Return the selected service in the legacy top-level response shape."""
     settings = settings or get_settings()
     provider = canonical_provider(settings.tts_provider, settings)
-    api_url = settings.tts_base_url if provider == "mimo" else settings.volc_base_url
-    api_key = settings.tts_api_key if provider == "mimo" else settings.volc_api_key
+    api_url, api_key = provider_connection(settings, provider)
     model, voice = provider_model_voice(settings, provider)
     return {
         "api_url": api_url,
@@ -359,6 +420,10 @@ def custom_audio_info(settings: Settings | None = None) -> dict[str, object]:
 
 def _provider_order(provider: str | None, settings: Settings) -> list[str]:
     chosen = canonical_provider(provider, settings)
+    # Seed Audio is opt-in. Never use it as an implicit fallback or silently
+    # substitute a different model for an explicitly selected Seed Audio run.
+    if chosen == "seed_audio":
+        return [chosen]
     other = "volc" if chosen == "mimo" else "mimo"
     return [chosen, other]
 
@@ -397,8 +462,7 @@ def synthesize_word_mp3(
                 log.warning("TTS provider %s failed, trying fallback", current)
                 continue
             raise
-        voice = settings.tts_voice if current == "mimo" else settings.volc_voice
-        model = settings.tts_model if current == "mimo" else settings.volc_model
+        model, voice = provider_model_voice(settings, current)
         if isinstance(audio, SynthesisResult):
             return audio
         return SynthesisResult(audio=audio, voice=voice, provider=current, model=model)

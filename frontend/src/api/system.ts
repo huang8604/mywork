@@ -13,11 +13,11 @@ export async function getAudioSettings() {
   return unwrap((await apiClient.get<ApiEnvelope<SystemAudioSettings>>('/system/audio-settings')).data)
 }
 
-export type AudioProviderDraft = { base_url: string; api_key: string }
+export type AudioProviderDraft = { base_url: string; api_key: string; model: string; voice: string }
 
 export async function saveAudioSettings(
   defaultProvider: AudioProvider,
-  providers: { mimo: AudioProviderDraft; volc: AudioProviderDraft },
+  providers: { mimo: AudioProviderDraft; volc: AudioProviderDraft; seed_audio: AudioProviderDraft },
   expectedVersion: number,
   autoGenerateOnImport?: boolean,
 ) {
@@ -25,13 +25,16 @@ export async function saveAudioSettings(
     default_provider: defaultProvider,
     mimo: providers.mimo,
     volc: providers.volc,
+    seed_audio: providers.seed_audio,
     expected_version: expectedVersion,
     auto_generate_on_import: autoGenerateOnImport ?? null,
   })).data)
 }
 
 export async function testAudioSettings(provider: AudioProvider) {
-  const response = await apiClient.post('/system/audio-settings/test', { provider }, { responseType: 'blob' })
+  const response = await apiClient.post('/system/audio-settings/test', { provider }, {
+    responseType: 'blob', timeout: provider === 'seed_audio' ? 310_000 : 65_000,
+  })
   return {
     blob: response.data as Blob,
     provider: String(response.headers['x-tts-provider'] || ''),

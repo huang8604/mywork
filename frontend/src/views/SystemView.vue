@@ -82,11 +82,14 @@ const audioSettings = ref<SystemAudioSettings | null>(null)
 const audioSettingsBusy = ref(false)
 const audioTestBusy = ref(false)
 const autoImportDraft = ref(false)
-type AudioDraft = { base_url: string; api_key: string }
-const audioProviderDraft = ref<'mimo' | 'volc'>('volc')
-const audioDraft = reactive<{ mimo: AudioDraft; volc: AudioDraft }>({
-  mimo: { base_url: '', api_key: '' },
-  volc: { base_url: '', api_key: '' },
+type AudioDraft = { base_url: string; api_key: string; model: string; voice: string }
+const defaultAudioModels = { mimo: 'mimo-v2.5-tts', volc: 'doubao-seed-tts-2.0', seed_audio: 'seed-audio-1.0' }
+const defaultAudioVoices = { mimo: 'Chloe', volc: 'zh_female_yingyujiaoxue_uranus_bigtts', seed_audio: '' }
+const audioProviderDraft = ref<'mimo' | 'volc' | 'seed_audio'>('volc')
+const audioDraft = reactive<{ mimo: AudioDraft; volc: AudioDraft; seed_audio: AudioDraft }>({
+  mimo: { base_url: '', api_key: '', model: defaultAudioModels.mimo, voice: defaultAudioVoices.mimo },
+  volc: { base_url: '', api_key: '', model: defaultAudioModels.volc, voice: defaultAudioVoices.volc },
+  seed_audio: { base_url: 'https://openspeech.bytedance.com', api_key: '', model: defaultAudioModels.seed_audio, voice: '' },
 })
 let dictionaryAudioTimer: number | null = null
 const dictionaryAudioPercent = computed(() => dictionaryAudio.value?.total ? Math.round(dictionaryAudio.value.generated / dictionaryAudio.value.total * 100) : 0)
@@ -96,18 +99,23 @@ const dictionaryAudioStateLabels: Record<DictionaryAudioState, string> = {
 }
 function syncAudioDraft() {
   if (!audioSettings.value) return
-  audioProviderDraft.value = audioSettings.value.default_provider === 'mimo' ? 'mimo' : 'volc'
+  const selected = audioSettings.value.default_provider
+  audioProviderDraft.value = selected === 'mimo' || selected === 'seed_audio' ? selected : 'volc'
   for (const provider of audioSettings.value.providers ?? []) {
-    if (provider.id !== 'mimo' && provider.id !== 'volc') continue
+    if (provider.id !== 'mimo' && provider.id !== 'volc' && provider.id !== 'seed_audio') continue
     audioDraft[provider.id] = {
       base_url: provider.api_url ?? provider.base_url,
       api_key: '',
+      model: provider.model,
+      voice: provider.voice === 'prompt' ? '' : provider.voice,
     }
   }
   autoImportDraft.value = audioSettings.value.auto_generate_on_import
 }
 const activeAudioProvider = computed<AudioProviderInfo | undefined>(() => audioSettings.value?.providers?.find(provider => provider.id === audioProviderDraft.value))
-const providerLabel = (provider: string | null | undefined) => provider === 'volc' ? '豆包' : provider === 'mimo' ? 'Mimo' : provider || '—'
+const audioModelOptions = computed(() => [...new Set([defaultAudioModels[audioProviderDraft.value], audioDraft[audioProviderDraft.value].model].filter(Boolean))])
+const audioVoiceOptions = computed(() => [...new Set([defaultAudioVoices[audioProviderDraft.value], audioDraft[audioProviderDraft.value].voice].filter(Boolean))])
+const providerLabel = (provider: string | null | undefined) => provider === 'volc' ? '豆包' : provider === 'mimo' ? 'Mimo' : provider === 'seed_audio' ? 'Seed Audio 1.0' : provider || '—'
 async function loadAudioSettings() {
   try {
     audioSettings.value = await getAudioSettings()
@@ -120,12 +128,12 @@ async function persistAudioSettings() {
   try {
     audioSettings.value = await saveAudioSettings(
       audioProviderDraft.value,
-      { mimo: audioDraft.mimo, volc: audioDraft.volc },
+      { mimo: audioDraft.mimo, volc: audioDraft.volc, seed_audio: audioDraft.seed_audio },
       audioSettings.value.version,
       autoImportDraft.value,
     )
     syncAudioDraft()
-    ElMessage.success('豆包 / Mimo 语音设置已保存')
+    ElMessage.success('语音设置已保存')
   } catch (error) {
     const normalized = normalizeApiError(error)
     if (normalized.isConflict) await loadAudioSettings()
@@ -452,14 +460,15 @@ async function downloadPreRestore() {
       </div>
       <div v-if="audioSettings" class="audio-model-settings">
         <label class="audio-model-field">
-          <span><strong>语音服务</strong><small>默认使用豆包；豆包失败时自动回退到 Mimo</small></span>
+          <span><strong>语音服务</strong><small>豆包与 Mimo 互为备用；Seed Audio 1.0 独立调用，失败时保留错误</small></span>
           <select v-model="audioProviderDraft" aria-label="语音服务">
             <option value="volc">豆包（默认）</option>
             <option value="mimo">Mimo</option>
+            <option value="seed_audio">Seed Audio 1.0（seed-audio-1.0）</option>
           </select>
         </label>
         <label class="audio-model-field">
-          <span><strong>{{ activeAudioProvider?.label }} API URL</strong><small>默认值可直接保留；豆包使用固定域名并追加 plan/tts 接口，Mimo 使用 /v1 根地址</small></span>
+          <span><strong>{{ activeAudioProvider?.label }} API URL</strong><small>{{ audioProviderDraft === 'seed_audio' ? '默认域名可直接保留，服务端追加 /api/v3/tts/create 接口' : '默认值可直接保留；豆包追加 plan/tts 接口，Mimo 使用 /v1 根地址' }}</small></span>
           <el-input v-model="audioDraft[audioProviderDraft].base_url" aria-label="语音 API URL" />
         </label>
         <label class="audio-model-field">
@@ -467,7 +476,20 @@ async function downloadPreRestore() {
           <el-input v-model="audioDraft[audioProviderDraft].api_key" aria-label="语音 API Key" type="password" show-password placeholder="输入新的 API Key（留空保留现有 Key）" />
         </label>
         <label class="audio-model-field">
-          <span><strong>当前默认模型</strong><small>{{ activeAudioProvider?.model }} · {{ activeAudioProvider?.voice }}</small></span>
+          <span><strong>默认语音模型</strong><small>可选默认值，也可输入服务支持的模型名称；保存后作为当前服务的默认模型</small></span>
+          <el-select v-model="audioDraft[audioProviderDraft].model" aria-label="默认语音模型" filterable allow-create default-first-option>
+            <el-option v-for="model in audioModelOptions" :key="model" :label="model" :value="model" />
+          </el-select>
+        </label>
+        <label class="audio-model-field">
+          <span><strong>音色</strong><small>可选默认值，也可输入服务支持的音色 ID；Seed Audio 留空时由提示词控制音色</small></span>
+          <el-select v-model="audioDraft[audioProviderDraft].voice" aria-label="语音音色" filterable allow-create default-first-option clearable value-on-clear="" placeholder="使用默认音色">
+            <el-option v-if="audioProviderDraft === 'seed_audio'" label="自动（提示词控制音色）" value="" />
+            <el-option v-for="voice in audioVoiceOptions" :key="voice" :label="voice" :value="voice" />
+          </el-select>
+        </label>
+        <label class="audio-model-field">
+          <span><strong>保存与试听</strong><small>修改后先保存，再测试或生成</small></span>
           <div class="audio-model-control">
             <el-button data-testid="test-audio-settings" :loading="audioTestBusy" @click="testCurrentAudioSettings">测试语音</el-button>
             <el-button data-testid="save-audio-settings" type="primary" :loading="audioSettingsBusy" @click="persistAudioSettings">保存设置</el-button>
@@ -477,7 +499,7 @@ async function downloadPreRestore() {
           <span><strong>导入单词时自动生成语音</strong><small>影响词库导入完成后是否自动排队生成发音</small></span>
           <span class="audio-model-control"><el-switch v-model="autoImportDraft" aria-label="导入单词时自动生成语音" /></span>
         </label>
-        <p v-if="!activeAudioProvider?.enabled" class="error-box">当前服务尚未配置 API Key；测试或生成时会按规则回退。</p>
+        <p v-if="!activeAudioProvider?.enabled" class="error-box">{{ audioProviderDraft === 'seed_audio' ? 'Seed Audio 尚未配置 API Key，请填写并保存；需开通对应音频生成资源权限。' : '当前服务尚未配置 API Key；测试或生成时会按规则回退。' }}</p>
       </div>
       <div v-if="dictionaryAudio" class="dictionary-audio-progress" aria-live="polite">
         <div class="dictionary-audio-summary"><strong>{{ dictionaryAudioStateLabels[dictionaryAudio.state] }}</strong><span>已生成 {{ dictionaryAudio.generated }} / {{ dictionaryAudio.total }}</span></div>

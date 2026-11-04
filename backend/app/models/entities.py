@@ -217,7 +217,7 @@ class SystemAudioSetting(Base):
     __table_args__ = (
         CheckConstraint("id = 1", name="ck_system_audio_settings_singleton"),
         CheckConstraint(
-            "default_provider IN ('mimo','volc')",
+            "default_provider IN ('mimo','volc','seed_audio')",
             name="ck_system_audio_settings_provider",
         ),
         CheckConstraint("version > 0", name="ck_system_audio_settings_version"),
@@ -235,6 +235,10 @@ class SystemAudioSetting(Base):
     volc_api_key: Mapped[str | None] = mapped_column(String(1000))
     volc_model: Mapped[str | None] = mapped_column(String(200))
     volc_voice: Mapped[str | None] = mapped_column(String(200))
+    seed_audio_base_url: Mapped[str | None] = mapped_column(String(500))
+    seed_audio_api_key: Mapped[str | None] = mapped_column(String(1000))
+    seed_audio_model: Mapped[str | None] = mapped_column(String(200))
+    seed_audio_voice: Mapped[str | None] = mapped_column(String(200))
     # Runtime tuning managed alongside the provider overrides.  Null keeps the
     # corresponding environment/default behaviour.
     auto_generate_on_import: Mapped[bool | None] = mapped_column(Boolean)

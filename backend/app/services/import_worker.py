@@ -298,7 +298,7 @@ class _ImportWorker:
         settings = audio_runtime_settings()
         if not (
             settings.tts_auto_generate_on_import
-            and (settings.tts_enabled or settings.volc_enabled)
+            and (settings.tts_enabled or settings.volc_enabled or settings.provider_enabled("seed_audio"))
         ):
             return
         try:

@@ -19,6 +19,11 @@ const providerInfo = vi.hoisted(() => [
     api_key_configured: true, api_key_masked: 'mi****ey',
     model: 'mimo-v2.5-tts', voice: 'Chloe',
   },
+  {
+    id: 'seed_audio', label: 'Seed Audio 1.0', enabled: false,
+    api_url: 'https://openspeech.bytedance.com', base_url: 'https://openspeech.bytedance.com',
+    api_key_configured: false, api_key_masked: '', model: 'seed-audio-1.0', voice: 'prompt',
+  },
 ])
 
 vi.mock('@/api/apiClients', () => ({
@@ -103,7 +108,7 @@ describe('SystemView', () => {
     vi.clearAllMocks()
   })
 
-  it('renders the two provider slots, then starts with Doubao by default', async () => {
+  it('renders provider slots, then starts with Doubao by default', async () => {
     const wrapper = mount(SystemView, { global: { stubs: ['el-table', 'el-table-column', 'el-dialog', 'el-checkbox-group', 'el-checkbox', 'el-tag', 'el-button', 'el-input', 'el-select', 'el-option', 'el-progress'] } })
     // flush onMounted -> listApiClients
     await flushPromises()
@@ -117,7 +122,8 @@ describe('SystemView', () => {
     expect(text).toContain('Mimo')
     expect(text).toContain('导入单词时自动生成语音')
     expect(text).not.toContain('默认音频模型')
-    expect(text).toContain('doubao-seed-tts-2.0')
+    const defaultModel = wrapper.findAllComponents({ name: 'ElSelect' }).find(c => c.attributes('aria-label') === '默认语音模型')
+    expect(defaultModel?.attributes('modelvalue')).toBe('doubao-seed-tts-2.0')
     expect(text).toContain('已生成 25 / 100')
     expect(text).toContain('Mimo · mimo-v2.5-tts')
     // The 「新增客户端」 and 「下载整库备份」 buttons render as el-button stubs
@@ -138,11 +144,39 @@ describe('SystemView', () => {
     expect(saveAudioSettings).toHaveBeenCalledWith(
       'volc',
       {
-        mimo: { base_url: 'https://api.xiaomimimo.com/v1', api_key: '' },
-        volc: { base_url: 'https://openspeech.bytedance.com', api_key: '' },
+        mimo: { base_url: 'https://api.xiaomimimo.com/v1', api_key: '', model: 'mimo-v2.5-tts', voice: 'Chloe' },
+        volc: { base_url: 'https://openspeech.bytedance.com', api_key: '', model: 'doubao-seed-tts-2.0', voice: providerInfo[0].voice },
+        seed_audio: { base_url: 'https://openspeech.bytedance.com', api_key: '', model: 'seed-audio-1.0', voice: '' },
       },
       2,
       false,
     )
+  })
+
+  it('selects Seed Audio with its own key and passes it to dictionary generation', async () => {
+    const wrapper = mount(SystemView, { global: { stubs: ['el-table', 'el-table-column', 'el-dialog', 'el-checkbox-group', 'el-checkbox', 'el-tag', 'el-button', 'el-input', 'el-select', 'el-option', 'el-progress'] } })
+    await flushPromises()
+    await wrapper.get('select[aria-label="语音服务"]').setValue('seed_audio')
+    expect(wrapper.text()).toContain('seed-audio-1.0')
+    expect(wrapper.text()).toContain('Seed Audio 1.0 API Key')
+    const keyInput = wrapper.findAllComponents({ name: 'ElInput' }).find(c => c.attributes('aria-label') === '语音 API Key')
+    expect(keyInput).toBeDefined()
+    keyInput!.vm.$emit('update:modelValue', 'new-seed-key')
+    const modelSelect = wrapper.findAllComponents({ name: 'ElSelect' }).find(c => c.attributes('aria-label') === '默认语音模型')
+    const voiceSelect = wrapper.findAllComponents({ name: 'ElSelect' }).find(c => c.attributes('aria-label') === '语音音色')
+    expect(modelSelect?.attributes()).toMatchObject({ 'allow-create': '', filterable: '' })
+    expect(voiceSelect?.attributes()).toMatchObject({ 'allow-create': '', filterable: '' })
+    modelSelect!.vm.$emit('update:modelValue', 'custom-seed-model')
+    voiceSelect!.vm.$emit('update:modelValue', 'custom-speaker')
+    await wrapper.get('[data-testid="start-dictionary-audio"]').trigger('click')
+    await flushPromises()
+    expect(startDictionaryAudio).toHaveBeenCalledWith('seed_audio')
+    await wrapper.get('[data-testid="save-audio-settings"]').trigger('click')
+    await flushPromises()
+    expect(saveAudioSettings).toHaveBeenCalledWith('seed_audio', expect.objectContaining({
+      seed_audio: { base_url: 'https://openspeech.bytedance.com', api_key: 'new-seed-key', model: 'custom-seed-model', voice: 'custom-speaker' },
+      volc: { base_url: 'https://openspeech.bytedance.com', api_key: '', model: 'doubao-seed-tts-2.0', voice: providerInfo[0].voice },
+    }), 2, false)
+    wrapper.unmount()
   })
 })

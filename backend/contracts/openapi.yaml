@@ -225,7 +225,8 @@
                 "enum": [
                   "custom",
                   "mimo",
-                  "volc"
+                  "volc",
+                  "seed_audio"
                 ],
                 "type": "string"
               },
@@ -490,7 +491,8 @@
                 "enum": [
                   "custom",
                   "mimo",
-                  "volc"
+                  "volc",
+                  "seed_audio"
                 ],
                 "type": "string"
               },
@@ -562,7 +564,8 @@
                 "enum": [
                   "custom",
                   "mimo",
-                  "volc"
+                  "volc",
+                  "seed_audio"
                 ],
                 "type": "string"
               },
@@ -1024,7 +1027,8 @@
                 "enum": [
                   "custom",
                   "mimo",
-                  "volc"
+                  "volc",
+                  "seed_audio"
                 ],
                 "type": "string"
               },
@@ -1040,6 +1044,16 @@
             "type": "integer"
           },
           "mimo": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/AudioProviderSettingsUpdate"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "seed_audio": {
             "anyOf": [
               {
                 "$ref": "#/components/schemas/AudioProviderSettingsUpdate"
@@ -1075,7 +1089,8 @@
                 "enum": [
                   "custom",
                   "mimo",
-                  "volc"
+                  "volc",
+                  "seed_audio"
                 ],
                 "type": "string"
               },
@@ -1447,7 +1462,8 @@
                 "enum": [
                   "custom",
                   "mimo",
-                  "volc"
+                  "volc",
+                  "seed_audio"
                 ],
                 "type": "string"
               },
@@ -1475,7 +1491,8 @@
                 "enum": [
                   "custom",
                   "mimo",
-                  "volc"
+                  "volc",
+                  "seed_audio"
                 ],
                 "type": "string"
               },
@@ -1498,7 +1515,8 @@
                 "enum": [
                   "custom",
                   "mimo",
-                  "volc"
+                  "volc",
+                  "seed_audio"
                 ],
                 "type": "string"
               },

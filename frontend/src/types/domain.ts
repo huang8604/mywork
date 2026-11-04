@@ -102,7 +102,7 @@ export interface AudioBatchResult { queued: number; total: number; provider: str
 export interface AudioProgress {
   state: 'idle' | 'running'; total: number; completed: number; failed: number; pending: number
 }
-export type AudioProvider = 'custom' | 'mimo' | 'volc'
+export type AudioProvider = 'custom' | 'mimo' | 'volc' | 'seed_audio'
 export interface AudioProviderInfo {
   id: AudioProvider; label: string; enabled: boolean; base_url: string
   api_url?: string

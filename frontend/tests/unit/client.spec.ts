@@ -1,6 +1,6 @@
 import { AxiosError, AxiosHeaders } from 'axios'
 import { describe, expect, it } from 'vitest'
-import { ApiError, newEventId, normalizeApiError, unwrap } from '@/api/client'
+import { apiClient, ApiError, newEventId, normalizeApiError, unwrap } from '@/api/client'
 
 describe('API client contract handling', () => {
   it('unwraps JSON envelopes but retains conflict details and request ids in errors', () => {
@@ -19,6 +19,21 @@ describe('API client contract handling', () => {
   it('maps timeout and cancellation into recoverable errors', () => {
     expect(normalizeApiError(new AxiosError('timeout', 'ECONNABORTED')).message).toContain('超时')
     expect(normalizeApiError(new AxiosError('cancel', 'ERR_CANCELED')).isCanceled).toBe(true)
+  })
+
+  it('retains provider permission errors returned as JSON blobs by audio endpoints', async () => {
+    const json = JSON.stringify({ code: 'TTS_ACCESS_DENIED', message: 'Seed Audio 资源权限不足', request_id: 'req-audio' })
+    const blob = new Blob([json], { type: 'application/json' })
+    // jsdom's Blob omits text(); browsers provide it natively.
+    Object.defineProperty(blob, 'text', { value: async () => json })
+    await expect(apiClient.post('/system/audio-settings/test', {}, {
+      responseType: 'blob',
+      adapter: async config => {
+        throw new AxiosError('Bad Gateway', 'ERR_BAD_RESPONSE', config, undefined, {
+          status: 502, statusText: 'Bad Gateway', config, headers: new AxiosHeaders(), data: blob,
+        })
+      },
+    })).rejects.toMatchObject({ code: 'TTS_ACCESS_DENIED', message: 'Seed Audio 资源权限不足', requestId: 'req-audio' })
   })
 
   it('generates a UUID when randomUUID is unavailable in an insecure HTTP context', () => {

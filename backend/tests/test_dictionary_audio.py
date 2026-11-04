@@ -85,3 +85,41 @@ def test_dictionary_audio_system_routes_expose_controls(client, monkeypatch):
     assert client.post("/api/v1/system/dictionary-audio/start", json={"provider": "volc"}).json()["data"]["provider"] == "volc"
     assert client.post("/api/v1/system/dictionary-audio/pause").json()["data"]["state"] == "paused"
     assert client.post("/api/v1/system/dictionary-audio/resume").json()["data"]["state"] == "running"
+
+
+def test_seed_audio_dictionary_generation_records_model_and_reuses_cache(db_session, monkeypatch, tmp_path):
+    from app.services import system_settings
+    from app.services.tts import SynthesisResult
+
+    monkeypatch.setenv("SEED_AUDIO_API_KEY", "test-seed-key")
+    monkeypatch.setenv("TTS_AUDIO_DIR", str(tmp_path / "audio"))
+    get_settings.cache_clear()
+    monkeypatch.setattr(system_settings, "audio_runtime_settings", lambda: get_settings())
+    monkeypatch.setattr(dictionary_audio, "dictionary_words", lambda: ("camera",))
+    monkeypatch.setattr(dictionary_audio, "_attach_existing_words", lambda _word: None)
+    calls = []
+
+    def synthesize(text, *, provider, settings):
+        calls.append((text, provider, settings.seed_audio_api_key))
+        return SynthesisResult(MP3, "prompt", "seed_audio", "seed-audio-1.0")
+
+    monkeypatch.setattr(dictionary_audio.tts_service, "synthesize_word_mp3", synthesize)
+    worker = dictionary_audio._DictionaryAudioWorker()
+    monkeypatch.setattr(worker, "ensure_thread", lambda: None)
+    try:
+        worker.start("seed_audio")
+        worker._run_pass()
+        state = dictionary_audio._store.state(create=False)
+        assert state["state"] == "completed"
+        assert state["last_provider"] == "seed_audio"
+        assert state["last_model"] == "seed-audio-1.0"
+        assert calls == [("camera", "seed_audio", "test-seed-key")]
+        word = create_word(db_session, WordCreate(en_word="camera", cn_meaning="相机"))
+        assert word.audio_provider == "seed_audio"
+        assert word.audio_model == "seed-audio-1.0"
+        assert word_audio_file(word).read_bytes() == MP3
+        worker.start("seed_audio")
+        assert len(calls) == 1
+    finally:
+        worker.stop()
+        get_settings.cache_clear()

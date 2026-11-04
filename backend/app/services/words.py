@@ -288,8 +288,9 @@ def _audio_filename(
     voice: str | None = None,
 ) -> str:
     selected_provider = provider or settings.tts_provider
-    effective_model = model or (settings.volc_model if selected_provider == "volc" else settings.tts_model)
-    effective_voice = voice or (settings.volc_voice if selected_provider == "volc" else settings.tts_voice)
+    default_model, default_voice = tts_service.provider_model_voice(settings, selected_provider)
+    effective_model = model or default_model
+    effective_voice = voice or default_voice
     digest = hashlib.sha256(
         f"isolated-token-v2|{word.en_word}|{selected_provider}|{effective_model}|{effective_voice}".encode("utf-8")
     ).hexdigest()[:12]
@@ -331,7 +332,7 @@ def generate_word_audio(
     else:  # Compatibility for older worker/test doubles returning (bytes, voice).
         audio, voice = result
         actual_provider = provider
-        model = settings.volc_model if actual_provider == "volc" else settings.tts_model
+        model, _ = tts_service.provider_model_voice(settings, actual_provider)
     root = audio_dir(settings)
     try:
         root.mkdir(parents=True, exist_ok=True)
@@ -388,7 +389,7 @@ def enqueue_missing_word_audio(
     from app.services.system_settings import audio_runtime_settings
 
     settings = audio_runtime_settings(db)
-    if not (settings.tts_enabled or settings.volc_enabled):
+    if not (settings.tts_enabled or settings.volc_enabled or settings.provider_enabled("seed_audio")):
         raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
     provider = resolve_audio_provider(db, provider)
     ids = list(

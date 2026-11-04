@@ -697,7 +697,7 @@ def batch_audio(
 ):
     """Enqueue selected words for background MP3 generation (fire-and-forget)."""
     settings = audio_runtime_settings(db)
-    if not (settings.tts_enabled or settings.volc_enabled):
+    if not (settings.tts_enabled or settings.volc_enabled or settings.provider_enabled("seed_audio")):
         raise AppError(409, "TTS_NOT_CONFIGURED", "TTS 尚未配置")
     idem = claim(
         db,

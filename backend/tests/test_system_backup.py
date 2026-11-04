@@ -101,6 +101,7 @@ def test_admin_sets_persistent_default_audio_provider(
         assert {item["id"] for item in initial.json()["data"]["providers"]} == {
             "mimo",
             "volc",
+            "seed_audio",
         }
 
         saved = client.put(

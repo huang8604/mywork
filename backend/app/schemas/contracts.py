@@ -109,8 +109,8 @@ class WordEnrichRequest(StrictModel):
 
 
 # ``custom`` remains accepted for rolling compatibility with released clients;
-# the current UI exposes the two concrete service slots below.
-AudioProvider = Literal["custom", "mimo", "volc"]
+# the current UI exposes the concrete service slots below.
+AudioProvider = Literal["custom", "mimo", "volc", "seed_audio"]
 
 
 class WordAudioGenerateRequest(StrictModel):
@@ -167,6 +167,7 @@ class SystemAudioSettingsUpdate(StrictModel):
     default_provider: AudioProvider | None = None
     mimo: AudioProviderSettingsUpdate | None = None
     volc: AudioProviderSettingsUpdate | None = None
+    seed_audio: AudioProviderSettingsUpdate | None = None
     auto_generate_on_import: bool | None = None
 
     @field_validator("api_url", "base_url", "api_key")

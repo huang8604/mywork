@@ -156,7 +156,7 @@ def audio_runtime_settings(db: Session | None = None):
         mimo_key = mimo_key or settings.tts_api_key
         volc_url = volc_url or settings.volc_base_url
         volc_key = volc_key or settings.volc_api_key
-        default_provider = setting.default_provider if setting.default_provider in {"mimo", "volc"} else settings.tts_provider
+        default_provider = canonical_provider(setting.default_provider, settings)
         values: dict[str, Any] = {
             "tts_provider": default_provider,
             "tts_base_url": mimo_url,
@@ -165,6 +165,10 @@ def audio_runtime_settings(db: Session | None = None):
             "tts_voice": setting.mimo_voice or settings.tts_voice,
             "volc_base_url": volc_url,
             "volc_api_key": volc_key,
+            "seed_audio_base_url": setting.seed_audio_base_url or settings.seed_audio_base_url,
+            "seed_audio_api_key": setting.seed_audio_api_key or settings.seed_audio_api_key,
+            "seed_audio_model": setting.seed_audio_model or settings.seed_audio_model,
+            "seed_audio_voice": setting.seed_audio_voice or settings.seed_audio_voice,
             "volc_model": setting.volc_model or settings.volc_model,
             "volc_voice": setting.volc_voice or settings.volc_voice,
             "volc_resource_id": setting.volc_resource_id or settings.volc_resource_id,
@@ -267,7 +271,7 @@ def update_audio_settings(
         setting.version += 1
         setting.updated_at = utc_now_text()
         setting.updated_by = actor_id
-    for provider in ("mimo", "volc"):
+    for provider in ("mimo", "volc", "seed_audio"):
         values = _provider_override_values((provider_configs or {}).get(provider))
         for field, value in values.items():
             setattr(setting, f"{provider}_{field}", value)

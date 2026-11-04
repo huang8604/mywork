@@ -25,6 +25,8 @@ os.environ.pop("TTS_API_KEY_FILE", None)
 os.environ["VOLC_TTS_BASE_URL"] = ""
 os.environ["VOLC_TTS_API_KEY"] = ""
 os.environ.pop("VOLC_TTS_API_KEY_FILE", None)
+os.environ["SEED_AUDIO_API_KEY"] = ""
+os.environ.pop("SEED_AUDIO_API_KEY_FILE", None)
 
 from app.core.database import Base, build_engine, get_db
 from app.main import app

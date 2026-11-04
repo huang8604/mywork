@@ -124,6 +124,35 @@ TTS_AUTO_GENERATE_ON_IMPORT: "true"
 
 ---
 
+### Seed Audio 1.0（0012）
+
+系统管理 → 本地词库语音导入 → 语音服务，选择 `Seed Audio 1.0（seed-audio-1.0）`。
+每家服务的「默认语音模型」与「音色」均可下拉选择默认值，也可输入服务支持的自定义模型名称和音色 ID。
+填写该服务独立的 API Key，点击「保存设置」后再点「测试语音」或启动词库生成；
+Key 留空保留原值，模型、音色和默认服务会持久保存。模型或音色留空则恢复部署默认值。
+选择并保存后也会成为单词音频生成的默认服务；已有共享缓存仍会复用，需替换时点击「按当前服务重新生成」。
+
+此服务使用 `POST https://openspeech.bytedance.com/api/v3/tts/create`、`X-Api-Key` 请求头，
+与原豆包 agent-plan 接口及 Key 分开配置。按提示词生成中英文朗读，返回 MP3。
+它仅在明确选中时调用，不参与豆包/Mimo 的自动备用，也不在失败后换用其他模型。
+HTTP 401/403 会显示鉴权或资源权限不足；需要在火山控制台开通相应音频生成资源。
+接口与参数依据：[火山音频生成 HTTP 文档](https://docs.volcengine.com/docs/doubao-voice/audio-generation-http?lang=zh)。
+
+也可由部署环境提供默认配置（系统页保存的配置优先）：
+
+```yaml
+SEED_AUDIO_BASE_URL: "https://openspeech.bytedance.com"
+SEED_AUDIO_API_KEY_FILE: "/run/secrets/seed-audio-api-key"
+SEED_AUDIO_TIMEOUT_SECONDS: "300"
+SEED_AUDIO_MODEL: "seed-audio-1.0"
+# 可选：SEED_AUDIO_VOICE 为参考音色 ID；不设置时由提示词控制音色
+```
+
+使用文件方式时需另行挂载对应 secret。升级后入口脚本自动迁移到 `0012`，保留原有两家服务配置。
+原豆包连接的默认模型名称 `doubao-seed-tts-2.0` 沿用原接口默认行为；输入其他模型 ID 后会通过 `req_params.model` 提交，需与该服务的资源及音色匹配。
+2026-11-04 本机短文本实测：测试凭据返回 HTTP 403 / `45000030` / `requested resource not granted`，
+未生成音频；接口可达不能视为模型合成成功。测试凭据未保存在仓库或部署配置中。
+
 ## 2. 备份与校验(§4)
 
 数据库是 `/share/Container/vocab-app/data/vocab.db`(SQLite,WAL 模式,另有 `-shm`/`-wal`)。**挂卷 ≠ 备份。**
@@ -155,7 +184,7 @@ docker exec vocab-app python -c "import sqlite3; c=sqlite3.connect('/app/data/vo
 ```
 
 - 至少保留最近若干版本,并复制到**不同物理存储**。
-- 记录当前运行镜像 SHA 与数据库 schema 版本（`SELECT version_num FROM alembic_version`，当前应为 `0011`）。
+- 记录当前运行镜像 SHA 与数据库 schema 版本（`SELECT version_num FROM alembic_version`，当前应为 `0012`）。
 - 定期在临时目录恢复一份备份,用同版本镜像起一个临时容器,验证单词数、流水数与 `word_stats` 重建一致性(恢复演练)。建议 RPO/RTO 至少做到「更新前备份 + 周期备份」。
 
 ---

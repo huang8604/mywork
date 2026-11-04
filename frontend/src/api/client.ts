@@ -39,6 +39,12 @@ apiClient.interceptors.response.use(
     return response
   },
   async (error: AxiosError<ApiErrorBody>) => {
+    // Audio requests use responseType=blob, including JSON error responses.
+    // Decode the envelope before normalization so model permission errors remain visible.
+    if (error.response?.data instanceof Blob && error.response.data.type.includes('json')) {
+      try { error.response.data = JSON.parse(await error.response.data.text()) as ApiErrorBody }
+      catch { /* Keep the normal HTTP error if the body is not valid JSON. */ }
+    }
     const normalized = normalizeApiError(error)
     debugLog('api.error', {
       method: error.config?.method?.toUpperCase(),

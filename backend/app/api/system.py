@@ -134,6 +134,7 @@ def save_audio_settings(
         provider_configs={
             "mimo": payload.mimo.model_dump(exclude_unset=True) if payload.mimo else None,
             "volc": payload.volc.model_dump(exclude_unset=True) if payload.volc else None,
+            "seed_audio": payload.seed_audio.model_dump(exclude_unset=True) if payload.seed_audio else None,
         },
         auto_generate_on_import=payload.auto_generate_on_import,
         custom_config={
@@ -157,7 +158,7 @@ def save_audio_settings(
             "custom_api_key_submitted": payload.api_key is not None,
             "legacy_provider_fields_submitted": [
                 provider
-                for provider, config in (("mimo", payload.mimo), ("volc", payload.volc))
+                for provider, config in (("mimo", payload.mimo), ("volc", payload.volc), ("seed_audio", payload.seed_audio))
                 if config is not None
             ],
         },
@@ -182,7 +183,7 @@ def test_audio_settings(
     else:
         audio, voice = result
         actual_provider = provider
-        model = settings.volc_model if actual_provider == "volc" else settings.tts_model
+        model, _ = tts_service.provider_model_voice(settings, actual_provider)
     return Response(
         content=audio,
         media_type="audio/mpeg",

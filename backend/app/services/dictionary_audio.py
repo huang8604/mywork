@@ -326,12 +326,11 @@ class _DictionaryAudioWorker:
 
     def start(self, provider: str | None = None, *, force: bool = False) -> dict[str, Any]:
         from app.services.system_settings import audio_runtime_settings
-        from app.services.tts import canonical_provider, provider_model_voice
+        from app.services.tts import canonical_provider, provider_model_voice, _provider_order
 
         settings = audio_runtime_settings()
         chosen = canonical_provider(provider, settings)
-        other = "mimo" if chosen == "volc" else "volc"
-        if not settings.provider_enabled(chosen) and not settings.provider_enabled(other):
+        if not any(settings.provider_enabled(candidate) for candidate in _provider_order(chosen, settings)):
             raise AppError(409, "TTS_NOT_CONFIGURED", "所选 TTS 服务尚未配置")
         words = dictionary_words()
         if not words:
@@ -417,7 +416,7 @@ class _DictionaryAudioWorker:
                 else:
                     audio, voice = result
                     actual_provider = provider
-                    model = settings.volc_model if actual_provider == "volc" else settings.tts_model
+                    model, _ = tts_service.provider_model_voice(settings, actual_provider)
                 entry = _write_shared_audio(
                     normalized_word,
                     audio,

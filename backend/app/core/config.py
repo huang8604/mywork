@@ -72,6 +72,11 @@ class Settings:
     session_secret: str
     session_secret_file: str | None
     session_max_age: int
+    seed_audio_base_url: str = "https://openspeech.bytedance.com"
+    seed_audio_api_key: str = ""
+    seed_audio_model: str = "seed-audio-1.0"
+    seed_audio_voice: str = ""
+    seed_audio_timeout_seconds: float = 300
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -96,6 +101,13 @@ class Settings:
                 raise ValueError("VOLC_TTS_API_KEY_FILE must not be empty")
         else:
             volc_api_key = os.getenv("VOLC_TTS_API_KEY", "").strip()
+        seed_audio_key_file = os.getenv("SEED_AUDIO_API_KEY_FILE")
+        seed_audio_key = (
+            Path(seed_audio_key_file).read_text(encoding="utf-8").strip()
+            if seed_audio_key_file else os.getenv("SEED_AUDIO_API_KEY", "").strip()
+        )
+        if seed_audio_key_file and not seed_audio_key:
+            raise ValueError("SEED_AUDIO_API_KEY_FILE must not be empty")
         value = cls(
             database_url=os.getenv("DATABASE_URL", "sqlite:///./data/vocab.db"),
             app_timezone=os.getenv("APP_TIMEZONE", "Asia/Shanghai"),
@@ -166,6 +178,11 @@ class Settings:
             session_secret=os.getenv("SESSION_SECRET", ""),
             session_secret_file=os.getenv("SESSION_SECRET_FILE"),
             session_max_age=int(os.getenv("SESSION_MAX_AGE", "604800")),
+            seed_audio_base_url=os.getenv("SEED_AUDIO_BASE_URL", "https://openspeech.bytedance.com").rstrip("/"),
+            seed_audio_api_key=seed_audio_key,
+            seed_audio_model=os.getenv("SEED_AUDIO_MODEL", "seed-audio-1.0").strip() or "seed-audio-1.0",
+            seed_audio_voice=os.getenv("SEED_AUDIO_VOICE", "").strip(),
+            seed_audio_timeout_seconds=float(os.getenv("SEED_AUDIO_TIMEOUT_SECONDS", "300")),
         )
         value.validate()
         return value
@@ -180,14 +197,16 @@ class Settings:
             raise ValueError("TTS_TIMEOUT_SECONDS must be positive")
         if self.volc_timeout_seconds <= 0:
             raise ValueError("VOLC_TTS_TIMEOUT_SECONDS must be positive")
+        if self.seed_audio_timeout_seconds <= 0:
+            raise ValueError("SEED_AUDIO_TIMEOUT_SECONDS must be positive")
         if not (-50 <= self.volc_speech_rate <= 100):
             raise ValueError("VOLC_TTS_SPEECH_RATE must be between -50 and 100")
         if not (-50 <= self.volc_loudness_rate <= 100):
             raise ValueError("VOLC_TTS_LOUDNESS_RATE must be between -50 and 100")
         if not (0 <= self.volc_silence_ms <= 30000):
             raise ValueError("VOLC_TTS_SILENCE_MS must be between 0 and 30000")
-        if self.tts_provider not in {"custom", "mimo", "volc"}:
-            raise ValueError("TTS_PROVIDER must be 'custom', 'mimo' or 'volc'")
+        if self.tts_provider not in {"custom", "mimo", "volc", "seed_audio"}:
+            raise ValueError("TTS_PROVIDER must be 'custom', 'mimo', 'volc' or 'seed_audio'")
         if min(
             self.dictionary_audio_retry_seconds,
             self.dictionary_audio_scan_seconds,
@@ -246,6 +265,8 @@ class Settings:
         return bool(self.volc_base_url and self.volc_api_key)
 
     def provider_enabled(self, provider: str) -> bool:
+        if provider == "seed_audio":
+            return bool(self.seed_audio_base_url and self.seed_audio_api_key)
         if provider in {"custom", "mimo"}:
             return self.tts_enabled
         return self.volc_enabled
