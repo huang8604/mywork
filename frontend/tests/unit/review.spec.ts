@@ -1,15 +1,22 @@
 import { describe, expect, it } from 'vitest'
-import { activePracticeSessions, allItemsAnswered, nextButtonLabel, nextButtonDisabled, summarize } from '@/views/reviewLogic'
+import { onlinePracticeSessions, allItemsAnswered, nextButtonLabel, nextButtonDisabled, summarize } from '@/views/reviewLogic'
 
-describe('activePracticeSessions', () => {
-  it('keeps only active worksheets for both online review modes', () => {
+describe('onlinePracticeSessions', () => {
+  it('keeps active worksheets and completed worksheets for strictly less than 24 hours', () => {
+    const now = Date.parse('2026-11-13T10:00:00Z')
     const sessions = [
       { session_id: 1, status: 'not_started' },
       { session_id: 2, status: 'active' },
       { session_id: 3, status: 'completed' },
       { session_id: 4, status: 'archived' },
+      { session_id: 5, status: 'completed', completed_at: '2026-11-12T10:00:01Z' },
+      { session_id: 6, status: 'completed', completed_at: '2026-11-12T10:00:00Z' },
+      { session_id: 7, status: 'completed', completed_at: '2026-11-12T09:59:59Z' },
+      { session_id: 8, status: 'archived', completed_at: '2026-11-13T09:59:59Z' },
+      { session_id: 9, status: 'completed', completed_at: 'invalid' },
     ]
-    expect(activePracticeSessions(sessions)).toEqual([{ session_id: 2, status: 'active' }])
+    expect(onlinePracticeSessions(sessions, now).map(s => s.session_id)).toEqual([2, 5])
+    expect(onlinePracticeSessions(sessions, now + 1000).map(s => s.session_id)).toEqual([2])
   })
 })
 

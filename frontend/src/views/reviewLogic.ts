@@ -5,8 +5,11 @@ export interface ReviewSummary {
   total: number
 }
 
-export function activePracticeSessions<T extends { status: string }>(sessions: T[]): T[] {
-  return sessions.filter(session => session.status === 'active')
+export function onlinePracticeSessions<T extends { status: string; completed_at?: string | null }>(sessions: T[], now = Date.now()): T[] {
+  return sessions.filter(session => session.status === 'active' || (
+    session.status === 'completed' && session.completed_at != null &&
+    new Date(session.completed_at).getTime() > now - 24 * 60 * 60 * 1000
+  ))
 }
 
 /**

@@ -8,7 +8,7 @@ Single-user, NAS-deployed vocabulary practice system (单词记忆辅助系统).
 
 Development is staged into six phases with frozen decisions under `docs/design/`; implementation plans and execution records live under `docs/superpowers/`. Phases 1–6 are implemented. Each phase doc or enhancement spec defines the completion gates for its scope.
 
-The `/review` page has two modes, online cards and online dictation. Both must load and display only practice sessions whose lifecycle status is `active`; never broaden either picker to `not_started`, `completed`, or `archived`. This invariant is covered by `activePracticeSessions` tests.
+The `/review` page has two modes, online cards and online dictation. Both use `online_review=true` to load active sessions and completed sessions whose `completed_at` is less than 24 hours ago. Both pickers use `onlinePracticeSessions`; exclude not-started, archived, and older completed sessions. Starting another card round reactivates the worksheet; completing it restarts the 24-hour window.
 
 ### Production image, CI, and NAS deploy (phase 5)
 

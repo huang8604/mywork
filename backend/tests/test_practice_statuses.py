@@ -1,5 +1,12 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
+
+import pytest
+
+from app.models import PracticeSession
+from app.services.domain import utc_text
 from conftest import create_word
 
 
@@ -85,3 +92,50 @@ def test_round_transitions_not_started_to_active_to_completed(client):
     ).json()["data"]
     assert completed["status"] == "completed"
     assert completed["completed_at"] is not None
+
+    listed = client.get("/api/v1/practice-sessions?online_review=true").json()
+    assert listed["meta"]["total"] == 1
+    again = client.post(
+        f"/api/v1/practice-sessions/{session['session_id']}/review-rounds",
+        headers={"Idempotency-Key": "status-round-again"},
+        json={"mode": "online"},
+    )
+    assert again.status_code == 201, again.text
+    assert again.json()["data"]["round_id"] != round_response.json()["data"]["round_id"]
+    result = client.put(
+        f"/api/v1/practice-review-rounds/{again.json()['data']['round_id']}"
+        f"/items/{session['items'][0]['item_id']}/result",
+        json={"status": "unknown", "client_event_id": "status-result-again"},
+    )
+    assert result.status_code == 201, result.text
+    latest = client.get(f"/api/v1/practice-sessions/{session['session_id']}").json()["data"]
+    assert latest["status"] == "completed"
+    assert latest["completed_at"] > completed["completed_at"]
+
+
+@pytest.mark.parametrize(("status", "age_seconds", "visible"), [
+    ("not_started", None, False),
+    ("active", None, True),
+    ("completed", None, False),
+    ("completed", 86399, True),
+    ("completed", 86400, False),
+    ("completed", 86401, False),
+    ("archived", 1, False),
+])
+def test_online_review_visibility(client, db_session, monkeypatch, status, age_seconds, visible):
+    from app.api import practice
+
+    session = _generate_one(client)
+    now = datetime.now(UTC)
+    monkeypatch.setattr(practice, "datetime", SimpleNamespace(now=lambda tz: now))
+    stored = db_session.get(PracticeSession, session["session_id"])
+    stored.status = status
+    stored.completed_at = utc_text(now - timedelta(seconds=age_seconds)) if age_seconds is not None else None
+    db_session.commit()
+
+    response = client.get("/api/v1/practice-sessions?online_review=true&size=1")
+    assert response.status_code == 200, response.text
+    assert response.json()["meta"]["total"] == int(visible)
+    assert len(response.json()["data"]) == int(visible)
+    # The management list still allows completed worksheets of any age.
+    assert client.get(f"/api/v1/practice-sessions?status={status}").json()["meta"]["total"] == 1

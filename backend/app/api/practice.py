@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import logging
+from datetime import UTC, datetime, timedelta
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Header, Query, Request
 from fastapi.responses import FileResponse, Response
-from sqlalchemy import and_, desc, func, select
+from sqlalchemy import and_, desc, func, or_, select
 from sqlalchemy.orm import Session
 
 from app.core.audit import add_audit
@@ -118,6 +119,7 @@ def list_sessions(
     created_by_actor_type: str | None = None,
     generated_from: str | None = None,
     generated_to: str | None = None,
+    online_review: bool = False,
 ):
     if created_by_actor_type and created_by_actor_type not in {"web_user", "api_client"}:
         raise AppError(422, "VALIDATION_ERROR", "无效的来源类型")
@@ -133,6 +135,14 @@ def list_sessions(
     ]
     if status is None:
         filters.append(PracticeSession.status != "archived")
+    if online_review:
+        filters.append(or_(
+            PracticeSession.status == "active",
+            and_(
+                PracticeSession.status == "completed",
+                PracticeSession.completed_at > utc_text(datetime.now(UTC) - timedelta(days=1)),
+            ),
+        ))
     for column, value in (
         (PracticeSession.status, status),
         (PracticeSession.created_by_actor_type, created_by_actor_type),

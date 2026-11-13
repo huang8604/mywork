@@ -5,8 +5,8 @@ export function practiceItemAudioUrl(sessionId: number, itemId: number, language
 export function numberAudioUrl(n: number, language: 'en' | 'zh' = 'en') { return `/api/v1/dictation/numbers/${n}/audio?language=${language}` }
 
 export async function generateSession(payload: StrategyRequest, signal?: AbortSignal, idempotencyKey = newEventId()) { return unwrap((await apiClient.post<ApiEnvelope<PracticeSession>>('/daily-table/generate', payload, { signal, headers: { 'Idempotency-Key': idempotencyKey } })).data) }
-export async function listSessions(page = 1, size = 20, signal?: AbortSignal, status?: PracticeSessionStatus) {
-  const response = await apiClient.get<ApiEnvelope<PracticeSession[]>>('/practice-sessions', { params: { page, size, status }, signal })
+export async function listSessions(page = 1, size = 20, signal?: AbortSignal, status?: PracticeSessionStatus, onlineReview?: boolean) {
+  const response = await apiClient.get<ApiEnvelope<PracticeSession[]>>('/practice-sessions', { params: { page, size, status, online_review: onlineReview }, signal })
   return { data: response.data.data, meta: response.data.meta }
 }
 export async function getSession(id: number, signal?: AbortSignal) { return unwrap((await apiClient.get<ApiEnvelope<PracticeSession>>(`/practice-sessions/${id}`, { signal })).data) }

@@ -2642,6 +2642,16 @@
               ],
               "title": "Generated To"
             }
+          },
+          {
+            "in": "query",
+            "name": "online_review",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Online Review",
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
